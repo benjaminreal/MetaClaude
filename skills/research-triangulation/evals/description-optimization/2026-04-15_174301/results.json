@@ -1,0 +1,1390 @@
+{
+  "exit_reason": "max_iterations (5)",
+  "original_description": "Orchestrates research across multiple AI platforms to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions \"research triangulation,\" \"cross-platform research,\" \"consolidation prompt,\" \"research synthesis,\" \"multi-model research,\" or references running the same research question across different AI tools. This skill coordinates multi-platform research \u2014 for single-platform prompts, use other skills or write directly.",
+  "best_description": "Orchestrates research across multiple AI platforms to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions \"research triangulation,\" \"cross-platform research,\" \"consolidation prompt,\" \"research synthesis,\" \"multi-model research,\" or references running the same research question across different AI tools. This skill coordinates multi-platform research \u2014 for single-platform prompts, use other skills or write directly.",
+  "best_score": "4/8",
+  "best_train_score": "6/12",
+  "best_test_score": "4/8",
+  "final_description": "Use this skill when the user wants to run research across multiple AI platforms (Claude Deep Research, Perplexity, Gemini, ChatGPT Deep Research) and needs help at any stage:\n\n- Designing prompts for 2+ AI research tools so outputs can be compared or merged later\n- Consolidating, merging, synthesizing, or cross-referencing multiple AI research reports\n- Cross-validating findings, flagging convergence vs. contradictions across reports\n- Scoring or evaluating deep research output quality\n- Running the full cycle end-to-end (prompt design \u2192 external execution \u2192 consolidation \u2192 scoring)\n- Writing a single-platform research prompt when the user says it will be combined with others\n\nTrigger signals: naming 2+ AI research tools, \"deep research\" with multiple platforms, having several reports to integrate, high-stakes/rigorous multi-model research, or words like triangulate, cross-validate, consolidate, synthesize reports.\n\nDo NOT use for ordinary single-tool research, literature reviews, fact-finding, or general writing.",
+  "iterations_run": 5,
+  "holdout": 0.4,
+  "train_size": 12,
+  "test_size": 8,
+  "history": [
+    {
+      "iteration": 1,
+      "description": "Orchestrates research across multiple AI platforms to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions \"research triangulation,\" \"cross-platform research,\" \"consolidation prompt,\" \"research synthesis,\" \"multi-model research,\" or references running the same research question across different AI tools. This skill coordinates multi-platform research \u2014 for single-platform prompts, use other skills or write directly.",
+      "train_passed": 6,
+      "train_failed": 6,
+      "train_total": 12,
+      "train_results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "test_passed": 4,
+      "test_failed": 4,
+      "test_total": 8,
+      "test_results": [
+        {
+          "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the \u00b115% convergence threshold",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "score this deep research report on small bets \u2014 want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me validate the methodology on my Q3 sales analysis \u2014 did i apply the right segmentation? is the cohort definition survivorship-biased?",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "summarize this research report for me \u2014 just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a good deep research prompt for perplexity on vendor management practices in consulting \u2014 just one prompt, nothing fancy",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "passed": 6,
+      "failed": 6,
+      "total": 12,
+      "results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "description": "Use this skill when the user is running deep research across multiple AI platforms (Claude Deep Research, Perplexity Pro, Gemini Deep Research, ChatGPT Deep Research) and needs help at any stage: designing parallel prompts for different platforms, consolidating or synthesizing multiple research reports into one integrated output, cross-validating findings to find convergence and contradictions, scoring research quality, or running the full end-to-end cycle. Trigger when the user mentions running the same question across multiple AI tools, has several deep research reports to merge or cross-reference, wants prompts matched across platforms for later consolidation, or describes a high-stakes/rigorous research process involving multiple models. Also trigger on phrases like \"deep research,\" \"consolidate these reports,\" \"merge research outputs,\" \"cross-validate findings,\" or naming 2+ AI research platforms together. Do NOT use for single-platform research or simple one-off queries.",
+      "train_passed": 6,
+      "train_failed": 6,
+      "train_total": 12,
+      "train_results": [
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "test_passed": 4,
+      "test_failed": 4,
+      "test_total": 8,
+      "test_results": [
+        {
+          "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the \u00b115% convergence threshold",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "score this deep research report on small bets \u2014 want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me validate the methodology on my Q3 sales analysis \u2014 did i apply the right segmentation? is the cohort definition survivorship-biased?",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "summarize this research report for me \u2014 just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a good deep research prompt for perplexity on vendor management practices in consulting \u2014 just one prompt, nothing fancy",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "passed": 6,
+      "failed": 6,
+      "total": 12,
+      "results": [
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "description": "Use this skill when the user is running a research question across two or more AI tools (Claude Deep Research, Perplexity, Gemini, ChatGPT, etc.) and wants them coordinated \u2014 whether that means designing matched prompts for each platform, merging/consolidating/cross-referencing the resulting reports, flagging where platforms agree or contradict, scoring report quality, or running the whole cycle end-to-end. Trigger whenever the user names 2+ AI research platforms in one request, mentions having multiple deep research reports to integrate, wants prompts that will later be consolidated, describes a rigorous/high-stakes multi-model research process, or uses phrases like \"deep research,\" \"consolidate reports,\" \"cross-validate,\" \"merge outputs,\" or \"triangulate.\" Also trigger on single-platform prompt requests when the user explicitly says the output will be combined with other platforms' results. Do not trigger for ordinary research requests aimed at one tool or simple fact-finding.",
+      "train_passed": 6,
+      "train_failed": 6,
+      "train_total": 12,
+      "train_results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.3333333333333333,
+          "triggers": 1,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "test_passed": 4,
+      "test_failed": 4,
+      "test_total": 8,
+      "test_results": [
+        {
+          "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the \u00b115% convergence threshold",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "score this deep research report on small bets \u2014 want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me validate the methodology on my Q3 sales analysis \u2014 did i apply the right segmentation? is the cohort definition survivorship-biased?",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "summarize this research report for me \u2014 just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a good deep research prompt for perplexity on vendor management practices in consulting \u2014 just one prompt, nothing fancy",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "passed": 6,
+      "failed": 6,
+      "total": 12,
+      "results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.3333333333333333,
+          "triggers": 1,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "iteration": 4,
+      "description": "Use this skill when the user's workflow involves running the same research question across multiple AI research tools (Claude Deep Research, Perplexity Pro, Gemini, ChatGPT Deep Research, etc.) and needs orchestration at any stage. Trigger for: generating matched/parallel prompts for 2+ named AI platforms, consolidating or merging multiple AI research reports into one integrated output, cross-referencing or cross-validating findings across AI-generated reports, scoring research report quality, or running the full end-to-end cycle (prompts \u2192 external execution \u2192 consolidation \u2192 scoring). Also trigger for single-platform prompt requests when the user says the output will later be combined with other platforms. Key signals: user names 2+ AI research tools, mentions \"deep research\" with multiple tools, has several reports to merge, describes a rigorous/high-stakes multi-AI research process, or references triangulation/convergence across models. Do NOT trigger for ordinary single-tool research, literature reviews, or simple fact-finding.",
+      "train_passed": 6,
+      "train_failed": 6,
+      "train_total": 12,
+      "train_results": [
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "test_passed": 4,
+      "test_failed": 4,
+      "test_total": 8,
+      "test_results": [
+        {
+          "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the \u00b115% convergence threshold",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "score this deep research report on small bets \u2014 want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me validate the methodology on my Q3 sales analysis \u2014 did i apply the right segmentation? is the cohort definition survivorship-biased?",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "summarize this research report for me \u2014 just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a good deep research prompt for perplexity on vendor management practices in consulting \u2014 just one prompt, nothing fancy",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "passed": 6,
+      "failed": 6,
+      "total": 12,
+      "results": [
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "iteration": 5,
+      "description": "Use this skill when the user wants to run research across multiple AI platforms (Claude Deep Research, Perplexity, Gemini, ChatGPT Deep Research) and needs help at any stage:\n\n- Designing prompts for 2+ AI research tools so outputs can be compared or merged later\n- Consolidating, merging, synthesizing, or cross-referencing multiple AI research reports\n- Cross-validating findings, flagging convergence vs. contradictions across reports\n- Scoring or evaluating deep research output quality\n- Running the full cycle end-to-end (prompt design \u2192 external execution \u2192 consolidation \u2192 scoring)\n- Writing a single-platform research prompt when the user says it will be combined with others\n\nTrigger signals: naming 2+ AI research tools, \"deep research\" with multiple platforms, having several reports to integrate, high-stakes/rigorous multi-model research, or words like triangulate, cross-validate, consolidate, synthesize reports.\n\nDo NOT use for ordinary single-tool research, literature reviews, fact-finding, or general writing.",
+      "train_passed": 6,
+      "train_failed": 6,
+      "train_total": 12,
+      "train_results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "test_passed": 4,
+      "test_failed": 4,
+      "test_total": 8,
+      "test_results": [
+        {
+          "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the \u00b115% convergence threshold",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "score this deep research report on small bets \u2014 want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "help me validate the methodology on my Q3 sales analysis \u2014 did i apply the right segmentation? is the cohort definition survivorship-biased?",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "summarize this research report for me \u2014 just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write a good deep research prompt for perplexity on vendor management practices in consulting \u2014 just one prompt, nothing fancy",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ],
+      "passed": 6,
+      "failed": 6,
+      "total": 12,
+      "results": [
+        {
+          "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups \u2014 from prompt design to consolidated scorecards",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers \u2014 should match the brief i'll give to claude DR so i can consolidate the outputs later",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i want to run rigorous research on tech practice AI transformation \u2014 need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week \u2014 flag where they contradict each other so i can investigate",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "designing a research process for my thesis on Trump 2016 mental health effects \u2014 want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+          "should_trigger": true,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": false
+        },
+        {
+          "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries \u2014 need peer-reviewed empirical sources",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "prep me for my 1:1 with david boronat tomorrow \u2014 need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice \u2014 2 pages, by tomorrow",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        },
+        {
+          "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+          "should_trigger": false,
+          "trigger_rate": 0.0,
+          "triggers": 0,
+          "runs": 3,
+          "pass": true
+        }
+      ]
+    }
+  ]
+}

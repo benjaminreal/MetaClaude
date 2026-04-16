@@ -1,0 +1,82 @@
+[
+  {
+    "query": "i have 4 deep research reports on agentic design from claude, gemini, perplexity-web and perplexity-academic, they're all in my downloads folder. need to merge them into one integrated synthesis for the MBR next week — flag where they contradict each other so i can investigate",
+    "should_trigger": true
+  },
+  {
+    "query": "designing a research process for my thesis on Trump 2016 mental health effects — want to run the same brief across claude DR, gemini, and perplexity to get different angles, then cross-validate. can you generate the prompts and the consolidation step?",
+    "should_trigger": true
+  },
+  {
+    "query": "help me research the METR RCT productivity finding (the 19% slower thing) across multiple AI platforms so i'm not trusting a single model's take on it. need to go to the Guild with validated evidence",
+    "should_trigger": true
+  },
+  {
+    "query": "score this deep research report on small bets — want to know if it's good enough to feed into consolidation or if i need to rerun the pass on a different platform",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got perplexity academic + perplexity web + claude DR outputs on the question of whether remote work affects team creativity. cross-reference them and tell me where there's convergence vs contradiction, focus on quantitative claims",
+    "should_trigger": true
+  },
+  {
+    "query": "make a research prompt for perplexity pro (academic focus) on AI coding tools for experienced developers — should match the brief i'll give to claude DR so i can consolidate the outputs later",
+    "should_trigger": true
+  },
+  {
+    "query": "i want to run rigorous research on tech practice AI transformation — need to set up the full cycle: prompts for 4 different AI platforms, then consolidate, then score. it's high-stakes, CEO presentation",
+    "should_trigger": true
+  },
+  {
+    "query": "consolidate these three reports (files attached: claude-dr_dark-factory_2026-04-10.md, perplexity-web_dark-factory_2026-04-10.md, gemini-dr_dark-factory_2026-04-10.md). apply the ±15% convergence threshold",
+    "should_trigger": true
+  },
+  {
+    "query": "how do i triangulate findings across claude, perplexity, and gemini without just averaging their outputs? what's the right methodology when they disagree on a quantitative claim?",
+    "should_trigger": true
+  },
+  {
+    "query": "run the full research process on whether SAFE notes are better than priced rounds for seed-stage startups — from prompt design to consolidated scorecards",
+    "should_trigger": true
+  },
+  {
+    "query": "can you research small bets portfolio entrepreneurship for me? want a good summary of the state of practice — 2 pages, by tomorrow",
+    "should_trigger": false
+  },
+  {
+    "query": "write a literature review on the effects of parental leave on female labor force participation in OECD countries — need peer-reviewed empirical sources",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize this research report for me — just the key findings and the biggest gap. it's the claude DR output on agentic coding, about 40 pages",
+    "should_trigger": false
+  },
+  {
+    "query": "what's the small bets framework? read a book recommendation about it somewhere and want a one-paragraph explanation",
+    "should_trigger": false
+  },
+  {
+    "query": "write a good deep research prompt for perplexity on vendor management practices in consulting — just one prompt, nothing fancy",
+    "should_trigger": false
+  },
+  {
+    "query": "help me validate the methodology on my Q3 sales analysis — did i apply the right segmentation? is the cohort definition survivorship-biased?",
+    "should_trigger": false
+  },
+  {
+    "query": "write the SQL for pulling conversion-funnel metrics from our warehouse: step counts, drop-off rates, and median time between steps. Snowflake dialect",
+    "should_trigger": false
+  },
+  {
+    "query": "draft a PRD for a new design-review automation feature. problem statement, user stories, acceptance criteria, success metrics. audience is the eng lead",
+    "should_trigger": false
+  },
+  {
+    "query": "prep me for my 1:1 with david boronat tomorrow — need to walk him through progress on the agentic design tranche 1 pilot and the ask for head of tech practice replacement",
+    "should_trigger": false
+  },
+  {
+    "query": "what are the best AI coding tools for experienced developers right now? opinion piece, which ones would you recommend? considering cursor vs copilot vs codeium",
+    "should_trigger": false
+  }
+]
