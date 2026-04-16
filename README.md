@@ -1,0 +1,60 @@
+# MetaClaude
+
+A personal workspace of [Claude](https://claude.ai) skills and supporting tooling. Everything here is designed for my own use; it's published in case any of it is useful to someone else working through the same problems.
+
+Nothing in this repository is endorsed by or affiliated with Anthropic.
+
+## What's a skill?
+
+A Claude skill is a folder with a `SKILL.md` file — frontmatter describing when the skill should trigger, followed by instructions the model reads before acting. Claude loads the description into its selection pool at session start and reads the full file only when a trigger matches. Skills let you pre-commit methodology, file conventions, and quality rubrics so Claude applies them consistently instead of reasoning them out each time.
+
+Skills install as a folder under `~/.claude/skills/` (Claude Code) or via the **Save skill** button in Cowork mode when you open a `.skill` archive.
+
+## Skills in this repo
+
+| Skill | Latest | Status | One-liner |
+|---|---|---|---|
+| [`closingtime`](./skills/closingtime/) | v1.0 | Shipped | Session continuity manager — logs work, updates a project index, extracts insights. Two modes: `closingtime` to close, `newbeginning` to open. |
+| [`research-triangulation`](./skills/research-triangulation/) | v1.3 | Shipped | End-to-end methodology for running the same research across multiple AI platforms (Claude, Perplexity, Gemini, ChatGPT) and consolidating findings through convergence/divergence analysis. |
+
+Each skill has its own `README.md`, `SKILL.md`, and (where relevant) `BACKLOG.md` with open items and closed-decision register, plus `evals/` for regression checks.
+
+## Install
+
+Skills are distributed as `.skill` archives (zipped folders). Get the latest from the [Releases](../../releases) page.
+
+**Claude Code / CLI:**
+```bash
+mkdir -p ~/.claude/skills
+unzip path/to/research-triangulation_v1.3.skill -d ~/.claude/skills/
+```
+
+**Cowork mode:**
+Download the `.skill` file, open it, click **Save skill** in the prompt.
+
+Verify installation by asking Claude something the skill should trigger on. If it doesn't trigger, the skill description wasn't selected — invoke it explicitly (`/skill-name` or `use the X skill`).
+
+## Tooling
+
+[`tooling/skill-doc-generator-patched/`](./tooling/skill-doc-generator-patched/) is a fork of Anthropic's `skill-doc-generator` with five bugs fixed. See [`PATCH_NOTES.md`](./tooling/skill-doc-generator-patched/PATCH_NOTES.md) for specifics. This is a utility, not a triggered skill — it doesn't belong in `skills/` because it's not meant to be invoked by the model.
+
+## Versioning
+
+Each skill maintains its own changelog in its `SKILL.md`. Repo-level releases on GitHub bundle the source tarball plus the packaged `.skill` files. Tags follow the pattern `v{version}-{skill-name}`, e.g. `v1.3-research-triangulation`.
+
+## Design notes
+
+A few principles that apply across the skills here, extracted from what's worked:
+
+- **Structural discipline over intelligence.** A skill earns its keep by pre-committing to a process — file naming, output rubrics, validation gates — that Claude wouldn't consistently produce unprompted. If the skill doesn't make the work *more uniform*, it's redundant.
+- **Evals are structural, not behavioral, by default.** Deterministic lints on file shape, metadata, and references catch the regressions worth catching. Behavioral evals with LLM graders compete with existing quality rubrics rather than complementing them.
+- **Closed decisions belong in the backlog.** When a validator surfaces something you've decided *not* to do, record the decision with rationale — otherwise the same item re-surfaces on every pass. `BACKLOG.md` has both open items and a closed-decisions register.
+- **Aspiration is not demonstration.** Changelogs should reflect what shipped, not what was planned. This repo's version history reflects actual state.
+
+## Contributing
+
+I don't actively solicit contributions, but issues are welcome if you hit a bug or find a skill description ambiguous. Forks are fine; roundtripping may be slow since this repo uses release-based snapshots rather than a live commit history.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
