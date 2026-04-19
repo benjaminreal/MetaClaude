@@ -251,6 +251,7 @@ Then close with:
 Insert the complete Core Brief, then append:
 ```markdown
 ## Additional Instructions for This Platform
+- **Output format override for Perplexity.** Omit Core Brief sections 5 (Adversarial Self-Check), 7 (Self-Assessment), and 8 (Open Self-Critique). Produce only sections 1 (Executive Summary), 2 (Findings by Research Question), 3 (Domain-Specific Sections), 4 (Source Inventory), and 6 (Gaps and Unanswered Questions) — renumbered as §1–§5. These omitted sections trigger a generation-collapse failure mode on Perplexity Deep Research documented in *Known failure modes / Perplexity DR*. Phase 2 consolidation does not depend on their presence in Perplexity reports.
 - Focus on recent, practitioner-oriented sources: blog posts, YouTube walkthroughs, conference talks, professional publications, social media threads with substantive content
 - For every workflow, method, or tool claim: who documented it? When? What was the outcome?
 - Include links to every source
@@ -266,6 +267,7 @@ Insert the complete Core Brief, then append:
 Insert the complete Core Brief, then append:
 ```markdown
 ## Additional Instructions for This Platform
+- **Output format override for Perplexity.** Omit Core Brief sections 5 (Adversarial Self-Check), 7 (Self-Assessment), and 8 (Open Self-Critique). Produce only sections 1 (Executive Summary), 2 (Findings by Research Question), 3 (Domain-Specific Sections), 4 (Source Inventory), and 6 (Gaps and Unanswered Questions) — renumbered as §1–§5. These omitted sections trigger a generation-collapse failure mode on Perplexity Deep Research documented in *Known failure modes / Perplexity DR*. Phase 2 consolidation does not depend on their presence in Perplexity reports.
 - Focus exclusively on peer-reviewed academic sources, working papers from recognized institutions, and doctoral research
 - For every study: cite author(s), year, journal, sample size, methodology, key finding
 - Include DOI or stable URL for every source
@@ -282,6 +284,7 @@ Insert the complete Core Brief, then append:
 Insert the complete Core Brief, then append:
 ```markdown
 ## Additional Instructions for This Platform
+- **Begin your output with the YAML metadata header specified in the Core Brief, reproduced verbatim with every field filled in.** Gemini Deep Research has a documented tendency to drop this header even when the Core Brief mandates it; reproducing the YAML block exactly is non-negotiable. Downstream consolidation identifies reports structurally via this header — a report without it is treated as non-compliant.
 - Cast a wide net. Prioritize coverage breadth — survey the full landscape before going deep on any subtopic
 - Include quantitative survey data and adoption statistics where available
 - When reporting survey findings, note: who conducted it, sample size, methodology, and date
@@ -331,7 +334,11 @@ Current wrappers apply exactly one role opener (Claude DR). That asymmetry is de
 
 **Perplexity (Academic).** When a plausible-sounding citation is expected but not findable, the model can fabricate DOIs. The D6 tightening (author + year + venue + DOI required, or report the gap) is the structural counter — a missing field converts what would have been a fabrication into a gap statement, which is honest. Watch for a rise in "gap statement" frequency after v1.1 on academic passes; that's the intended substitution, not a regression.
 
+**Perplexity DR (both Web and Academic).** Generation-collapse failure mode: the model completes its research pass (tens of internal research steps, hundreds of sources indexed), outputs the phrase *"I now have sufficient evidence to compile the comprehensive report. Let me build it now."*, appends the source bibliography, and exits without producing the report body. The prompt is echoed back verbatim as the "output." Observed 2026-04-19 on topic `gt-suicide-crosslang` (v1.3.1, Academic pass): 46 research steps, 273 sources, zero report body; re-prompting restarted the research loop and hit the same wall with fewer sources. Root cause: the full Core Brief output spec (8 sections including Adversarial Self-Check with its new-search requirement, 7-dimension Self-Assessment with per-dimension justification, and Open Self-Critique) exhausts Perplexity's per-turn output-generation budget before the report body begins. Perplexity's research/write phases are not cleanly separated the way Claude DR and Gemini DR are. **Structural counter (v1.3.2):** both Perplexity wrappers now override the Core Brief output format to omit §5, §7, §8 on Perplexity passes only. Verified 2026-04-19 on the same topic with a hand-stripped prompt — Perplexity produced all 5 retained sections with proper YAML header, filled Locale-Fitness Matrix, and 19-source Source Inventory. Tradeoff: no Perplexity self-scored Tier 1 metadata in Phase 2. Acceptable because Phase 3 scoring runs independently against the report body, so the loss is diagnostic-only (can't compare self-score to independent score for Perplexity), not substantive.
+
 **Gemini DR.** Breadth bias. Will enumerate many sources shallowly rather than fewer sources deeply. Counter: require per-finding depth (methodology, sample size, effect size where applicable) alongside coverage.
+
+Gemini DR also silently drops the YAML metadata header specified in the Core Brief. Observed 2026-04-17 on topic `mexico-city-urban-reforestation` (v1.3): Gemini jumped straight to a prose title, skipping the entire YAML block, while Claude-DR, Perplexity-Academic, and Perplexity-Web on the same topic produced correct headers. The v1.3.1 wrapper now re-states the YAML requirement as its first bullet. Watch subsequent Gemini-DR passes to confirm compliance lifts; if drops continue, escalate to an in-Core-Brief Gemini-specific pre-header reminder.
 
 **ChatGPT DR.** Tone drift toward executive-summary register even when the topic is academic. The wrapper's "source type classification" instruction partly counters this, but if register matters (e.g., thesis research), specify audience explicitly in `{{DECISION_CONTEXT}}` — e.g., "Audience: doctoral committee; register: formal academic prose with methodological specificity."
 

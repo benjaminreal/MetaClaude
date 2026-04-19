@@ -291,8 +291,27 @@ Use these to verify the skill produces correct outputs:
 
 ## Version & Changelog
 
-**Current version:** 1.3
+**Current version:** 1.3.2
 **Author:** Benjamín Calderón
+
+### 1.3.2 (2026-04-19) — Benjamín Calderón
+
+Targeted Perplexity-DR generation-collapse fix surfaced by a real-world run on topic `gt-suicide-crosslang` (SCM donor-pool validation for a Master's thesis). Perplexity Deep Research completed 46 internal research steps, indexed 273 sources, emitted the phrase *"I now have sufficient evidence to compile the comprehensive report. Let me build it now."*, appended its bibliography, and terminated without producing the report body. Re-prompting restarted the research loop and hit the same wall. Root cause: the full Core Brief output spec (8 sections — including §5 Adversarial Self-Check with its mid-write new-search requirement, §7 seven-dimension Self-Assessment with per-dimension justification, and §8 Open Self-Critique) exhausts Perplexity's per-turn output-generation budget before the report body begins. Claude DR and Gemini DR have cleaner research/write phase separation and are unaffected. Patch:
+
+- Both Perplexity wrappers (`Perplexity-Web` and `Perplexity-Academic`) in `references/phase1-templates.md` now open with an **Output format override** bullet instructing the model to omit Core Brief sections 5, 7, and 8 and produce only the 5 retained sections (Executive Summary, Findings by RQ, Domain-Specific Sections, Source Inventory, Gaps), renumbered §1–§5.
+- Added **Perplexity DR (both Web and Academic)** entry to *Known failure modes, per platform* documenting the echo-and-exit pattern with dated observation, root-cause reasoning, and structural counter.
+- Tradeoff explicitly documented: no Perplexity self-scored Tier 1 metadata reaches Phase 2. Acceptable because Phase 3 scoring runs independently against the report body — the loss is diagnostic-only (can't compare self-score to independent score for Perplexity passes), not substantive.
+
+Verified by re-running the same topic with a hand-stripped prompt: Perplexity produced all 5 retained sections with proper YAML header, the full Locale-Fitness Matrix with admissibility verdicts, and a 19-source Source Inventory. No methodology, rubric, or consolidation-template changes.
+
+### 1.3.1 (2026-04-17) — Benjamín Calderón
+
+Targeted Gemini-DR YAML compliance fix surfaced by a retrospective quality audit across four projects (LitReview_v1, Small_bets_v1, flowerpot_v1, mexico-city_v1.3). The audit found that Gemini-DR silently drops the YAML metadata header mandated by the Core Brief even in v1.3 — the only platform to do so. All three other platforms on the same topic produced correct headers. Patch:
+
+- Elevated the YAML-header requirement to the first bullet of the Gemini wrapper in `references/phase1-templates.md`, with an explicit note that Gemini has a documented tendency to drop it.
+- Expanded the **Gemini DR** entry in *Known failure modes, per platform* to document the drop pattern with topic + date, and flagged an escalation path (in-Core-Brief pre-header reminder) if the next Gemini-DR passes still drop the header.
+
+No changes to methodology, rubric, or consolidation template. The audit also surfaced cross-platform author-attribution hallucinations (the same paper credited to different author lists across reports) as a candidate for a v1.4 prompt-level control — captured in `BACKLOG.md` for the next feature cycle.
 
 ### 1.3 (2026-04-15) — Benjamín Calderón
 
