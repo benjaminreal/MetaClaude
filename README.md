@@ -1,6 +1,6 @@
 # MetaClaude
 
-A personal workspace of [Claude](https://claude.ai) skills and supporting tooling. Everything here is designed for my own use; it's published in case any of it is useful to someone else working through the same problems.
+A personal workspace of [Claude](https://claude.ai) skills. Everything here is designed for my own use; it's published in case any of it is useful to someone else working through the same problems.
 
 Nothing in this repository is endorsed by or affiliated with Anthropic.
 
@@ -33,10 +33,6 @@ unzip path/to/research-triangulation_v1.3.skill -d ~/.claude/skills/
 Download the `.skill` file, open it, click **Save skill** in the prompt.
 
 Verify installation by asking Claude something the skill should trigger on. If it doesn't trigger, the skill description wasn't selected — invoke it explicitly (`/skill-name` or `use the X skill`).
-
-## Tooling
-
-[`tooling/skill-doc-generator-patched/`](./tooling/skill-doc-generator-patched/) is a fork of Anthropic's `skill-doc-generator` with five bugs fixed. See [`PATCH_NOTES.md`](./tooling/skill-doc-generator-patched/PATCH_NOTES.md) for specifics. This is a utility, not a triggered skill — it doesn't belong in `skills/` because it's not meant to be invoked by the model.
 
 ## Versioning
 
