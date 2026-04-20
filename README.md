@@ -21,7 +21,9 @@ Each skill has its own `README.md`, `SKILL.md`, and (where relevant) `BACKLOG.md
 
 ## Install
 
-Skills install as folders under `~/.claude/skills/`. Clone the repo and copy the skill you want:
+Two install methods, pick whichever suits your setup.
+
+### Claude Code / CLI — git clone
 
 ```bash
 mkdir -p ~/.claude/skills
@@ -32,7 +34,22 @@ rm -rf /tmp/metaclaude
 
 Replace `research-triangulation` with `closingtime` (or any other) to install a different skill. To pin to a specific released version, add `--branch <tag>` to the clone — e.g. `--branch research-triangulation-v1.3.2`.
 
-Verify installation by asking Claude something the skill should trigger on. If it doesn't trigger, the skill description wasn't selected — invoke it explicitly (`/skill-name` or `use the X skill`).
+### Claude Code / CLI — `.skill` archive
+
+Download the `.skill` bundle from the [Releases](../../releases) page, then:
+
+```bash
+mkdir -p ~/.claude/skills
+unzip path/to/research-triangulation_v1.3.2.skill -d ~/.claude/skills/
+```
+
+### Cowork mode
+
+Download the `.skill` file from the [Releases](../../releases) page, open it, and click **Save skill** in the prompt.
+
+### Verify
+
+Ask Claude something the skill should trigger on. If it doesn't trigger, the skill description wasn't selected — invoke it explicitly (`/skill-name` or `use the X skill`).
 
 ## Versioning
 
