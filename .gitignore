@@ -11,17 +11,6 @@ __pycache__/
 .venv/
 venv/
 
-# Private working files (this repo is the public skills repo; everything under
-# /projects/31_MetaClaude/ outside skills/, LICENSE, and README.md is private)
-MIGRATION_PLAN.md
-project_index.md
-project_session.md
-pending_learnings.md
-research/
-private-artifacts/
-private-examples/
-tooling/
-
 # Editor / misc
 *.swp
 *.swo
