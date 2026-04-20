@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Dropbox (workspace-level; not for the public repo)
+.dropboxignore
+
 # Python
 *.pyc
 __pycache__/
