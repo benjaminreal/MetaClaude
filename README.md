@@ -15,7 +15,7 @@ Skills install as a folder under `~/.claude/skills/` (Claude Code) or via the **
 | Skill | Latest | Status | One-liner |
 |---|---|---|---|
 | [`closingtime`](./skills/closingtime/) | v1.0 | Shipped | Session continuity manager — logs work, updates a project index, extracts insights. Two modes: `closingtime` to close, `newbeginning` to open. |
-| [`research-triangulation`](./skills/research-triangulation/) | v1.3.2 | Shipped | End-to-end methodology for running the same research across multiple AI platforms (Claude, Perplexity, Gemini, ChatGPT) and consolidating findings through convergence/divergence analysis. |
+| [`research-triangulation`](./skills/research-triangulation/) | v1.5 | Shipped | End-to-end methodology for running the same research across multiple AI platforms (Claude, Perplexity, Gemini, ChatGPT) and consolidating findings through convergence/divergence analysis. |
 
 Each skill has its own `README.md`, `SKILL.md`, and (where relevant) `BACKLOG.md` with open items and closed-decision register, plus `evals/` for regression checks.
 
@@ -32,7 +32,7 @@ cp -r /tmp/metaclaude/skills/research-triangulation ~/.claude/skills/
 rm -rf /tmp/metaclaude
 ```
 
-Replace `research-triangulation` with `closingtime` (or any other) to install a different skill. To pin to a specific released version, add `--branch <tag>` to the clone — e.g. `--branch research-triangulation-v1.3.2`.
+Replace `research-triangulation` with `closingtime` (or any other) to install a different skill. To pin to a specific released version, add `--branch <tag>` to the clone — e.g. `--branch research-triangulation-v1.5`.
 
 ### Claude Code / CLI — `.skill` archive
 
@@ -40,7 +40,7 @@ Download the `.skill` bundle from the [Releases](../../releases) page, then:
 
 ```bash
 mkdir -p ~/.claude/skills
-unzip path/to/research-triangulation_v1.3.2.skill -d ~/.claude/skills/
+unzip path/to/research-triangulation_v1.5.skill -d ~/.claude/skills/
 ```
 
 ### Cowork mode
