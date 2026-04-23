@@ -22,7 +22,7 @@ Every placeholder in the templates below refers to one of these parameters. Reso
 | `{{WHAT_TO_INCLUDE}}` | Optional | Specific domains, industries, or source types to prioritize | Set to "None specified" if not applicable |
 | `{{WHAT_TO_EXCLUDE}}` | Optional | Topics, source types, or frameworks to skip | Set to "None specified" if not applicable |
 | `{{KNOWN_CONTEXT}}` | Yes | What the user already knows — prevents restating basics | Ask user: "What do you already know about this?" |
-| `{{INJECTED_SOURCE_PROFILE}}` | Yes | The source hierarchy block from the selected source profile | Paste the structured export block from `references/source-profiles.md` verbatim |
+| `{{INJECTED_SOURCE_PROFILE}}` | Yes | The source hierarchy block from the selected source profile | Paste the structured export block from `references/source-profiles.md` — contains the source hierarchy + the search instruction for THIS platform only. See the Structured Export Format section in that file. |
 | `{{DOMAIN_SPECIFIC_SECTIONS}}` | Yes | Output sections specific to this topic type | See "Domain-Specific Section Defaults" below |
 | `{{DATE_ISO}}` | Yes | ISO 8601 date (YYYY-MM-DD) the prompt was generated | Current date |
 | `{{PLATFORM_NAME}}` | Yes | Target platform | One of: `Claude`, `Perplexity`, `Gemini`, `ChatGPT` |
@@ -85,9 +85,11 @@ For each platform-pass combination in the research plan:
 
 1. Start with the Core Brief Template below
 2. Resolve every `{{VAR_NAME}}` using the Parameter Dictionary
-3. Inject the source hierarchy by pasting the selected profile's structured export block into `{{INJECTED_SOURCE_PROFILE}}` (see `references/source-profiles.md`)
-4. Wrap the completed core brief in the appropriate Platform Wrapper
-5. Save as `prompt_{{PLATFORM_NAME}}-{{PASS_TYPE}}_{{TOPIC_SLUG}}.md`
+3. Select the section profile for this platform-depth combination from `references/section-profiles.md` (lookup by platform + depth mode — default is Full; use Light for mid-capability DR agents or when the user requests a lighter output spec)
+4. If the profile is not `standard-full`, prepend the profile's section-selection preamble to the Output Format section of the Core Brief
+5. Inject the source hierarchy by pasting the selected source profile's structured export block into `{{INJECTED_SOURCE_PROFILE}}` — the export block contains the source hierarchy plus the search instruction for THIS platform only (see `references/source-profiles.md`)
+6. Wrap the completed core brief in the appropriate Platform Wrapper
+7. Save as `prompt_{{PLATFORM_NAME}}-{{PASS_TYPE}}_{{TOPIC_SLUG}}.md`
 
 Produce one Operator Handoff File alongside the prompt files — see the Operator Handoff Template at the bottom of this document.
 
@@ -249,10 +251,9 @@ Then close with:
 
 **File**: `prompt_Perplexity-Web_{{TOPIC_SLUG}}.md`
 
-Insert the complete Core Brief, then append:
+Insert the complete Core Brief (with any section-selection preamble already applied per `references/section-profiles.md`), then append:
 ```markdown
 ## Additional Instructions for This Platform
-- **Output format override for Perplexity.** Omit Core Brief sections 5 (Adversarial Self-Check), 7 (Self-Assessment), and 8 (Open Self-Critique). Produce only sections 1 (Executive Summary), 2 (Findings by Research Question), 3 (Domain-Specific Sections), 4 (Source Inventory), and 6 (Gaps and Unanswered Questions) — renumbered as §1–§5. These omitted sections trigger a generation-collapse failure mode on Perplexity Deep Research documented in *Known failure modes / Perplexity DR*. Phase 2 consolidation does not depend on their presence in Perplexity reports.
 - Focus on recent, practitioner-oriented sources: blog posts, YouTube walkthroughs, conference talks, professional publications, social media threads with substantive content
 - For every workflow, method, or tool claim: who documented it? When? What was the outcome?
 - Include links to every source
@@ -266,10 +267,9 @@ Insert the complete Core Brief, then append:
 
 **File**: `prompt_Perplexity-Academic_{{TOPIC_SLUG}}.md`
 
-Insert the complete Core Brief, then append:
+Insert the complete Core Brief (with any section-selection preamble already applied per `references/section-profiles.md`), then append:
 ```markdown
 ## Additional Instructions for This Platform
-- **Output format override for Perplexity.** Omit Core Brief sections 5 (Adversarial Self-Check), 7 (Self-Assessment), and 8 (Open Self-Critique). Produce only sections 1 (Executive Summary), 2 (Findings by Research Question), 3 (Domain-Specific Sections), 4 (Source Inventory), and 6 (Gaps and Unanswered Questions) — renumbered as §1–§5. These omitted sections trigger a generation-collapse failure mode on Perplexity Deep Research documented in *Known failure modes / Perplexity DR*. Phase 2 consolidation does not depend on their presence in Perplexity reports.
 - Focus exclusively on peer-reviewed academic sources, working papers from recognized institutions, and doctoral research
 - For every study: cite author(s), year, journal, sample size, methodology, key finding
 - Include DOI or stable URL for every source
