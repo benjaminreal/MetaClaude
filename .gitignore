@@ -17,3 +17,6 @@ venv/
 
 # Private skill planning docs (backlog stays local, not synced to public repo)
 skills/*/BACKLOG.md
+
+# Eval run artifacts (raw LLM logs, not skill source)
+skills/*/evals/description-optimization/
