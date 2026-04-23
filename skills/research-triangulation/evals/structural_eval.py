@@ -46,6 +46,8 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 SKILL_MD = SKILL_ROOT / "SKILL.md"
 PHASE1_TEMPLATES = SKILL_ROOT / "references" / "phase1-templates.md"
 CONSOLIDATION_TEMPLATE = SKILL_ROOT / "references" / "consolidation-template.md"
+SECTION_PROFILES = SKILL_ROOT / "references" / "section-profiles.md"
+SOURCE_PROFILES = SKILL_ROOT / "references" / "source-profiles.md"
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 # Required keys in the YAML metadata header, per phase1-templates.md § "Metadata Header".
@@ -82,6 +84,14 @@ EXPECTED_VALID_PASS_TYPES = {
     "Gemini": {"DR"},
     "ChatGPT": {"DR"},
 }
+
+EXPECTED_SOURCE_PLATFORM_HEADERS = [
+    "Claude Deep Research",
+    "Perplexity (Web)",
+    "Perplexity (Academic)",
+    "Gemini Deep Research",
+    "ChatGPT Deep Research",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +402,157 @@ def check_fixture_metadata_headers() -> list[str]:
     return issues
 
 
+def extract_section_profiles(text: str) -> dict[str, set[int]]:
+    """Extract profile names and their included section numbers from section-profiles.md.
+
+    Profiles are headed by ``## Profile: `name` `` and declare their sections in a
+    ``**Sections included:**`` line containing ``§N`` references.
+    """
+    profiles: dict[str, set[int]] = {}
+    for m in re.finditer(
+        r"## Profile: `([^`]+)`\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL
+    ):
+        name = m.group(1)
+        block = m.group(2)
+        inc_match = re.search(r"\*\*Sections included:\*\*\s*([^\n]+)", block)
+        if inc_match:
+            profiles[name] = {int(s) for s in re.findall(r"§(\d+)", inc_match.group(1))}
+        else:
+            profiles[name] = set()
+    return profiles
+
+
+def check_section_profile_schema() -> list[str]:
+    """section-profiles.md must define well-formed profiles: each has a name,
+    a non-empty sections list, and every section number is in range 1-8."""
+    issues: list[str] = []
+    text = read(SECTION_PROFILES)
+    profiles = extract_section_profiles(text)
+
+    if not profiles:
+        issues.append("No profiles found in section-profiles.md")
+        return issues
+
+    for name, sections in profiles.items():
+        if not sections:
+            issues.append(f"Profile '{name}' has no sections listed")
+            continue
+        invalid = {s for s in sections if s < 1 or s > 8}
+        if invalid:
+            issues.append(
+                f"Profile '{name}' references invalid section numbers: "
+                f"{sorted(invalid)} (valid range: 1-8)"
+            )
+
+    if "Profile Lookup Table" not in text:
+        issues.append("Profile Lookup Table section not found in section-profiles.md")
+
+    return issues
+
+
+def check_profile_wrapper_no_override() -> list[str]:
+    """No platform wrapper in phase1-templates.md should contain inline section
+    overrides — section selection is now owned by section-profiles.md."""
+    issues: list[str] = []
+    text = read(PHASE1_TEMPLATES)
+
+    m = re.search(
+        r"## Platform Wrappers\s*\n(.*?)(?:\n## |\Z)", text, re.DOTALL,
+    )
+    if not m:
+        issues.append("Platform Wrappers section not found in phase1-templates.md")
+        return issues
+    wrappers_section = m.group(1)
+
+    override_patterns = [
+        ("Output format override", "Output format override"),
+        ("Omit Core Brief sections", "Omit Core Brief sections"),
+    ]
+    for label, pattern in override_patterns:
+        matches = list(re.finditer(pattern, wrappers_section, re.IGNORECASE))
+        if matches:
+            issues.append(
+                f"Platform Wrappers section contains inline section override "
+                f"('{label}'). Section selection should be in "
+                f"references/section-profiles.md, not in wrappers. "
+                f"Found {len(matches)} occurrence(s)."
+            )
+
+    return issues
+
+
+def check_source_profile_export_format() -> list[str]:
+    """Every source profile in source-profiles.md must list platform search
+    instructions under identical headers, in the same order."""
+    issues: list[str] = []
+    text = read(SOURCE_PROFILES)
+
+    profile_blocks = list(re.finditer(
+        r"## Profile: ([^\n]+)\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL,
+    ))
+
+    if not profile_blocks:
+        issues.append("No profiles found in source-profiles.md")
+        return issues
+
+    for m in profile_blocks:
+        profile_name = m.group(1).strip()
+        block = m.group(2)
+
+        headers = re.findall(r"- \*\*([^*]+):\*\*", block)
+        if not headers:
+            issues.append(
+                f"Source profile '{profile_name}' has no platform search "
+                "instruction headers"
+            )
+            continue
+
+        if headers != EXPECTED_SOURCE_PLATFORM_HEADERS:
+            missing = set(EXPECTED_SOURCE_PLATFORM_HEADERS) - set(headers)
+            extra = set(headers) - set(EXPECTED_SOURCE_PLATFORM_HEADERS)
+            if missing:
+                issues.append(
+                    f"Source profile '{profile_name}' missing platform headers: "
+                    f"{sorted(missing)}"
+                )
+            if extra:
+                issues.append(
+                    f"Source profile '{profile_name}' has unexpected platform "
+                    f"headers: {sorted(extra)}"
+                )
+            if not missing and not extra:
+                issues.append(
+                    f"Source profile '{profile_name}' has platform headers in "
+                    f"wrong order. Expected: {EXPECTED_SOURCE_PLATFORM_HEADERS}, "
+                    f"got: {headers}"
+                )
+
+    return issues
+
+
+def check_section_coverage() -> list[str]:
+    """Every Core Brief section (1-8) must be referenced by at least one
+    section profile. No orphaned sections."""
+    issues: list[str] = []
+    text = read(SECTION_PROFILES)
+    profiles = extract_section_profiles(text)
+
+    if not profiles:
+        return issues  # already flagged by check_section_profile_schema
+
+    all_sections: set[int] = set()
+    for sections in profiles.values():
+        all_sections |= sections
+
+    uncovered = set(range(1, 9)) - all_sections
+    if uncovered:
+        issues.append(
+            f"Core Brief sections not covered by any profile: {sorted(uncovered)}"
+        )
+
+    return issues
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -403,6 +564,10 @@ CHECKS = [
     ("metadata_schema_consistency", check_metadata_schema_consistency),
     ("fixture_filenames", check_fixture_filenames),
     ("fixture_metadata_headers", check_fixture_metadata_headers),
+    ("section_profile_schema", check_section_profile_schema),
+    ("profile_wrapper_no_override", check_profile_wrapper_no_override),
+    ("source_profile_export_format", check_source_profile_export_format),
+    ("section_coverage", check_section_coverage),
 ]
 
 

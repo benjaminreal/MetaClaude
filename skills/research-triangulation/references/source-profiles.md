@@ -1,6 +1,26 @@
 # Source Priority Profiles
 
-Select the profile that matches the research context. Each profile defines a ranked source hierarchy and platform-specific instructions for embedding in research prompts.
+Select the profile that matches the research context. Each profile defines a ranked source hierarchy and platform-specific search instructions for embedding in research prompts.
+
+## Structured Export Format
+
+When assembling a research prompt, the `{{INJECTED_SOURCE_PROFILE}}` placeholder in the Core Brief's Source Requirements section is replaced with a **structured export block** — a deterministic slice of the selected profile for the target platform. The export block has this exact format for every profile:
+
+```
+### Source Priority: {Profile Name}
+
+**Source hierarchy (highest → lowest trust):**
+1. {source type}
+2. {source type}
+...
+
+**Search focus for this platform:**
+{The platform-specific instruction for THIS platform only — copy verbatim from the profile below}
+```
+
+**Assembly rule:** for profile X and platform Y, the export block is always: the profile's source hierarchy (same across all platforms) + that platform's search instruction (one entry from the platform search instructions below). Do not paste instructions for other platforms.
+
+---
 
 ## Profile: Academic-First
 
@@ -15,11 +35,12 @@ Select the profile that matches the research context. Each profile defines a ran
 6. Expert commentary and opinion pieces
 7. Vendor/industry reports (flag as low-trust)
 
-**Platform instructions to embed**:
-- Perplexity Academic: "Prioritize peer-reviewed journals, Google Scholar indexed papers, and institutional working papers. For every claim, provide: author(s), year, journal/publication, sample size where applicable, and DOI or URL. Exclude blog posts, Medium articles, and vendor white papers unless no academic source exists."
-- Claude Deep Research: "Ground every finding in the academic literature first. Use practitioner sources only to illustrate or contextualize academic findings. When citing practitioner evidence, explicitly note the evidence gap — what would a rigorous study need to test?"
-- Gemini Deep Research: "Survey the academic landscape broadly. Include citation counts and recency. Flag foundational papers (>500 citations) separately from recent work (<2 years). Note any systematic reviews or meta-analyses on the topic."
-- ChatGPT: Same as Claude instructions.
+**Platform search instructions:**
+- **Claude Deep Research:** "Ground every finding in the academic literature first. Use practitioner sources only to illustrate or contextualize academic findings. When citing practitioner evidence, explicitly note the evidence gap — what would a rigorous study need to test?"
+- **Perplexity (Web):** "Search for grey literature, preprints, and practitioner content that extends or applies academic findings. For every non-academic claim, note whether supporting peer-reviewed evidence exists. Deprioritize SEO content and aggregator sites — link to primary sources."
+- **Perplexity (Academic):** "Prioritize peer-reviewed journals, Google Scholar indexed papers, and institutional working papers. For every claim, provide: author(s), year, journal/publication, sample size where applicable, and DOI or URL. Exclude blog posts, Medium articles, and vendor white papers unless no academic source exists."
+- **Gemini Deep Research:** "Survey the academic landscape broadly. Include citation counts and recency. Flag foundational papers (>500 citations) separately from recent work (<2 years). Note any systematic reviews or meta-analyses on the topic."
+- **ChatGPT Deep Research:** "Ground every finding in the academic literature first. Use practitioner sources only to illustrate or contextualize academic findings. When citing practitioner evidence, explicitly note the evidence gap — what would a rigorous study need to test?"
 
 ---
 
@@ -36,10 +57,12 @@ Select the profile that matches the research context. Each profile defines a ran
 6. Academic papers validating practitioner patterns
 7. Vendor case studies and marketing (flag as vendor-sourced)
 
-**Platform instructions to embed**:
-- Perplexity Web: "Focus on practitioner blogs (Medium, Substack, Smashing Magazine, A List Apart, UX Collective), YouTube walkthroughs, conference talks (recordings and slides), and professional publications. For every workflow or method, require: who did it, what tools they used, what the before/after looked like, and a link to the original source."
-- Claude Deep Research: "Synthesize practitioner evidence into patterns. Look for convergence across multiple practitioners — a workflow documented by 3+ independent practitioners is stronger than one person's blog post. When a practitioner claim lacks metrics, note the evidence gap."
-- Gemini Deep Research: "Cast a wide net across practitioner content. Include survey data on adoption patterns. Flag the distinction between 'people say they do X' (survey) vs. 'here's documented evidence of someone doing X' (case study)."
+**Platform search instructions:**
+- **Claude Deep Research:** "Synthesize practitioner evidence into patterns. Look for convergence across multiple practitioners — a workflow documented by 3+ independent practitioners is stronger than one person's blog post. When a practitioner claim lacks metrics, note the evidence gap."
+- **Perplexity (Web):** "Focus on practitioner blogs (Medium, Substack, Smashing Magazine, A List Apart, UX Collective), YouTube walkthroughs, conference talks (recordings and slides), and professional publications. For every workflow or method, require: who did it, what tools they used, what the before/after looked like, and a link to the original source."
+- **Perplexity (Academic):** "Search for academic studies that validate practitioner patterns — empirical evaluations of tools, methods, or workflows. Prioritize studies that measure real-world outcomes rather than lab settings. Note where academic evidence supports or contradicts practitioner claims."
+- **Gemini Deep Research:** "Cast a wide net across practitioner content. Include survey data on adoption patterns. Flag the distinction between 'people say they do X' (survey) vs. 'here's documented evidence of someone doing X' (case study)."
+- **ChatGPT Deep Research:** "Synthesize practitioner evidence into patterns. Look for convergence across multiple practitioners — a workflow documented by 3+ independent practitioners is stronger than one person's blog post. When a practitioner claim lacks metrics, note the evidence gap."
 
 ---
 
@@ -56,9 +79,12 @@ Select the profile that matches the research context. Each profile defines a ran
 6. Government agency publications and FAQs
 7. News reporting on legal developments (flag as secondary)
 
-**Platform instructions to embed**:
-- Perplexity: "Search for primary legal sources first — statutes, court decisions, official regulatory texts. For every legal claim, cite the specific article, section, or case. Note jurisdiction explicitly. Distinguish between binding law and legal commentary."
-- Claude/Gemini: "When analyzing legal frameworks, identify: (a) the applicable statute, (b) relevant judicial interpretations, (c) any regulatory guidance that modifies or clarifies the statute. Flag where the law is ambiguous or where circuit/jurisdictional splits exist."
+**Platform search instructions:**
+- **Claude Deep Research:** "When analyzing legal frameworks, identify: (a) the applicable statute, (b) relevant judicial interpretations, (c) any regulatory guidance that modifies or clarifies the statute. Flag where the law is ambiguous or where circuit/jurisdictional splits exist."
+- **Perplexity (Web):** "Search for primary legal sources, official regulatory texts, and legal practitioner commentary. For every legal claim, cite the specific statute, article, section, or case. Note jurisdiction explicitly. Distinguish between binding law and legal commentary."
+- **Perplexity (Academic):** "Search for legal scholarship — law review articles, treatises, and doctrinal analysis. For every legal claim, cite the specific article, section, or case and link to SSRN, HeinOnline, or equivalent. Prioritize comparative analyses and systematic doctrinal reviews."
+- **Gemini Deep Research:** "Survey the legal landscape broadly. When analyzing legal frameworks, identify: (a) the applicable statute, (b) relevant judicial interpretations, (c) any regulatory guidance. Flag jurisdictional variations and note where the law is evolving."
+- **ChatGPT Deep Research:** "Search across diverse legal source types — statutes, case law, regulatory guidance, legal commentary, and news reporting. For each finding, classify the source type (primary law, judicial interpretation, legal commentary) and note the jurisdiction. Flag where the law is ambiguous or where jurisdictional splits exist."
 
 ---
 
@@ -75,9 +101,12 @@ Select the profile that matches the research context. Each profile defines a ran
 6. Vendor marketing materials (flag explicitly, use only for feature claims)
 7. Social media speculation (lowest trust, use only for signal detection)
 
-**Platform instructions to embed**:
-- Perplexity Web: "Find recent competitive intelligence. For vendor claims about their own products, always cross-reference with independent reviews. For market size claims, require the methodology source. Note when an 'industry report' is actually vendor-sponsored."
-- Claude/Gemini: "Apply the aspiration vs. demonstration test to every competitive claim. 'Company X announced Y' ≠ 'Company X shipped Y' ≠ 'Company X's Y is used by customers.' Track the provenance chain."
+**Platform search instructions:**
+- **Claude Deep Research:** "Apply the aspiration vs. demonstration test to every competitive claim. 'Company X announced Y' ≠ 'Company X shipped Y' ≠ 'Company X's Y is used by customers.' Track the provenance chain."
+- **Perplexity (Web):** "Find recent competitive intelligence. For vendor claims about their own products, always cross-reference with independent reviews. For market size claims, require the methodology source. Note when an 'industry report' is actually vendor-sponsored."
+- **Perplexity (Academic):** "Search for academic studies on market dynamics, industry analysis, and competitive strategy. Prioritize empirical research over opinion. For market size and growth claims, require methodology and sample source."
+- **Gemini Deep Research:** "Cast a wide net across market intelligence sources. Apply the aspiration vs. demonstration test to every claim. Create comparison tables where multiple vendors or products exist. Track provenance — note whether evidence comes from vendor marketing, independent review, or empirical study."
+- **ChatGPT Deep Research:** "Search across diverse source types for competitive intelligence. Apply the aspiration vs. demonstration test to every claim. For vendor marketing, always note that the source is vendor-produced. Classify each finding by source type and typical reliability."
 
 ---
 
@@ -87,8 +116,12 @@ Select the profile that matches the research context. Each profile defines a ran
 
 **Source hierarchy**: Equal weighting across all source types initially. The consolidation phase will reveal which evidence classes are strongest.
 
-**Platform instructions to embed**:
-- All platforms: "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
+**Platform search instructions:**
+- **Claude Deep Research:** "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
+- **Perplexity (Web):** "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
+- **Perplexity (Academic):** "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
+- **Gemini Deep Research:** "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
+- **ChatGPT Deep Research:** "Search across all source types — academic, practitioner, market, legal, community. For each finding, classify the source type and note its typical trust level. We will determine the appropriate evidence weighting during synthesis."
 
 **Note**: Mixed/Exploratory is the default when the user hasn't specified a preference. After the first research cycle on a topic, switch to a more specific profile based on where the strongest evidence was found.
 
@@ -96,11 +129,16 @@ Select the profile that matches the research context. Each profile defines a ran
 
 ## Custom Profile Construction
 
-If none of the above profiles fit, construct a custom profile:
+If none of the above profiles fit, construct a custom profile following the same structure:
 
-1. List the source types relevant to this topic
-2. Rank them by expected trust level for this specific domain
-3. Write platform-specific instructions following the pattern above
+1. Name the profile and write a "Use when" description
+2. List the source types relevant to this topic, ranked by expected trust level
+3. Write platform-specific search instructions for all five platform groups, using the same headers as above:
+   - Claude Deep Research
+   - Perplexity (Web)
+   - Perplexity (Academic)
+   - Gemini Deep Research
+   - ChatGPT Deep Research
 4. Note any sources to explicitly exclude (e.g., "Exclude vendor white papers entirely" or "Exclude pre-2024 sources")
 
-Embed the custom profile in the research prompts following the same insertion points as the standard profiles.
+The structured export block for a custom profile follows the same format as standard profiles — hierarchy + the target platform's search instruction.

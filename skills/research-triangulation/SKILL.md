@@ -71,7 +71,7 @@ Pre-flight questions should already be answered. Now define the Phase-1-specific
 
 1. **Research questions**: What specific questions must be answered? (Primary + secondary)
 2. **Source profile**: Which source priority profile applies? → Read `references/source-profiles.md`
-3. **Depth target**: Quick scan (1-2 hours), deep research (4-8 hours), or modular (multi-day)?
+3. **Depth mode**: Full (default) or Light? Full produces the complete 8-section output spec. Light trims to 5 sections for mid-capability DR agents or when a lighter output is acceptable. The depth mode determines the section profile applied during prompt assembly — see `references/section-profiles.md`.
 4. **Recency window**: How recent must sources be? (Default: 18 months, accept foundational older work)
 
 ### Step 2: Select and Configure Source Profiles
@@ -91,8 +91,9 @@ The source profile determines the source hierarchy instructions embedded in each
 
 Read `references/phase1-templates.md` for the parameterized prompt templates. Each template has:
 - A model-agnostic core (research questions, scope, constraints, output format)
+- A section profile that selects which output sections to include based on platform and depth mode — see `references/section-profiles.md`
 - Platform-specific wrappers that exploit each platform's strengths
-- Source profile instructions matched to the selected profile
+- Source profile instructions matched to the selected profile, in a deterministic structured export format — see `references/source-profiles.md`
 
 **Platform assignment strategy** (default, adjust based on topic):
 - **Claude Deep Research**: Best for synthesis-heavy topics. Assign when you need analytical depth and framework integration.
@@ -281,7 +282,8 @@ Note: Phase 1 adversarial follow-up is embedded in the research prompt templates
 | `references/phase1-templates.md` | Always read when generating Phase 1 research prompts |
 | `references/consolidation-template.md` | Always read when generating the consolidation prompt |
 | `references/quality-rubric.md` | Always read when scoring (contains agent prompts and rubric details) |
-| `references/source-profiles.md` | Read during Step 2 to select and configure source priorities |
+| `references/source-profiles.md` | Read during Step 2 to select and configure source priorities. Contains the structured export format for `{{INJECTED_SOURCE_PROFILE}}` injection. |
+| `references/section-profiles.md` | Read during Step 3 to select the section profile for each platform-depth combination. Determines which Core Brief output sections appear in each prompt. |
 | `references/platform-tracker.md` | Read during Step 10 to log results; consult before Step 3 for historical platform performance |
 
 ## Test Cases for This Skill
@@ -295,8 +297,18 @@ Use these to verify the skill produces correct outputs:
 
 ## Version & Changelog
 
-**Current version:** 1.4
+**Current version:** 1.5
 **Author:** Benjamín Calderón
+
+### 1.5 (2026-04-22) — Benjamín Calderón
+
+Parameterize the Core Brief contract: platform x depth section profiles + source-injection contract. Two bundled items that share the same Core Brief variable-contract surface.
+
+- **Parameterized Core Brief with platform x depth section profiles.** New file `references/section-profiles.md` defines three profiles (`standard-full`, `perplexity-optimized`, `light`) that declare which Core Brief output sections a given platform-depth combination produces. Replaces the ad-hoc Perplexity wrapper overrides (which omitted §5/§7/§8 inline) with a structural profile system. The v1.3.2 Perplexity behavior is now reproduced through the `perplexity-optimized` profile with no wrapper-level override. Light mode (new) trims the output spec for mid-capability DR agents — motivated by an external cold-user test (2026-04-20) where a Sonnet-class agent crashed on the full 8-section spec. Adding a new platform or depth mode is now a profile definition, not a wrapper edit.
+- **Depth mode in Step 1.** Step 1 now asks the user to select Full (default, 8-section output) or Light (5-section output for mid-capability agents). The depth mode feeds into the section profile lookup during prompt assembly.
+- **D14 — source-hierarchy injection contract.** `{{INJECTED_SOURCE_PROFILE}}` now has a defined target shape. Every source profile in `references/source-profiles.md` lists platform search instructions under identical headers (Claude Deep Research, Perplexity Web, Perplexity Academic, Gemini Deep Research, ChatGPT Deep Research) so the substitution is deterministic. A Structured Export Format section at the top of the file defines exactly what gets pasted and how. Previously, profiles had inconsistent formatting — some grouped platforms, some listed "Same as Claude," some omitted ChatGPT entirely — making paste behavior vibes-based.
+- **Assembly process updated.** The prompt assembly process in `references/phase1-templates.md` gains two new steps: (3) look up the section profile for this platform-depth combination, (4) prepend the section-selection preamble if the profile omits sections. Source injection step updated to reference the structured export format.
+- **Structural eval extended.** Four new checks in `evals/structural_eval.py`: section profile schema validation, profile-wrapper-no-override enforcement, source profile export format consistency, and section coverage completeness. Total: 10 checks (6 existing + 4 new).
 
 ### 1.4 (2026-04-22) — Benjamín Calderón
 
