@@ -1,6 +1,6 @@
 # research-triangulation
 
-> Orchestrates research across multiple AI platforms to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions "research triangulation," "cross-platform research," "consolidation prompt," "research synthesis," "multi-model research," or references running the same research question across different AI tools. This skill coordinates multi-platform research — for single-platform prompts, use other skills or write directly.
+> Orchestrates research across AI platforms with Deep Research or equivalent autonomous research functionality (Claude, Perplexity, Gemini, ChatGPT, Grok, and others) to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions "research triangulation," "cross-platform research," "consolidation prompt," "research synthesis," "multi-model research," "deep research," or references running the same research question across different AI tools. This skill coordinates multi-platform research — for single-platform prompts, use other skills or write directly.
 
 ## When to Use This Skill
 
@@ -30,8 +30,6 @@
 
 ### Other
 
-- [`BACKLOG.md`](BACKLOG.md)
-- [`design-notes/phase1-diagnosis-2026-04-15.md`](design-notes/phase1-diagnosis-2026-04-15.md)
 - [`evals/README.md`](evals/README.md)
 - [`evals/fixtures/Claude-DR_sample-topic_2026-04-15.md`](evals/fixtures/Claude-DR_sample-topic_2026-04-15.md)
 - [`evals/fixtures/prompt_Claude-DR_sample-topic.md`](evals/fixtures/prompt_Claude-DR_sample-topic.md)

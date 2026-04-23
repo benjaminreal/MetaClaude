@@ -1,6 +1,6 @@
 ---
 name: research-triangulation
-description: Orchestrates research across multiple AI platforms to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions "research triangulation," "cross-platform research," "consolidation prompt," "research synthesis," "multi-model research," or references running the same research question across different AI tools. This skill coordinates multi-platform research — for single-platform prompts, use other skills or write directly.
+description: Orchestrates research across AI platforms with Deep Research or equivalent autonomous research functionality (Claude, Perplexity, Gemini, ChatGPT, Grok, and others) to produce higher-confidence findings through convergence/divergence analysis. Use this skill whenever the user wants to triangulate research across platforms, cross-validate findings from multiple AI-generated reports, consolidate or synthesize multi-source research outputs, or design a multi-platform research process. Also trigger when the user mentions "research triangulation," "cross-platform research," "consolidation prompt," "research synthesis," "multi-model research," "deep research," or references running the same research question across different AI tools. This skill coordinates multi-platform research — for single-platform prompts, use other skills or write directly.
 ---
 
 # Research Triangulation Methodology
@@ -9,7 +9,7 @@ description: Orchestrates research across multiple AI platforms to produce highe
 ## Purpose & Scope
 
 ### What this skill does
-Orchestrates research across multiple AI platforms to produce higher-confidence findings than any single platform delivers alone. The core mechanism: when independent systems with different training data, search access, and synthesis biases converge on a finding, confidence increases. When they diverge, the divergence itself is diagnostic.
+Orchestrates research across AI platforms with Deep Research or equivalent autonomous research functionality — Claude, Perplexity, Gemini, ChatGPT, and others (Grok DeepSearch, You.com Research, Kimi, Copilot Researcher, Manus) — to produce higher-confidence findings than any single platform delivers alone. The core mechanism: when independent systems with different training data, search access, and synthesis biases converge on a finding, confidence increases. When they diverge, the divergence itself is diagnostic.
 
 Three phases: divergent research (parallel platform prompts) → convergent consolidation (cross-validation synthesis) → verification & scoring (quality rubric + claims tracing). Each phase can run independently.
 
@@ -85,7 +85,9 @@ Read `references/source-profiles.md` to select the appropriate source priority p
 
 The source profile determines the source hierarchy instructions embedded in each platform's research prompt.
 
-### Step 3: Generate Platform-Specific Research Prompts
+### Step 3: Select Platforms and Generate Research Prompts
+
+**Before generating any prompts, ask the user which platforms they have access to and intend to run.** Generate prompts only for the confirmed set — do not emit prompts for platforms the user cannot or does not want to use. If the user doesn't specify, present the platform list below and ask them to pick.
 
 Read `references/phase1-templates.md` for the parameterized prompt templates. Each template has:
 - A model-agnostic core (research questions, scope, constraints, output format)
@@ -99,7 +101,9 @@ Read `references/phase1-templates.md` for the parameterized prompt templates. Ea
 - **Gemini Deep Research**: Best for broad landscape surveys and quantitative data synthesis. Assign when coverage breadth matters.
 - **ChatGPT Deep Research**: Best for diverse source types and exploratory searches. Good complementary pass.
 
-**Minimum: 3 platforms. Recommended: 4 (including at least one academic-focused pass).**
+Other platforms with Deep Research or equivalent functionality (Grok DeepSearch, You.com Research, Kimi, Copilot Researcher, Manus) can be used — the Core Brief template is model-agnostic. Generate a wrapper following the existing pattern if the user requests a platform not listed above.
+
+**Minimum: 3 platform-passes. Recommended: 4 (including at least one academic-focused pass).**
 
 ### Phase 1 Output Format
 
@@ -291,8 +295,21 @@ Use these to verify the skill produces correct outputs:
 
 ## Version & Changelog
 
-**Current version:** 1.3.2
+**Current version:** 1.4
 **Author:** Benjamín Calderón
+
+### 1.4 (2026-04-22) — Benjamín Calderón
+
+Lean quality and UX pass driven by an external cold-user test (2026-04-20) and retrospective quality audits across Sessions #8–9. Eight items, each independently shippable.
+
+- **Platform-selection gate at Phase 1 entry.** Step 3 now requires asking the user which platforms they have access to before generating prompts. Eliminates unreachable prompt files (e.g., ChatGPT-DR prompts for users without Plus/Pro). The skill also now acknowledges platforms beyond the core four — Grok DeepSearch, You.com Research, Kimi, Copilot Researcher, Manus — as valid targets using the model-agnostic Core Brief.
+- **Skill description updated to "AI platforms with Deep Research or equivalent functionality."** Replaces the ambiguous "across platforms" phrasing. Added "deep research" as a trigger phrase.
+- **Perplexity-Web numbered bibliography requirement.** Wrapper now mandates that every `[cite:N]` marker resolve to a numbered entry in a final "Sources" section (number, author/site, title, URL, year). Fallback: switch to inline parenthetical citations if bibliography can't be produced. Restores Tier 2 source-verification auditability for Perplexity-Web passes.
+- **Gemini-DR DOI-required + specificity-without-verification counter.** Two new structural controls in the Gemini-DR wrapper: (a) every cited paper must carry a DOI or direct URL, with "DOI not found" flagging for sources that lack one; (b) any precise figure (>3 significant digits), specific date, or named author list must carry a citation — otherwise downgraded to "approximately" or flagged as estimate. Targets Gemini's documented pattern of confident but under-cited specifics (Sessions #8–9).
+- **Cross-platform author-attribution countermeasure in Evidence Standards.** Core Brief now requires cross-checking author lists for 3+ author works against an independent reference (publisher page, CrossRef, Google Scholar). If cross-check can't be performed, author list reduces to `[first-author] et al.` rather than reproducing an unverified list. Trade-off: small recall hit on full author lists in exchange for precision gain on attribution accuracy.
+- **Convergence-threshold awareness in Phase 1 prompts (D10).** Evidence Standards now informs research agents that downstream consolidation applies a ±15% convergence threshold, requesting point estimates with uncertainty ranges where possible.
+- **Deep-Research mode pre-flight checklist in handoff.** Replaced the generic "Before You Run" section with per-platform pre-paste checklists (Claude-DR, Perplexity, Gemini-DR, ChatGPT-DR) specifying exact mode toggles to enable before pasting. Prevents silently invalidated runs from missing mode toggles.
+- **D6 — citation-compliance observation discipline.** Not a code change. As v1.4 items get exercised on real triangulations, per-platform citation-compliance behavior should be systematically recorded in platform-tracker entries.
 
 ### 1.3.2 (2026-04-19) — Benjamín Calderón
 

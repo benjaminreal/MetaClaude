@@ -125,8 +125,9 @@ This is the foundation shared across all platforms. Fill it in, then wrap it in 
 
 - Every cited source must include **author(s)**, **year**, **venue/publisher**, and **DOI or stable URL**. If you cannot provide all four, do not cite the source — state the gap explicitly instead. A cited source missing any of these four fields is treated as a fabrication signal during downstream audit, so the legitimate move when evidence is thin is to report the gap, not to manufacture a plausible citation.
 - Distinguish evidence types for every finding: (a) Documented practice — someone did this and reported results; (b) Expert recommendation — practitioner or researcher advises, no specific outcome reported; (c) Plausible inference — based on capabilities, not yet documented.
-- For quantitative claims, report: the number, the source, the sample size (if applicable), and the methodology (if available).
+- For quantitative claims, report: the number, the source, the sample size (if applicable), and the methodology (if available). Downstream analysis applies a ±15% convergence threshold to numeric estimates; where possible, report point estimates with uncertainty ranges (e.g., "8.3% ± 1.2%" or "8.3% (95% CI: 7.1–9.5%)") rather than bare numbers.
 - Apply the aspiration vs. demonstration distinction: announcing intent is categorically different from demonstrating implementation is categorically different from measuring outcomes. Every claim about adoption or results belongs to exactly one of these three buckets and must be labeled accordingly.
+- For any cited work with three or more authors, cross-check the author list against at least one independent reference (publisher page, CrossRef, Google Scholar, or the canonical work page) before including it in the Source Inventory. If the cross-check cannot be performed, reduce the author list to `[first-author] et al.` rather than reproducing an unverified list. Fabricated or misattributed author lists are a recurring cross-platform failure mode — the honest fallback is abbreviation, not guessing.
 
 ## Output Format
 
@@ -255,6 +256,7 @@ Insert the complete Core Brief, then append:
 - Focus on recent, practitioner-oriented sources: blog posts, YouTube walkthroughs, conference talks, professional publications, social media threads with substantive content
 - For every workflow, method, or tool claim: who documented it? When? What was the outcome?
 - Include links to every source
+- **Numbered bibliography required.** If your output uses inline citation markers (e.g., `[cite:1]`, `[1]`, or similar), every marker must resolve to a numbered entry in a final "Sources" section listing: number, author/site, title, URL, and year. If you cannot produce a matching numbered bibliography, switch to inline parenthetical citations (Author, Year) instead — unresolvable markers make the report unauditable downstream.
 - Prioritize sources from the last 6 months for rapidly evolving topics
 - Search in both English and Spanish where relevant
 - This report will be cross-referenced against reports from other AI platforms. Prioritize unique sources that other platforms might miss — community discussions, niche blogs, recent conference talks.
@@ -285,6 +287,8 @@ Insert the complete Core Brief, then append:
 ```markdown
 ## Additional Instructions for This Platform
 - **Begin your output with the YAML metadata header specified in the Core Brief, reproduced verbatim with every field filled in.** Gemini Deep Research has a documented tendency to drop this header even when the Core Brief mandates it; reproducing the YAML block exactly is non-negotiable. Downstream consolidation identifies reports structurally via this header — a report without it is treated as non-compliant.
+- **DOI or direct URL required for every cited paper.** If a DOI or direct URL cannot be found, flag the source as "DOI not found" rather than silently retaining it as fully cited. Gemini Deep Research has a documented tendency to produce confident-sounding but under-cited specifics — this control surfaces gaps rather than burying them.
+- **Specificity-without-verification counter.** If you state a precise figure (>3 significant digits), a specific date, or a named author list, it must carry a citation to a verifiable source. If the citation cannot be provided, downgrade the claim to "approximately" or flag it as an estimate. Unsourced precision is a hallucination signal, not a quality signal.
 - Cast a wide net. Prioritize coverage breadth — survey the full landscape before going deep on any subtopic
 - Include quantitative survey data and adoption statistics where available
 - When reporting survey findings, note: who conducted it, sample size, methodology, and date
@@ -330,13 +334,13 @@ Current wrappers apply exactly one role opener (Claude DR). That asymmetry is de
 
 **Claude DR.** Produces rigorous analysis but can under-source — arrives at a framework faster than it arrives at citations. The Source Inventory table in the Core Brief is the structural counter. If outputs are still thin on sources, add an explicit minimum source count in the Additional Instructions block.
 
-**Perplexity (Web).** Prone to aggregator sources (SEO-optimized summaries of other sources) and to under-sourcing niche topics. The wrapper's ask for "blog posts, YouTube walkthroughs, conference talks" is meant to push toward primary sources. If aggregators still dominate, add an explicit "do not cite content aggregator sites (Medium listicles, SEO roundups) — link to the primary source they reference" instruction.
+**Perplexity (Web).** Prone to aggregator sources (SEO-optimized summaries of other sources) and to under-sourcing niche topics. The wrapper's ask for "blog posts, YouTube walkthroughs, conference talks" is meant to push toward primary sources. If aggregators still dominate, add an explicit "do not cite content aggregator sites (Medium listicles, SEO roundups) — link to the primary source they reference" instruction. Additionally, Perplexity-Web uses inline `[cite:N]` markers that often lack a matching numbered bibliography, making source verification impossible. The v1.4 wrapper now requires a numbered "Sources" section resolving every marker, with a fallback to inline parenthetical citations if a bibliography can't be produced.
 
 **Perplexity (Academic).** When a plausible-sounding citation is expected but not findable, the model can fabricate DOIs. The D6 tightening (author + year + venue + DOI required, or report the gap) is the structural counter — a missing field converts what would have been a fabrication into a gap statement, which is honest. Watch for a rise in "gap statement" frequency after v1.1 on academic passes; that's the intended substitution, not a regression.
 
 **Perplexity DR (both Web and Academic).** Generation-collapse failure mode: the model completes its research pass (tens of internal research steps, hundreds of sources indexed), outputs the phrase *"I now have sufficient evidence to compile the comprehensive report. Let me build it now."*, appends the source bibliography, and exits without producing the report body. The prompt is echoed back verbatim as the "output." Observed 2026-04-19 on topic `gt-suicide-crosslang` (v1.3.1, Academic pass): 46 research steps, 273 sources, zero report body; re-prompting restarted the research loop and hit the same wall with fewer sources. Root cause: the full Core Brief output spec (8 sections including Adversarial Self-Check with its new-search requirement, 7-dimension Self-Assessment with per-dimension justification, and Open Self-Critique) exhausts Perplexity's per-turn output-generation budget before the report body begins. Perplexity's research/write phases are not cleanly separated the way Claude DR and Gemini DR are. **Structural counter (v1.3.2):** both Perplexity wrappers now override the Core Brief output format to omit §5, §7, §8 on Perplexity passes only. Verified 2026-04-19 on the same topic with a hand-stripped prompt — Perplexity produced all 5 retained sections with proper YAML header, filled Locale-Fitness Matrix, and 19-source Source Inventory. Tradeoff: no Perplexity self-scored Tier 1 metadata in Phase 2. Acceptable because Phase 3 scoring runs independently against the report body, so the loss is diagnostic-only (can't compare self-score to independent score for Perplexity), not substantive.
 
-**Gemini DR.** Breadth bias. Will enumerate many sources shallowly rather than fewer sources deeply. Counter: require per-finding depth (methodology, sample size, effect size where applicable) alongside coverage.
+**Gemini DR.** Breadth bias. Will enumerate many sources shallowly rather than fewer sources deeply. Counter: require per-finding depth (methodology, sample size, effect size where applicable) alongside coverage. Gemini-DR also produces confident-sounding but under-cited specifics — exact figures, dates, and author lists stated without verifiable sources. Observed across Sessions #8–9 (IBA ">95% survival" conflation, multiple attribution hallucinations). The v1.4 wrapper adds two structural controls: (a) DOI or direct URL required for every cited paper, with "DOI not found" flagging for sources that lack one; (b) a specificity-without-verification counter requiring citations for any precise figure, specific date, or named author list, with downgrade to "approximately" if unverifiable.
 
 Gemini DR also silently drops the YAML metadata header specified in the Core Brief. Observed 2026-04-17 on topic `mexico-city-urban-reforestation` (v1.3): Gemini jumped straight to a prose title, skipping the entire YAML block, while Claude-DR, Perplexity-Academic, and Perplexity-Web on the same topic produced correct headers. The v1.3.1 wrapper now re-states the YAML requirement as its first bullet. Watch subsequent Gemini-DR passes to confirm compliance lifts; if drops continue, escalate to an in-Core-Brief Gemini-specific pre-header reminder.
 
@@ -402,7 +406,34 @@ This file is for the user — it contains everything needed to run the research 
 
 Include only the rows corresponding to the platform-passes actually used.
 
-## Before You Run
+## Pre-Paste Checklist (per platform)
+
+Complete the checklist for each platform **before** pasting the prompt. Skipping a mode toggle silently invalidates the entire run.
+
+**Claude-DR:**
+- [ ] Open claude.ai → start a new conversation
+- [ ] Enable Research mode (look for the Research toggle or select "Research" from the model/mode picker)
+- [ ] Paste the full prompt from `prompt_Claude-DR_{{TOPIC_SLUG}}.md`
+
+**Perplexity-Web / Perplexity-Academic:**
+- [ ] Open perplexity.ai → start a new thread (separate thread per pass)
+- [ ] Confirm Pro Search is enabled (toggle at bottom of input box)
+- [ ] Paste the full prompt from the corresponding prompt file
+
+**Gemini-DR:**
+- [ ] Open gemini.google.com → start a new conversation
+- [ ] Enable Deep Research mode (select from the model/mode dropdown — it is NOT the default)
+- [ ] Confirm the model is set to Gemini with Deep Research, not standard Gemini
+- [ ] Paste the full prompt from `prompt_Gemini-DR_{{TOPIC_SLUG}}.md`
+
+**ChatGPT-DR:**
+- [ ] Open chatgpt.com → start a new conversation
+- [ ] Enable Deep Research mode (select from the model picker — requires Plus/Pro)
+- [ ] Paste the full prompt from `prompt_ChatGPT-DR_{{TOPIC_SLUG}}.md`
+
+Include only the checklists for platforms actually used in this run.
+
+## General Checks
 
 - [ ] Review each prompt file — confirm the research questions and scope match your intent
 - [ ] Confirm source profile is correct: **{{PROFILE_NAME}}**

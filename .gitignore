@@ -14,3 +14,6 @@ venv/
 # Editor / misc
 *.swp
 *.swo
+
+# Private skill planning docs (backlog stays local, not synced to public repo)
+skills/*/BACKLOG.md
