@@ -14,8 +14,8 @@
 
 ## Skill Structure
 
-- **Lines of documentation:** 327
-- **Sections:** 11
+- **Lines of documentation:** 389
+- **Sections:** 12
 - **Code examples:** 2
 
 ## Bundled Resources
@@ -26,6 +26,7 @@
 - [`references/phase1-templates.md`](references/phase1-templates.md)
 - [`references/platform-tracker.md`](references/platform-tracker.md)
 - [`references/quality-rubric.md`](references/quality-rubric.md)
+- [`references/section-profiles.md`](references/section-profiles.md)
 - [`references/source-profiles.md`](references/source-profiles.md)
 
 ### Other
