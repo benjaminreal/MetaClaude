@@ -297,8 +297,16 @@ Use these to verify the skill produces correct outputs:
 
 ## Version & Changelog
 
-**Current version:** 1.5
+**Current version:** 1.5.1
 **Author:** Benjamín Calderón
+
+### 1.5.1 (2026-04-29) — Benjamín Calderón
+
+Gemini-DR YAML header: confirmed as architectural constraint, removed dead prompt instruction.
+
+- **Removed YAML-header instruction from Gemini wrapper.** The v1.3.1 fix (elevated YAML requirement to first wrapper bullet) never worked — Gemini Deep Research's synthesis pipeline does not support structured outputs per Google's own API documentation. Tested 2026-04-29 with three alternative prompt strategies (pre-prompt positional anchor, output continuation seed, visual box-drawing copy-action framing) on topic `flowerpot-top50`; all three failed identically. Root cause: the DR synthesis stage applies its own formatting model and performs self-critique passes that restructure content — YAML frontmatter is outside its output vocabulary. This is not fixable via prompt engineering.
+- **Updated Known failure modes for Gemini DR** in `references/phase1-templates.md` to document the architectural constraint with evidence trail (3 topics, 5 prompt variants, 0 successes) and recommended workaround (manual YAML prepend post-export or Phase 2 metadata inference).
+- **No methodology or consolidation-template changes.** Phase 2 consolidation already handles Gemini reports without YAML — confirmed 2026-04-28 on the flowerpot v1.5 acceptance run.
 
 ### 1.5 (2026-04-22) — Benjamín Calderón
 

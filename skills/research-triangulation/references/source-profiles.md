@@ -127,6 +127,26 @@ When assembling a research prompt, the `{{INJECTED_SOURCE_PROFILE}}` placeholder
 
 ---
 
+## Profile: Fandom-Curation
+
+**Use when**: Curating fanfiction or other community-curated creative-work reading lists, mapping community consensus on creative-work quality, or any topic where community curation (rec lists, engagement metrics, forum discussion) is the primary evidence base. Fanfiction metadata (titles, authors, URLs) is the highest hallucination-risk category for AI systems — every prompt assembled from this profile must demand independently verifiable URLs and treat unverifiable entries as omissions, not gaps to fill with plausible guesses.
+
+**Source hierarchy (highest → lowest trust)**:
+1. Curated recommendation lists by known fandom curators (subreddit rec threads, DLP-style "Recommended"/"Almost Recommended" libraries, TV Tropes fanfic recommendation pages, established blog/Tumblr rec lists with commentary)
+2. Quantitative community metrics (kudos/bookmarks/hits ratios on AO3, favorites/follows/reviews counts on FFN — raw numbers and ratios both matter; a 50K-word fic at 5K kudos signals stronger quality than a 500K-word fic at 5K kudos)
+3. Community discussion threads with substantive review content (Reddit recommendation threads, DLP forum review threads, SpaceBattles / Sufficient Velocity recommendation threads)
+4. Author reputation (authors known for consistent quality across multiple works carry a quality signal that transfers to less-discussed fics)
+5. Individual reader reviews and comments (useful for flavor and trope-fit, lowest trust for ranking)
+
+**Platform search instructions:**
+- **Claude Deep Research:** "Synthesize across rec lists, looking for convergence: a fic appearing on 3+ independent curated lists is stronger evidence than raw kudos counts alone. Treat every title-author-URL triple as a fabrication risk until independently verified — for any candidate fic without a verifiable URL, omit it and note the omission rather than including unverified entries. A shorter verified list beats a longer hallucinated one. When rec lists disagree (one community loves a fic that another criticizes), investigate the disagreement rather than averaging the verdicts."
+- **Perplexity (Web):** "Browse fan platforms (AO3, FFN, SIYE, DLP, Wattpad, SpaceBattles, Sufficient Velocity, Royal Road, personal author sites) in real-time and verify each URL exists before including it. Search community recommendation threads (Reddit subreddit rec threads, DLP rec libraries, established Tumblr/blog rec lists with commentary). Cross-reference titles + authors against multiple aggregator sources before inclusion. Do not fabricate fics, authors, or URLs — exclude any entry that cannot be verified live in this session."
+- **Perplexity (Academic):** "Limited applicability for ranking purposes — academic literature on fanfiction quality rankings is sparse. If consulted, search fan studies and digital humanities venues (Transformative Works and Cultures, Journal of Fandom Studies, IJoCMR) on community curation patterns, fan reading practices, and reception studies. Otherwise return a thin pass with an explicit academic-evidence-gap statement rather than padding with off-topic citations."
+- **Gemini Deep Research:** "Cast a wide net across rec lists, community threads, and aggregator pages. Pay special attention to quantitative community metrics: kudos counts, favorites, review counts, and engagement ratios adjusted for word count and age. Build comparison tables of metrics across candidate fics. Verify every title-author-URL triple before inclusion — fanfiction metadata is the highest hallucination-risk category, so the DOI/URL-required and specificity-without-verification controls in the wrapper apply with extra force here."
+- **ChatGPT Deep Research:** "Search across diverse fandom-content sources: rec list compilations, fan archives, community discussion threads, and aggregator review sites. For each candidate fic, classify the source type (curated list / community discussion / individual review / aggregator) and note its typical reliability for ranking. Do not fabricate titles, authors, or URLs — when uncertain whether a fic exists, omit it and note the gap rather than producing a plausible-sounding entry."
+
+---
+
 ## Custom Profile Construction
 
 If none of the above profiles fit, construct a custom profile following the same structure:
