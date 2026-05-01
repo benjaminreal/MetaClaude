@@ -1,6 +1,6 @@
 ---
 name: newbeginning
-description: "Session-opening brief for multi-session projects. Reads project_index.md and the last entries of project_session.md from the workspace root, surfaces any pending learnings from the prior closingtime, and delivers a concise status brief: project state, last session's 'Next' items, top active TODOs, blockers. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — invoke that instead when wrapping up a session."
+description: "Session-opening brief for multi-session projects. Reads existing project notes (or bootstraps them on a fresh project) and delivers a concise status brief: project state, last session's 'Next' items, top active TODOs, blockers. Hands off with options to pick up, adjust priorities, focus elsewhere, or review pending learnings. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — invoke that instead when wrapping up a session."
 version: 1.0.0
 ---
 
@@ -15,20 +15,19 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 
 ## 1. Purpose & Scope
 
+**Purpose:** Resume work on an ongoing multi-session project quickly — load just enough context to remember where things stand, without re-reading the whole history. Designed to pair with `closingtime`, which writes the project notes this skill reads.
+
 **Does:**
-- Locate and read the two compact session-continuity files (`project_index.md`, `project_session.md`) at the workspace root
-- Surface any unreviewed learning candidates from the prior closingtime (`pending_learnings.md`)
-- Deliver a concise status brief: project state, last session's "Next" items, top active TODOs, blockers, staleness flags
+- Brief the user on current project state from notes left by the previous session: one-line summary, last session's "Next" items, top active TODOs, blockers, staleness flags
+- If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves
 
 **Does NOT:**
-- Write or update any project files (that's `closingtime`'s job)
-- Read the full `project_session.md` — only the last 2 entries, since the file grows over time
-- Capture new Open Brain thoughts (only reviews pending ones if the user wants)
-- Decide what to work on next — that's the user's call after the brief
+- Replace `closingtime` — it doesn't log sessions, doesn't update project state after the hand-off, doesn't extract learnings from this session. (Light edits to `project_index.md` during the opening hand-off — e.g., reordering TODOs at user request — are part of opening.)
+- Read the full session history — only the last two entries
+- Pick the next task or start working on it — briefs and stops; the user drives the next action
+- Require Open Brain — it's an optional integration; the brief works fine without it
 
 **Use closingtime instead when:** wrapping up a session, logging what happened, extracting learnings, or updating project state.
-
-**Token target:** ~1.5–2.5K tokens total for reads + briefing output. This skill should feel instant.
 
 ---
 
@@ -36,9 +35,12 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 
 Before reading anything, confirm:
 
-1. **Workspace root identified.** Session-continuity files live at the workspace root, not in subdirectories. If invoked from a subdirectory or worktree, walk up to find the actual project root (the directory containing `project_index.md`, or failing that, the git root).
-2. **Right project.** If the workspace contains multiple project subfolders, or the user works on several projects from one shell, confirm which project to brief on before reading.
-3. **Brief depth.** Default is "full brief." If the user said something like "just the TODOs" or "30-second version," scope down — don't over-deliver context the user explicitly didn't ask for.
+1. **Workspace root identified.** Project notes live at workspace root. If invoked from a subdir or worktree, walk up to the actual project root (containing `project_index.md`, or git root). If neither exists, use the current directory and proceed to cold-start (Step 1).
+2. **Right project.** If the workspace holds multiple project subfolders, or the user juggles several from one shell, confirm which to brief before reading.
+3. **Brief depth.** Default: full brief — one-line summary, last session's `Next:`, top 3 TODOs, blockers, staleness flags. If the user asked for "just the TODOs" or "30-second version," scope down.
+4. **Open Brain availability** *(if `pending_learnings.md` exists)*. Check the tool list for `capture_thought`. Yes → surface in Step 2. No → don't read; tell the user *"You have pending learnings from previous sessions, but I don't see Open Brain access to save them."*
+5. **Cold-start intent** *(if no project notes exist)*. Confirm before bootstrap (Step 1a). Workspace has prior content (defined in Step 1a) → scan + interview combined to fill gaps. Empty workspace → interview only. Skipping is valid; `closingtime` will capture at session end.
+6. **Closingtime sibling available.** Check available-skills for `closingtime`. Absent and detectable → append install pointer at brief end (Step 5). Undetectable → proceed silently.
 
 ---
 
@@ -46,86 +48,130 @@ Before reading anything, confirm:
 
 ### Step 1: Locate files
 
-Look for `project_index.md` and `project_session.md` at the workspace root. Also check for `pending_learnings.md` (signal that the prior closingtime left unreviewed candidates).
+Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`. Branch:
+- **Both project files present** → Step 2.
+- **Only `project_session.md`** (history but no current state) → reconstruct a draft `project_index.md` from the last 5–10 session entries (Summary from recent "Done" + "Decisions"; TODOs from "Next" items not yet completed; Key Files from `git log` and file mentions). Confirm with user, write it. Continue to Step 2.
+- **Only `project_index.md`** → continue to Step 2.
+- **Neither present** → Step 1a (cold-start), then jump to Step 5.
 
-### Step 2: Handle pending learnings (if any)
+### Step 1a: Cold-start bootstrap *(only when no notes exist)*
 
-If `pending_learnings.md` exists, mention it early — but don't process it yet:
+Pre-flight item 5 already confirmed user opt-in.
 
-> *"You had unreviewed learnings from the last session. Want to review them now or after we get going?"*
+**Workspace has prior content** (git repo with ≥1 commit, a `README`, or ≥3 source files):
+1. Scan: `git log --oneline -20`, head of `README.md`, top-level files (`ls`), language manifest (`package.json`, `pyproject.toml`, etc.) if present.
+2. Draft `project_index.md` — Project Name from repo or README, Summary from README intro, Key Files from observation, leave People blank.
+3. Ask the user to fill gaps and confirm: name, people, anything missing from the summary.
+4. Write the final file with user-confirmed content.
 
-If "now": present the candidates and follow the Open Brain approval flow from `closingtime`'s Step 4 (search for connections, suggest types, save with explicit user approval, then delete the file). If "later" or "skip": leave the file untouched and continue. **Do not silently delete pending learnings.**
+**Workspace is empty** (none of the above):
+1. Confirm: *"This directory looks empty — is this the right place for the project?"* If no, ask the user to navigate elsewhere and re-invoke. If yes, continue.
+2. Ask: project name, people involved, one-line purpose.
+3. Write a minimal `project_index.md`.
 
-### Step 3: Read project files (efficient reads only)
+**After bootstrap:** tell the user *"Project notes set up. Session #1 will log when you run `closingtime` at the end."* Skip Steps 2–4. Go to Step 5.
 
-- **`project_index.md`** — read in full. It's designed to stay under 400 words; this is the primary context load.
-- **`project_session.md`** — read only the **last 2 entries**. The full file grows over time; reading it whole defeats the skill's purpose. Use `tail` or partial-read; don't load the whole file "for completeness."
+### Step 2: Read project files
 
-### Step 4: Brief the user
+- `project_index.md` → read in full (designed under 400 words; primary context load).
+- `project_session.md` → read only the **last 2 entries**. Use `tail` or partial-read; don't load the whole file. Skip if absent.
 
-Concise, scannable. Aim for ≤ 250 words of output:
+### Step 3: Brief the user
 
-- **One sentence:** what this project is and its current state (from `project_index.md` Summary)
-- **Last session:** focus on the **`Next:`** items — these are today's starting point
-- **Top 3 active TODOs** from the index, with priority labels
-- **Flagged items:** blockers, stale TODOs marked ⚠️, time elapsed if it's been a while
+Concise, scannable. ≤ 250 words:
 
-End with: *"Ready to pick up, or want to adjust priorities first?"*
+- **One sentence:** project state (from index Summary).
+- **Last session's `Next:`** — today's starting point. (Skip if no session history.)
+- **Top 3 active TODOs** with priority labels.
+- **Flagged:** blockers, stale ⚠️ TODOs, time elapsed if it's been a while.
 
-### Step 5: Stay out of the way
+End with options. Default: *"Ready to pick up, want to adjust priorities first, or focus on something else?"* If `pending_learnings.md` exists and Open Brain is available, include a fourth option: *"...or review the N pending learnings from last session?"*
 
-The brief is the deliverable. Do not pre-emptively start working on the top TODO. The user drives the next action.
+### Step 4: Post-brief actions *(only if user picked option 2 or 4 from Step 3)*
+
+**If "adjust priorities first":** Walk the user through what to reorder, re-prioritize, or remove. Update `project_index.md` with the changes — this is a permitted edit during the opening hand-off (see Section 1 boundary). Re-display the updated TODO list before continuing to Step 5.
+
+**If "review pending learnings"** *(also requires `pending_learnings.md` exists AND Open Brain available)***:** Follow `closingtime` Step 4 (search connections, suggest types, save with explicit user approval, delete the file). If the user says "later" or "skip" partway through, leave remaining items untouched. Don't silently delete.
+
+### Step 5: Hand off
+
+The brief (and any pending review) is the deliverable. Don't pre-emptively start working on the top TODO; the user drives the next action.
+
+If pre-flight item 6 flagged `closingtime` as absent: append once after the brief — *"FYI: `closingtime` isn't installed in this harness. You'll need it to log sessions. Install: https://github.com/benjaminreal/MetaClaude#install"*
+
+<!-- TODO: update install URL once v2.0 closingtime + v1.0 newbeginning ship as GitHub Releases. Likely target: a release-assets page or the README's #install anchor (which itself may need a refresh). -->
 
 ---
 
 ## 4. Harness Adaptations
 
-This skill works in any harness with file-read access. Adjust by environment:
+The skill's contract is: read project notes and deliver a brief. Everything else is optional and degrades cleanly. The harness exposes what it has; this skill works with whatever it gets.
 
-- **Claude Code (CLI / IDE):** Full file access. Use `Read` for `project_index.md` and a `tail -n` Bash call (or `Read` with `offset`) for the session file's last entries. Git-aware — can check time elapsed via `git log -1 --format=%ar` if `Updated:` is missing or stale.
-- **Cowork:** File access works. If a transcript tool is available, you may also skim recent transcript events to corroborate the last session's claimed "Done" — useful if the previous closingtime was hasty. Don't read transcripts verbatim; sample.
-- **Claude.ai (chat):** No persistent filesystem in standard chat. Degrade gracefully: ask the user to paste `project_index.md` and the last 2 entries of `project_session.md`. Brief from the pasted content. Skip pending-learnings handling unless the user pastes that too.
-- **Codex (OpenAI CLI):** Read tool present but invocation differs. Prefer absolute paths. Tail-equivalent: read with offset rather than loading whole; if not feasible, read whole and explicitly summarize only the last two entries to keep output budget tight.
+**Required:**
+- **Read files.** If unavailable, ask the user to paste `project_index.md` and the last 2 entries of `project_session.md`; brief from the paste.
+- **Converse with the user.** To deliver the brief and resolve hand-off options.
 
-If the harness is unknown, default to Claude Code behavior and degrade if a tool errors. The skill's contract is the brief — the means of getting there can flex.
+**Optional capabilities (graceful degradation):**
+
+| Capability | Used by | If missing |
+|---|---|---|
+| Write / Edit files | Cold-start (Step 1a), priority adjustment (Step 4), index reconstruction (Step 1) | Output the proposed file content as text; ask user to save it manually |
+| Shell access (`git log`, `ls`, `tail`) | Cold-start scan (Step 1a), efficient tail-reads (Step 2) | Read whole files; ask user to summarize repo structure during cold-start |
+| Tool-list introspection | Open Brain check (Pre-flight 4) | Assume Open Brain unavailable; tell user pending learnings will wait |
+| Skill-list introspection | Closingtime check (Pre-flight 6) | Skip the install pointer; assume `closingtime` is present |
+| Transcript / session-log access | Optional enrichment (corroborate last session's "Done") | Trust the project notes as the source of truth |
+
+**Path-selection preference:** prefer the most efficient available — `tail` over read-whole-file, `Read` with offset over loading the full file, native skill-list introspection over filesystem checks.
+
+**Unknown harness fallback:** assume all optional capabilities present, try them, degrade on first error. Tell the user when something didn't work.
 
 ---
 
 ## 5. Decision Rules
 
+Cross-cutting rules not bound to a single step. (Per-step branches and conditional firing live in Sections 2 and 3.)
+
 | Situation | Action |
 |---|---|
-| Both files exist | Standard flow (Steps 1–5) |
-| Only `project_session.md` exists | Brief from last 2 entries; note no index; offer to create one at next closingtime |
-| Only `project_index.md` exists | Brief from index; note no session history; do not invent past sessions |
-| Neither file exists | New project. Offer two paths: (a) brief identity interview now to create `project_index.md`; (b) start working and let the next closingtime capture everything |
-| Long gap since last session (>14 days) | Note elapsed time in the brief; suggest a TODO/decision staleness check before diving in |
-| Multiple projects detected at workspace root | Ask which to brief on; do not guess |
-| User says "skip" any step | Respect it. The skill serves the user, not its process |
-| `pending_learnings.md` exists but user defers | Leave the file untouched; mention it remains available for next time |
-| User invokes mid-session (not actually opening) | Brief anyway — same skill works for "remind me where we are" mid-flow |
+| User says "skip" any step | Respect it. The skill serves the user, not its process. |
+| Long gap since last session (>14 days, by `Updated:` field or git timestamps) | Note elapsed time in the brief; suggest a TODO/decision staleness check before the user dives in. |
+| User invokes mid-session ("remind me where we are" rather than actual opening) | Brief anyway — same skill works mid-flow. |
+| User picks "adjust priorities first" from the hand-off | Permitted edit to `project_index.md` — the only write newbeginning makes outside cold-start. After persisting, return to the brief's hand-off. |
+| User picks "focus on something else" from the hand-off | Step out cleanly. Don't push toward the top TODO; don't re-offer the brief. The skill's job is done. |
+| `project_index.md` and `project_session.md` disagree (e.g., index lists TODO X but a recent session marked X done) | Trust the session log (chronological truth); flag the drift to the user; offer to reconcile at next `closingtime`. |
+| Cold-start scan finds conflicting signal (repo name ≠ README title ≠ user expectation) | Surface the conflict during the gap-fill interview; let the user choose. Don't pick. |
 
 ---
 
 ## 6. Eval Criteria
 
-Output is good when:
+Three lenses. Different failure modes get different responses.
 
-- **Token budget:** total reads + briefing under 2.5K tokens. Over budget usually means too much of `project_session.md` was loaded.
-- **Brief length:** ≤ 250 words of conversational output. Over = trim to essentials.
-- **`Next:` surfaced:** the last session's `Next:` field is named explicitly in the brief (it's the handoff — burying it defeats the file format's design).
-- **Pending learnings raised early:** if `pending_learnings.md` exists, it's mentioned before the TODO list, not buried at the end.
-- **No fabrication:** every claim in the brief traces back to a line in `project_index.md` or `project_session.md`. If something seems important but isn't in the files, say "files don't say" — don't infer.
-- **No premature work:** the skill briefs and stops. It doesn't begin executing the top TODO unless the user explicitly says go.
+**Output quality** (does the brief look right?)
+- **Snappy:** brief ≤ 250 words; total reads + brief ≤ 2.5K tokens. Section 1's "feel instant" is the goal; these are the proxies.
+- **`Next:` surfaced:** the last session's `Next:` field is named explicitly in the brief — it's the handoff, and burying it defeats the file format's design.
+- **Honest about gaps:** if `Next:` was empty, blockers absent, or session history thin, the brief says so. Don't paper over.
+- **No fabrication:** every claim traces back to a line in the files. "Files don't say" is a valid statement; inference is not.
 
-If output fails any of these, restart the brief — don't patch.
+**Workflow correctness** (did the right path fire?)
+- **Right Step 1 branch:** the branch taken matches observed file state (both / session-only / index-only / neither).
+- **Edits gated:** any write to `project_index.md` happened only during cold-start (Step 1a) or "adjust priorities" (Step 4); cold-start writes were user-confirmed before persisting.
+- **Conditionals respected:** Open Brain unavailable → no read of `pending_learnings.md`, no review option offered. Closingtime sibling absent → install pointer appended at hand-off.
+- **Hand-off as single question:** the 3-or-4 post-brief options were offered together, not stacked.
+- **Brief, then stop:** the skill doesn't begin executing the top TODO unless the user explicitly says go.
+
+**Failure response**
+- **Restart the brief** on fabrication or boundary violations (wrote a file outside permitted moments, fabricated a TODO, claimed something the files don't support).
+- **Patch in place** on length, pacing, or wording — trim a sentence; don't redo the whole brief.
 
 ---
 
 ## 7. Version & Changelog
 
 **v1.0.0 — 2026-05-01**
-- Initial release. Extracted from `closingtime` v1.0's `newbeginning` mode.
-- Behavior is identical to invoking `closingtime` v1.0 and saying "newbeginning" — same workflow, now callable directly without mode disambiguation.
-- Added explicit Pre-flight Checklist, Decision Rules table, Eval Criteria, and Harness Adaptations covering Claude Code, Cowork, claude.ai, and Codex.
-- Trigger set narrowed to opening-only phrases; closing phrases removed (delegated to sibling skill `closingtime`).
+- **Initial release.** Extracted from `closingtime` v1.0's `newbeginning` mode. Triggers narrowed to opening-only phrases; closing delegated to sibling `closingtime` v2.0+.
+- **Cold-start bootstrap (Step 1a):** newbeginning can initialize a `project_index.md` on a project that's never used these skills — scan + interview when the workspace has prior content, interview-only when empty.
+- **Index reconstruction:** when only `project_session.md` exists, newbeginning reconstructs a draft index from the last 5–10 entries.
+- **Optional integrations gated:** Open Brain (`capture_thought`) checked before reading `pending_learnings.md`; sibling `closingtime` checked at hand-off and install pointer appended if absent.
+- **Hand-off as a single question:** brief closes with 3–4 options (pick up / adjust priorities / focus elsewhere / review pending learnings). "Adjust priorities" is the only edit newbeginning makes outside cold-start.
+- **Capability-based harness adaptation:** the skill enumerates capabilities and degradation rules rather than naming specific products.
