@@ -122,3 +122,7 @@ You can use either one independently, but they're designed as a pair. If newbegi
 ---
 
 _Part of [MetaClaude](https://github.com/benjaminreal/MetaClaude) — a personal skills workspace._
+
+_The Open Brain integration uses [Open Brain](https://github.com/NatheBJ/open-brain) by Nathe B. Jones._
+
+_"Closing Time" — Semisonic, 1998. Written by Dan Wilson._

@@ -50,7 +50,11 @@ Before reading anything, confirm:
 
 ### Step 1: Locate files
 
-Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`. Branch:
+Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`.
+
+**Filename resolution:** If the exact filename isn't found, check case variants (`Project_Index.md`, `Project_Session.md`, etc.) and common alternatives (`project.md`, `session_log.md`). Use whatever exists; don't create duplicates.
+
+Branch:
 - **Both project files present** → Step 2.
 - **Only `project_session.md`** (history but no current state) → reconstruct a draft `project_index.md` from the last 5–10 session entries (Summary from recent "Done" + "Decisions"; TODOs from "Next" items not yet completed; Key Files from `git log` and file mentions). Confirm with user, write it. Continue to Step 2.
 - **Only `project_index.md`** → continue to Step 2.
@@ -70,6 +74,8 @@ Pre-flight item 5 already confirmed user opt-in.
 1. Confirm: *"This directory looks empty — is this the right place for the project?"* If no, ask the user to navigate elsewhere and re-invoke. If yes, continue.
 2. Ask: project name, people involved, one-line purpose.
 3. Write a minimal `project_index.md`.
+
+Cold-start files are written in English by default. If the user requests another language, follow their preference.
 
 **After bootstrap:** tell the user *"Project notes set up. Session #1 will log when you run `closingtime` at the end."* Skip Steps 2–4. Go to Step 5.
 
