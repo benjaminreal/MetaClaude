@@ -17,6 +17,8 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 
 **Purpose:** Resume work on an ongoing multi-session project quickly — load just enough context to remember where things stand, without re-reading the whole history. Designed to pair with `closingtime`, which writes the project notes this skill reads.
 
+**Why not just ask the model?** Without structured notes, the model must scan the project from scratch — listing files, reading source code, checking git history — to reconstruct context. That costs thousands of tokens, fills the context window with noise, and produces guesses instead of a curated handoff. This skill reads ~400 words of pre-written notes and delivers a brief in ≤ 2.5K tokens total (reads + output), keeping the context window clean for actual work.
+
 **Does:**
 - Brief the user on current project state from notes left by the previous session: one-line summary, last session's "Next" items, top active TODOs, blockers, staleness flags
 - If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves
