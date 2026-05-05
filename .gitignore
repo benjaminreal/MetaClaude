@@ -18,5 +18,8 @@ venv/
 # Private skill planning docs (backlog stays local, not synced to public repo)
 skills/*/BACKLOG.md
 
+# Transfer-readiness audit docs (maintainer-only, not for public repo)
+skills/*/HANDOFF.md
+
 # Eval run artifacts (raw LLM logs, not skill source)
 skills/*/evals/description-optimization/

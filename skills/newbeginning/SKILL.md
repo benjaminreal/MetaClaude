@@ -1,7 +1,7 @@
 ---
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads existing project notes (or bootstraps them on a fresh project) and delivers a concise status brief: project state, last session's 'Next' items, top active TODOs, blockers. Hands off with options to pick up, adjust priorities, focus elsewhere, or review pending learnings. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — invoke that instead when wrapping up a session."
-version: 1.0.0
+version: 1.0.1
 ---
 
 # newbeginning
@@ -21,7 +21,7 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 
 **Does:**
 - Brief the user on current project state from notes left by the previous session: one-line summary, last session's "Next" items, top active TODOs, blockers, staleness flags
-- If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves
+- If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves. Open Brain by Nathe B. Jones is an optional learning-capture tool integrated via MCP (https://github.com/NatheBJ/open-brain)
 
 **Does NOT:**
 - Replace `closingtime` — it doesn't log sessions, doesn't update project state after the hand-off, doesn't extract learnings from this session. (Light edits to `project_index.md` during the opening hand-off — e.g., reordering TODOs at user request — are part of opening.)
@@ -30,6 +30,9 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 - Require Open Brain — it's an optional integration; the brief works fine without it
 
 **Use closingtime instead when:** wrapping up a session, logging what happened, extracting learnings, or updating project state.
+
+### Section Transfer Certification
+[Section 1 certified — 2026-05-05 — competent user can: know how to call up the skill, understand when to use it and when not]
 
 ---
 
@@ -44,6 +47,8 @@ Before reading anything, confirm:
 5. **Cold-start intent** *(if no project notes exist)*. Confirm before bootstrap (Step 1a). Workspace has prior content (defined in Step 1a) → scan + interview combined to fill gaps. Empty workspace → interview only. Skipping is valid; `closingtime` will capture at session end.
 6. **Closingtime sibling available.** Check available-skills for `closingtime`. Absent and detectable → append install pointer at brief end (Step 5). Undetectable → proceed silently.
 
+### Section Transfer Certification
+[Section 2 certified — 2026-05-05 — competent user can: understand what are the conditions the skill needs to run]
 ---
 
 ## 3. Core Workflow
@@ -109,6 +114,9 @@ If pre-flight item 6 flagged `closingtime` as absent: append once after the brie
 
 <!-- TODO: update install URL once v2.0 closingtime + v1.0 newbeginning ship as GitHub Releases. Likely target: a release-assets page or the README's #install anchor (which itself may need a refresh). -->
 
+### Section Transfer Certification
+[Section 3 certified — 2026-05-05 — competent user can: understand what are the steps in the flow and what each does, kickoff a new session]
+
 ---
 
 ## 4. Harness Adaptations
@@ -133,6 +141,9 @@ The skill's contract is: read project notes and deliver a brief. Everything else
 
 **Unknown harness fallback:** assume all optional capabilities present, try them, degrade on first error. Tell the user when something didn't work.
 
+### Section Transfer Certification
+[Section 4 certified — 2026-05-05 — competent user can: understand what are the capabilities needed in his harness of choice]
+
 ---
 
 ## 5. Decision Rules
@@ -148,6 +159,9 @@ Cross-cutting rules not bound to a single step. (Per-step branches and condition
 | User picks "focus on something else" from the hand-off | Step out cleanly. Don't push toward the top TODO; don't re-offer the brief. The skill's job is done. |
 | `project_index.md` and `project_session.md` disagree (e.g., index lists TODO X but a recent session marked X done) | Trust the session log (chronological truth); flag the drift to the user; offer to reconcile at next `closingtime`. |
 | Cold-start scan finds conflicting signal (repo name ≠ README title ≠ user expectation) | Surface the conflict during the gap-fill interview; let the user choose. Don't pick. |
+
+### Section Transfer Certification
+[Section 5 certified — 2026-05-05 — competent user can: understand how the skill will behave in special cases]
 
 ---
 
@@ -172,9 +186,16 @@ Three lenses. Different failure modes get different responses.
 - **Restart the brief** on fabrication or boundary violations (wrote a file outside permitted moments, fabricated a TODO, claimed something the files don't support).
 - **Patch in place** on length, pacing, or wording — trim a sentence; don't redo the whole brief.
 
+### Section Transfer Certification
+[Section 6 certified — 2026-05-05 — competent user can: understand when the skill has achieve or failed a run in 3 specific context]
 ---
 
 ## 7. Version & Changelog
+
+**v1.0.1 — 2026-05-05**
+- **Small corrections to the documentation:** making sure a new user understand how to use the skill.
+- **Section Transfer Certifications added** to Sections 1–7, asserting each section is executable by a competent external user without needing to ask the LLM for clarification.
+- **Open Brain defined inline** at first mention (Section 1) so users without the framework context aren't blocked.
 
 **v1.0.0 — 2026-05-01**
 - **Initial release.** Extracted from `closingtime` v1.0's `newbeginning` mode. Triggers narrowed to opening-only phrases; closing delegated to sibling `closingtime` v2.0+.
@@ -183,3 +204,5 @@ Three lenses. Different failure modes get different responses.
 - **Optional integrations gated:** Open Brain (`capture_thought`) checked before reading `pending_learnings.md`; sibling `closingtime` checked at hand-off and install pointer appended if absent.
 - **Hand-off as a single question:** brief closes with 3–4 options (pick up / adjust priorities / focus elsewhere / review pending learnings). "Adjust priorities" is the only edit newbeginning makes outside cold-start.
 - **Capability-based harness adaptation:** the skill enumerates capabilities and degradation rules rather than naming specific products.
+
+[Section 7 certified — 2026-05-05 — competent user can: identify what changed between versions and decide whether to upgrade]
