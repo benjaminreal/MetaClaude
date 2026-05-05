@@ -17,6 +17,8 @@ Session-opening companion to `closingtime`. Loads the minimum context needed to 
 
 **Purpose:** Resume work on an ongoing multi-session project quickly — load just enough context to remember where things stand, without re-reading the whole history. Designed to pair with `closingtime`, which writes the project notes this skill reads.
 
+**Why not just ask the model?** Without structured notes, the model must scan the project from scratch — listing files, reading source code, checking git history — to reconstruct context. That costs thousands of tokens, fills the context window with noise, and produces guesses instead of a curated handoff. This skill reads ~400 words of pre-written notes and delivers a brief in ≤ 2.5K tokens total (reads + output), keeping the context window clean for actual work.
+
 **Does:**
 - Brief the user on current project state from notes left by the previous session: one-line summary, last session's "Next" items, top active TODOs, blockers, staleness flags
 - If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves
@@ -48,7 +50,11 @@ Before reading anything, confirm:
 
 ### Step 1: Locate files
 
-Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`. Branch:
+Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`.
+
+**Filename resolution:** If the exact filename isn't found, check case variants (`Project_Index.md`, `Project_Session.md`, etc.) and common alternatives (`project.md`, `session_log.md`). Use whatever exists; don't create duplicates.
+
+Branch:
 - **Both project files present** → Step 2.
 - **Only `project_session.md`** (history but no current state) → reconstruct a draft `project_index.md` from the last 5–10 session entries (Summary from recent "Done" + "Decisions"; TODOs from "Next" items not yet completed; Key Files from `git log` and file mentions). Confirm with user, write it. Continue to Step 2.
 - **Only `project_index.md`** → continue to Step 2.
@@ -68,6 +74,8 @@ Pre-flight item 5 already confirmed user opt-in.
 1. Confirm: *"This directory looks empty — is this the right place for the project?"* If no, ask the user to navigate elsewhere and re-invoke. If yes, continue.
 2. Ask: project name, people involved, one-line purpose.
 3. Write a minimal `project_index.md`.
+
+Cold-start files are written in English by default. If the user requests another language, follow their preference.
 
 **After bootstrap:** tell the user *"Project notes set up. Session #1 will log when you run `closingtime` at the end."* Skip Steps 2–4. Go to Step 5.
 

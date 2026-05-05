@@ -15,6 +15,10 @@ Session-closing companion to `newbeginning`. Captures what happened, updates pro
 
 ## 1. Purpose & Scope
 
+**Purpose:** Capture session work at the moment context is richest — while the model still holds everything in memory. Produces a structured handoff for the next session and maintains a compact project index that stays current across sessions. Designed to pair with `newbeginning`, which reads the notes this skill writes.
+
+**Why not just take notes manually?** At session end, the model already holds the full context — decisions made, code written, directions explored. Manually summarizing is error-prone and time-consuming. Without structured capture, the next session starts cold: the model scans files, reads git log, guesses at priorities. This skill extracts a curated handoff (~300 words) and an updated project index (~400 words) while the context is still fresh — so the next `newbeginning` brief costs ≤ 2.5K tokens instead of thousands spent reconstructing from scratch.
+
 **Does:**
 - Reconstruct what happened this session from multiple signals (git, conversation, file changes, transcript if available)
 - Draft a session entry for user review before writing
@@ -22,12 +26,12 @@ Session-closing companion to `newbeginning`. Captures what happened, updates pro
 - Update `project_index.md` to reflect current state (decisions, TODOs, key files)
 - Surface candidate insights for Open Brain via `pending_learnings.md` and `capture_thought` (with explicit user approval)
 - Execute the close-out ritual
+- Create project files in English by default (if the user requests another language, follow their preference)
 
 **Does NOT:**
 - Brief on past state at session start (use `newbeginning` instead)
-- Read the full `project_session.md` — only the last entry, for the session number
+- Read the full `project_session.md` — only the last entry for context and session number
 - Auto-save anything to Open Brain without explicit user approval
-- Write project files in any language other than English (file content is always English regardless of session language)
 
 **Use newbeginning instead when:** opening a session, resuming work, asking "where did we leave off."
 
@@ -40,7 +44,7 @@ Before drafting the entry, confirm:
 1. **Workspace root identified.** Session-continuity files live at the workspace root. If invoking from a subdirectory or worktree, resolve to the actual project root.
 2. **Right project.** If multiple projects share a shell or workspace, confirm which one to log. Don't split one session across multiple project logs.
 3. **Entry depth.** Default is the full template (300 words max). For quick fixes or one-off questions, a 3–5 line entry is fine — confirm with the user if the session was small.
-4. **Open Brain step desired?** Default yes (minimum 2 candidates). If the user says "skip the Open Brain part," respect it and proceed directly to the close-out ritual after Step 3.
+4. **Open Brain availability and intent.** Check the tool list for `capture_thought`. If present → default yes (minimum 2 candidates). If absent → write candidates to `pending_learnings.md` only; tell the user *"Open Brain isn't available in this harness — I'll save learning candidates to `pending_learnings.md` for your next session."* If the user says "skip the Open Brain part" regardless of availability, respect it and proceed directly to the close-out ritual after Step 3.
 
 ---
 
@@ -48,18 +52,25 @@ Before drafting the entry, confirm:
 
 ### Step 1: Gather session information
 
-Reconstruct the session from multiple signals:
+Start by loading prior context:
+
+- **`project_index.md`** — read in full (≤ 400 words). Gives you the existing TODOs, decisions, and summary to update against.
+- **Last entry of `project_session.md`** — gives the previous `Next:` field (what was planned) and the current session number. Helps detect whether planned work was completed or deferred.
+
+Then reconstruct what happened this session from multiple signals:
 
 - `git log` and `git diff --stat` if in a git repo (concrete change record)
 - Conversation history: decisions made, problems solved, directions chosen
 - Files created, modified, or deleted during the session
-- If a transcript tool is available (Cowork), skim for key events — do not process the full transcript verbatim
+- If a transcript tool is available, skim for key events — do not process the full transcript verbatim
 
 Draft a session summary and **present it to the user for review** before writing anything. The user may correct emphasis, add context, or flag missed items. Session logs should reflect what the user considers important, not just what the model observed.
 
 ### Step 2: Write session entry
 
 **File:** `project_session.md` at workspace root.
+
+**Filename resolution:** Look for `project_session.md` first. If not found, check case variants (`Project_Session.md`, `PROJECT_SESSION.md`, `project_Session.md`) and common alternatives (`session_log.md`, `sessions.md`). Use whatever exists; don't create a duplicate. If nothing exists, create `project_session.md`.
 
 If the file doesn't exist, create it with `# Session Log` as the header. Append a new entry. Read only the last entry to determine the current session number; increment it. First entry → #1.
 
@@ -69,7 +80,7 @@ If the file doesn't exist, create it with `# Session Log` as the header. Append 
 
 ---
 
-### Session #[N] | [YYYY-MM-DD] | [Cowork/Code/Chat/Codex]
+### Session #[N] | [YYYY-MM-DD] | [Code/Cowork/Chat/Codex]
 **Focus:** [One line — main theme of the session]
 **Done:** [What was accomplished. Be specific: name files, features, decisions.]
 **Decisions:** [Choices made and brief rationale. Skip if none.]
@@ -84,6 +95,8 @@ Short sessions (quick fix, one-off question) still get logged, but entries can b
 ### Step 3: Update project_index.md
 
 **File:** `project_index.md` at workspace root.
+
+**Filename resolution:** Look for `project_index.md` first. If not found, check case variants (`Project_Index.md`, `PROJECT_INDEX.md`, `project_Index.md`) and common alternatives (`project.md`, `index.md`). Use whatever exists; don't create a duplicate. If nothing exists, create `project_index.md`.
 
 If it doesn't exist, create it — interview the user briefly for project identity (name, people involved, one-line summary). If it exists, update it to reflect current state.
 
@@ -183,14 +196,25 @@ The session is closed once files are written. Open Brain review can happen now o
 
 ## 4. Harness Adaptations
 
-This skill works wherever you can read git, write files, and converse. Adjust by environment:
+The skill's contract: gather session signals, draft an entry, update project state, surface learnings. Everything else is optional and degrades cleanly. The harness exposes what it has; this skill works with whatever it gets.
 
-- **Claude Code (CLI / IDE):** Full power. `git log` and `git diff --stat` via Bash; `Read` for files; `Write`/`Edit` for the entry append and index update. Open Brain capture via `mcp__*__capture_thought` if installed.
-- **Cowork:** File writes work. If a transcript tool is available, skim for key events to enrich the "Done" — do not read the transcript verbatim (token-expensive, low return). Cowork sessions tend toward longer transcripts than Code sessions; sample, don't load.
-- **Claude.ai (chat):** No persistent filesystem in standard chat. Degrade: produce the session entry as text in the conversation for the user to paste into their files manually. Same for the index update — show the diff. Open Brain step is only feasible if `capture_thought` is available; otherwise list candidates as text and tell the user to log them externally.
-- **Codex (OpenAI CLI):** `Edit` tool present; use absolute paths for `Write` to avoid CWD ambiguity. Git access via shell. No `capture_thought` analog by default — list Open Brain candidates as text for the user to handle externally.
+**Required:**
+- **Write / Edit files.** To append the session entry and update the index. If unavailable, output both as text for the user to save manually.
+- **Converse with the user.** To present the draft for review, resolve Open Brain approvals, and deliver the closing ritual.
 
-If the harness lacks `capture_thought` but the user wants Open Brain capture, write `pending_learnings.md` anyway — the user can process it at the next session in a capable harness.
+**Optional capabilities (graceful degradation):**
+
+| Capability | Used for | If missing |
+|---|---|---|
+| Shell access (`git log`, `git diff --stat`) | Concrete change signal for Step 1 | Rely on conversation history + file modification observations |
+| Read files | Reading last entry for session number, verifying index state | Ask user for the current session number |
+| Transcript / session-log access | Enriching "Done" from longer sessions | Trust conversation context; sample, don't load full transcripts |
+| `capture_thought` (Open Brain) | Saving approved learnings in Step 4 | Write candidates to `pending_learnings.md` for next-session review |
+| Skill-list introspection | Verifying `newbeginning` sibling is installed | Skip; assume present |
+
+**Path-selection preference:** prefer the most efficient available — `git diff --stat` over reading every modified file, partial reads over full-file loads, transcript skimming over verbatim processing.
+
+**Unknown harness fallback:** assume all optional capabilities present, try them, degrade on first error. Tell the user when something didn't work. If the harness lacks `capture_thought` but the user wants Open Brain capture, write `pending_learnings.md` anyway — the user can process it at the next session in a capable harness.
 
 ---
 
@@ -213,17 +237,25 @@ If the harness lacks `capture_thought` but the user wants Open Brain capture, wr
 
 ## 6. Eval Criteria
 
-Output is good when:
+Three lenses. Different failure modes get different responses.
 
-- **Session entry:** ≤ 300 words. `Next:` is concrete and actionable, not aspirational ("verify the YAML fix on the next Gemini run" beats "keep iterating").
+**Output quality** (do the artifacts look right?)
+- **Session entry:** ≤ 300 words. `Next:` is concrete and actionable ("verify the YAML fix on the next Gemini run" beats "keep iterating").
 - **Project index:** ≤ 400 words total. Decisions and TODOs each ≤ 8 active. Summary describes current state, not history.
-- **No duplication:** the session log holds details; the index holds current state. If the same sentence appears in both, one of them is wrong.
-- **Open Brain candidates:** minimum 2 unless the session was pure execution. Each is grounded in a specific moment from the session, not a generic platitude.
-- **Pending file lifecycle:** `pending_learnings.md` exists exactly while there are unreviewed candidates. After save (or explicit discard), it's deleted.
-- **Closing ritual executed:** the three checkmarks + Semisonic line appear verbatim (unless the user opted out of the line).
-- **English regardless of session language:** all file content is English even if the session ran in another language.
+- **No duplication:** session log holds details; index holds current state. If the same sentence appears in both, one is wrong.
+- **English by default:** file content is written in English unless the user explicitly requests another language.
+- **Open Brain candidates:** minimum 2 unless pure execution. Each grounded in a specific session moment, not a generic platitude.
 
-If output fails on entry length or duplication, edit before writing. Don't ship a bloated entry "to get it done."
+**Workflow correctness** (did the right steps fire?)
+- **Draft presented before writing:** the user reviewed and approved the session entry before it was persisted.
+- **Pending file lifecycle:** `pending_learnings.md` exists exactly while there are unreviewed candidates. After save (or explicit discard), it's deleted.
+- **Open Brain gated:** no `capture_thought` calls without explicit user approval. If `capture_thought` unavailable, candidates written to `pending_learnings.md` only.
+- **Closing ritual executed:** the three checkmarks + Semisonic line appear verbatim (unless user opted out of the line).
+- **Index staleness enforced:** TODOs at 3+ sessions flagged ⚠️ and surfaced to user.
+
+**Failure response**
+- **Restart the step** on boundary violations (wrote before user approved, saved to Open Brain without confirmation, fabricated a decision not discussed).
+- **Edit in place** on length, wording, or duplication — trim a sentence; don't redo the whole entry.
 
 ---
 
@@ -233,7 +265,7 @@ If output fails on entry length or duplication, edit before writing. Don't ship 
 - `newbeginning` mode extracted to its own skill (sibling: `newbeginning` v1.0).
 - Triggers narrowed to closing-only phrases. Mode-detection step removed entirely.
 - Restructured per the 7-part skill review frame: Purpose & Scope, Pre-flight Checklist, Core Workflow, Harness Adaptations, Decision Rules, Eval Criteria, Version & Changelog.
-- Harness Adaptations expanded to cover Claude Code, Cowork, claude.ai, and Codex (v1.0 implicitly assumed Code/Cowork only).
+- Harness Adaptations rewritten as capability-based Required/Optional table with graceful degradation (v1.0 listed specific products).
 - **Migration:** users who previously invoked `closingtime` and said "newbeginning" should now invoke the `newbeginning` skill directly. All other workflows unchanged — file formats, ritual line, Open Brain flow, and templates are byte-for-byte compatible with v1.0.
 
 **v1.0 — 2026-04-09**
