@@ -4,11 +4,11 @@
 
 ## Why this skill?
 
-When you start a new session and ask an LLM "where did we leave off?", it has no memory of your last conversation. Without structured notes, it has to scan your project from scratch — listing files, reading source code, checking git history — burning through tokens and context window just to reconstruct what you already knew yesterday. On a large project that can cost thousands of tokens before any real work begins, and the context it builds is noisy because it's guessing at priorities, not reading them.
+When you start a new session and ask an LLM "where did we leave off?" in a multi-session project, it has no memory of your last conversation. Without structured notes, it has to scan your project from scratch — listing files, reading source code, checking git history — burning through tokens and context window just to reconstruct what you already knew yesterday. On a large project that can cost thousands of tokens before any real work begins, and the context it builds is noisy because it's guessing at priorities, not reading them.
 
-**newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/) and delivers a focused brief in under 2.5K tokens total — reads and output combined. You get the same situational awareness in seconds, with a clean context window ready for actual work.
+**newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/) and delivers a focused brief in under 2.5K tokens total — reads and output combined. You get the same situational awareness in seconds, with a clean context window ready for actual work (what is the next TODO, understand the blockers).
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 
 ---
 
@@ -100,6 +100,11 @@ Behavioral guardrails: respects "skip" at any point, flags drift between the ind
 How the skill judges its own output — the brief should be under 250 words, the "Next" field should be front and center, and it should never fabricate information that isn't in your project files.
 
 ### 7. Version & Changelog
+
+**v1.0.1** — 2026-05-05
+- Small corrections to the documentation making sure a new user understand how to use the skill.
+- Section Transfer Certifications added to Sections 1–7, asserting each section is executable by a competent external user without needing to ask the LLM for clarification.
+- Open Brain defined inline at first mention (Section 1) so users without the framework context aren't blocked.
 
 **v1.0.0** — 2026-05-01
 - Initial release. Extracted from `closingtime` v1.0's newbeginning mode.
