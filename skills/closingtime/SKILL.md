@@ -1,7 +1,7 @@
 ---
 name: closingtime
 description: "Session-closing capture for multi-session projects. Gathers session signals (git diff, conversation, file changes, transcript if available), drafts a session entry for user review, writes to project_session.md, updates project_index.md, extracts Open Brain learning candidates to pending_learnings.md, and executes the closing ritual. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — invoke that instead when starting or resuming a session."
-version: 2.0.0
+version: 2.1.0
 ---
 
 # closingtime
@@ -41,9 +41,9 @@ Session-closing companion to `newbeginning`. Captures what happened, updates pro
 
 Before drafting the entry, confirm:
 
-1. **Workspace root identified.** Session-continuity files live at the workspace root. If invoking from a subdirectory or worktree, resolve to the actual project root.
+1. **Workspace root identified.** Session-continuity files live at the workspace root. If invoking from a subdirectory or worktree, walk up to the directory containing `project_index.md`, or the git root, or the directory the user considers the project root.
 2. **Right project.** If multiple projects share a shell or workspace, confirm which one to log. Don't split one session across multiple project logs.
-3. **Entry depth.** Default is the full template (300 words max). For quick fixes or one-off questions, a 3–5 line entry is fine — confirm with the user if the session was small.
+3. **Entry depth.** Default is the full template (300 words max). Sessions under ~15 minutes or involving a single fix/question qualify for short entries (3–5 lines). For longer sessions, use the full template.
 4. **Open Brain availability and intent.** Check the tool list for `capture_thought`. If present → default yes (minimum 2 candidates). If absent → write candidates to `pending_learnings.md` only; tell the user *"Open Brain isn't available in this harness — I'll save learning candidates to `pending_learnings.md` for your next session."* If the user says "skip the Open Brain part" regardless of availability, respect it and proceed directly to the close-out ritual after Step 3.
 
 ---
@@ -57,6 +57,8 @@ Start by loading prior context:
 - **`project_index.md`** — read in full (≤ 400 words). Gives you the existing TODOs, decisions, and summary to update against.
 - **Last entry of `project_session.md`** — gives the previous `Next:` field (what was planned) and the current session number. Helps detect whether planned work was completed or deferred.
 
+If neither file exists, this is the first session — see Decision Rule: *First session ever on a project* (Section 5).
+
 Then reconstruct what happened this session from multiple signals:
 
 - `git log` and `git diff --stat` if in a git repo (concrete change record)
@@ -64,7 +66,7 @@ Then reconstruct what happened this session from multiple signals:
 - Files created, modified, or deleted during the session
 - If a transcript tool is available, skim for key events — do not process the full transcript verbatim
 
-Draft a session summary and **present it to the user for review** before writing anything. The user may correct emphasis, add context, or flag missed items. Session logs should reflect what the user considers important, not just what the model observed.
+Draft the session entry using the Step 2 template and **present it to the user for review** before writing anything. The user may correct emphasis, add context, or flag missed items. Session logs should reflect what the user considers important, not just what the model observed.
 
 ### Step 2: Write session entry
 
@@ -80,13 +82,21 @@ If the file doesn't exist, create it with `# Session Log` as the header. Append 
 
 ---
 
-### Session #[N] | [YYYY-MM-DD] | [Code/Cowork/Chat/Codex]
+### Session #[N] | [YYYY-MM-DD] | [Mode (Tool)]
 **Focus:** [One line — main theme of the session]
 **Done:** [What was accomplished. Be specific: name files, features, decisions.]
 **Decisions:** [Choices made and brief rationale. Skip if none.]
 **Next:** [What the next session should pick up first. This is the handoff to newbeginning.]
 **Blockers:** [Anything stuck or waiting on external input. "None" if clear.]
 ```
+
+**Session-type labels:** The header uses `Mode (Tool)` format. Mode describes the work pattern; Tool names the harness.
+- **Code** — coding session with file edits, script runs, tool use
+- **Research** — study, reading, analysis, note-taking (no significant code changes)
+- **Chat** — pure conversation, Q&A, planning discussion
+- **Cowork** — collaborative session with another person present
+
+Tool is the harness used: `Claude Code`, `Cursor`, `ChatGPT`, `Codex`, or similar. Example: `Code (Claude Code)`, `Research (ChatGPT)`, `Chat (Claude Code)`.
 
 **`Next:` is the most critical field** — `newbeginning`'s brief leads with it. Write it as actionable direction, not vague aspiration ("ship v1.6 scope" beats "consider next steps").
 
@@ -99,6 +109,13 @@ Short sessions (quick fix, one-off question) still get logged, but entries can b
 **Filename resolution:** Look for `project_index.md` first. If not found, check case variants (`Project_Index.md`, `PROJECT_INDEX.md`, `project_Index.md`) and common alternatives (`project.md`, `index.md`). Use whatever exists; don't create a duplicate. If nothing exists, create `project_index.md`.
 
 If it doesn't exist, create it — interview the user briefly for project identity (name, people involved, one-line summary). If it exists, update it to reflect current state.
+
+**Update procedure:** Each session, update these fields:
+- **Summary** — rewrite to reflect current state (not history)
+- **Key Decisions** — add new decisions from this session; archive overflow per the max-8 rule
+- **Active TODOs** — add new, reprioritize existing, flag stale (3+ sessions)
+- **Key Files** — rebuild from this session's activity (see Key Files regeneration below)
+- **Updated** — set to today's date
 
 **Format:**
 
@@ -132,7 +149,7 @@ If it doesn't exist, create it — interview the user briefly for project identi
 
 **Staleness rule:** Any TODO present for 3+ sessions gets flagged with ⚠️. Ask the user: blocked, completed, or drop? Don't silently carry stale items.
 
-**Key Files regeneration:** Rebuild this list each session from recently modified + structurally important files. Remove files that no longer exist. This section is a "start here" pointer for the next session, not a file inventory.
+**Key Files regeneration:** Rebuild this list each session from: files touched in this session's git diff (if available), files discussed in conversation, and structurally important files (entry points, configs). Remove files that no longer exist. This section is a "start here" pointer for the next session, not a file inventory.
 
 **Archived decisions overflow:** When `Archived Decisions` reaches 10 and an 11th needs to be added, move the oldest entries to `project_decisions_archive.md` (separate file at workspace root). That file is never read by `newbeginning` unless explicitly requested. Long-term record only.
 
@@ -170,7 +187,7 @@ The reflective step. Review the session for things worth persisting beyond the p
 
 5. **Present candidates to the user** with their types and Open Brain connections. Ask which to save, which to discard, whether to edit the wording. **Do NOT save anything to Open Brain until the user explicitly approves.**
 
-6. **Save approved items** via `capture_thought` with the user's final wording. Delete `pending_learnings.md` after all approved items are saved.
+6. **Save approved items** via `capture_thought` with the user's final wording. Delete `pending_learnings.md` after all approved items are saved. If the user approved some candidates and skipped or discarded others, save the approved ones and still delete the file — skipped candidates are treated as discarded for file lifecycle purposes.
 
 ### Step 5: Close out (the ritual)
 
@@ -184,7 +201,7 @@ Project index updated ✓
 [N] learning candidates ready for review ✓
 ```
 
-(If learnings were already reviewed: "[N] insights saved to Open Brain" instead.)
+(If learnings were already reviewed: "[N] insights saved to Open Brain" instead. If partial: "[N] insights saved to Open Brain, [M] skipped.")
 
 Then end with the closing line — every time, no exceptions:
 
@@ -224,7 +241,7 @@ The skill's contract: gather session signals, draft an entry, update project sta
 |---|---|
 | First session ever on a project | Interview for identity (name, people, summary), create both files, start at #1 |
 | Partial state (one file exists, not the other) | Work with what's there; offer to create the missing file |
-| User says "skip Open Brain" | No `pending_learnings.md` written; candidates not surfaced; ritual still runs |
+| User says "skip Open Brain" | Skip Step 4 entirely — no candidates identified, no `pending_learnings.md` written. Proceed directly to Step 5. Ritual still runs. |
 | User says "skip the index update" | Respect it; warn that next `newbeginning` will see stale state |
 | Multiple projects in one session | Ask which to log; don't split across files |
 | Stale TODOs (3+ sessions) | Flag ⚠️ in the index; ask explicitly: blocked, done, or drop? |
@@ -260,6 +277,13 @@ Three lenses. Different failure modes get different responses.
 ---
 
 ## 7. Version & Changelog
+
+**v2.1.0 — 2026-05-25**
+- Transferability Protocol audit applied (Stages 1–4). 10 patches across Sections 2, 3, and 5.
+- Pre-flight: workspace root resolution chain added; entry-depth threshold defined; "skip Open Brain" rule unified with Decision Rules.
+- Core Workflow: first-session cross-reference; draft scope clarified; session-type labels defined as Mode (Tool) format; explicit index update procedure; Key Files rebuild method specified; partial-approval lifecycle rule for `pending_learnings.md`; mixed-state ritual format.
+- Decision Rules: "skip Open Brain" action aligned with Pre-flight item 4.
+- HANDOFF.md produced with section certifications, competent user definition, and CAN/CANNOT lists.
 
 **v2.0.0 — 2026-05-01 — BREAKING**
 - `newbeginning` mode extracted to its own skill (sibling: `newbeginning` v1.0).
