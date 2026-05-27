@@ -14,9 +14,10 @@ Skills install as a folder under `~/.claude/skills/` (Claude Code) or via the **
 
 | Skill | Latest | Status | One-liner |
 |---|---|---|---|
-| [`closingtime`](./skills/closingtime/) | v2.0 | Shipped | Session-closing capture — drafts a session entry, updates the project index, extracts Open Brain learning candidates, runs the close-out ritual. Pairs with `newbeginning`. |
-| [`newbeginning`](./skills/newbeginning/) | v1.0 | Shipped | Session-opening brief — reads `project_index.md` and the last entries of `project_session.md`, surfaces pending learnings, briefs on state and "Next" items. Pairs with `closingtime`. |
+| [`closingtime`](./skills/closingtime/) | v2.1 | Shipped | Session-closing capture — drafts a session entry, updates the project index, extracts Open Brain learning candidates, runs the close-out ritual. Pairs with `newbeginning`. |
+| [`newbeginning`](./skills/newbeginning/) | v1.0.1 | Shipped | Session-opening brief — reads `project_index.md` and the last entries of `project_session.md`, surfaces pending learnings, briefs on state and "Next" items. Pairs with `closingtime`. |
 | [`research-triangulation`](./skills/research-triangulation/) | v1.5 | Shipped | End-to-end methodology for running the same research across multiple AI platforms (Claude, Perplexity, Gemini, ChatGPT) and consolidating findings through convergence/divergence analysis. |
+| [`nate-update`](./skills/nate-update/) | v1.0 | Shipped | 7-stage resumable pipeline to sync the Nate B. Jones knowledge base — detects new Substack posts, downloads articles/transcripts/prompt kits, ingests into Open Brain. |
 
 Each skill has its own `README.md`, `SKILL.md`, and (where relevant) `BACKLOG.md` with open items and closed-decision register, plus `evals/` for regression checks.
 
