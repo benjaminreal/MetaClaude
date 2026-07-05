@@ -12,7 +12,9 @@ What this covers
 - Trigger phrases: the MUST-trigger list in the description matches documented
   triggers in the body text.
 - Session entry template: the entry template contains all required fields.
-- Project index template: the index format contains all required sections.
+- Project index template: the index format contains all required sections,
+  including the read-only Active TODOs mirror.
+- Tasks DB contract: Supabase task operations and task_urgency mirror query are documented.
 - Closing ritual: the Semisonic line and checkmark format are present.
 - Harness adaptations table: Required/Optional capability structure present.
 
@@ -226,7 +228,7 @@ def check_project_index_template() -> list[str]:
     text = read(SKILL_MD)
 
     index_match = re.search(
-        r"Step 3: Update project_index.*?\n```markdown\n(.*?)```", text, re.DOTALL
+        r"```markdown\n(# \[Project Name\].*?)```", text, re.DOTALL
     )
     if not index_match:
         issues.append("Project index template code block not found")
@@ -251,10 +253,37 @@ def check_closing_ritual() -> list[str]:
     if "Session #N logged" not in text:
         issues.append("Closing ritual checkmark format not found ('Session #N logged')")
 
-    if "Project index updated" not in text:
+    if "Tasks DB updated" not in text:
         issues.append(
-            "Closing ritual checkmark format not found ('Project index updated')"
+            "Closing ritual checkmark format not found ('Tasks DB updated')"
         )
+
+    if "Project index narrative + task mirror updated" not in text:
+        issues.append(
+            "Closing ritual checkmark format not found "
+            "('Project index narrative + task mirror updated')"
+        )
+
+    return issues
+
+
+def check_tasks_db_contract() -> list[str]:
+    """The skill must document Tasks DB reads/writes and mirror discipline."""
+    issues: list[str] = []
+    text = read(SKILL_MD)
+
+    required_snippets = [
+        "task_urgency",
+        "insert into tasks",
+        "status = 'done'",
+        "status = 'parked'",
+        "Read-only mirror",
+        "supabase",
+    ]
+
+    for snippet in required_snippets:
+        if snippet not in text:
+            issues.append(f"Tasks DB contract missing expected snippet: {snippet}")
 
     return issues
 
@@ -300,6 +329,7 @@ CHECKS = [
     ("session_entry_template", check_session_entry_template),
     ("project_index_template", check_project_index_template),
     ("closing_ritual", check_closing_ritual),
+    ("tasks_db_contract", check_tasks_db_contract),
     ("harness_adaptations_table", check_harness_adaptations_table),
 ]
 

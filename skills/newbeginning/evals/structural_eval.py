@@ -14,6 +14,7 @@ What this covers
 - Token target: the ≤2.5K token budget is documented.
 - Cold-start branch: Step 1a exists and describes the bootstrap path.
 - Permitted-edit carve-out: the write boundary is explicitly stated.
+- Tasks DB contract: task_urgency reads and DB-backed priority adjustment are documented.
 - Harness adaptations table: Required/Optional capability structure present.
 
 What this does NOT cover
@@ -245,8 +246,29 @@ def check_permitted_edit_carveout() -> list[str]:
     if not found:
         issues.append(
             "No explicit write-boundary statement found. The skill should declare "
-            "when it's permitted to write files (cold-start and priority adjustment only)."
+            "when it's permitted to write files or task state "
+            "(cold-start/index reconstruction and DB-backed priority adjustment only)."
         )
+
+    return issues
+
+
+def check_tasks_db_contract() -> list[str]:
+    """The skill must document task_urgency reads and DB-backed task updates."""
+    issues: list[str] = []
+    text = read(SKILL_MD)
+
+    required_snippets = [
+        "task_urgency",
+        "where status = 'open' and project = $1",
+        "Supabase",
+        "frozen markdown TODOs",
+        "update tasks",
+    ]
+
+    for snippet in required_snippets:
+        if snippet not in text:
+            issues.append(f"Tasks DB contract missing expected snippet: {snippet}")
 
     return issues
 
@@ -292,6 +314,7 @@ CHECKS = [
     ("token_target", check_token_target),
     ("cold_start_branch", check_cold_start_branch),
     ("permitted_edit_carveout", check_permitted_edit_carveout),
+    ("tasks_db_contract", check_tasks_db_contract),
     ("harness_adaptations_table", check_harness_adaptations_table),
 ]
 
