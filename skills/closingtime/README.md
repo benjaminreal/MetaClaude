@@ -6,9 +6,9 @@
 
 If you work on long-running projects across multiple sessions, you know the problem: every time you start a new conversation, the model has no memory of what came before. You lose decisions, context, and momentum. You can try to summarize manually, but at the end of a long session you'll miss things, and git log alone doesn't capture the *why* behind decisions or what you intended to do next.
 
-**closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates a compact project index (~400 words), and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes, newbeginning reads them — getting you back to productive work in ≤ 2.5K tokens instead of thousands spent scanning files and guessing at priorities.
+**closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work in ≤ 2.5K tokens instead of thousands spent scanning files and guessing at priorities.
 
-**Version:** 2.0.0
+**Version:** 2.2.0
 
 ---
 
@@ -53,12 +53,24 @@ Appended to `project_session.md`:
 
 ### Project index update
 
-Rewrites `project_index.md` to reflect current state:
+Rewrites the narrative parts of `project_index.md` to reflect current state:
 
 - Summary rewritten to describe where things stand now
-- Key Decisions and Active TODOs updated
+- Key Decisions updated
 - Key Files rebuilt from what's relevant now
-- Stale TODOs (3+ sessions) flagged for your attention
+- `## Active TODOs` refreshed only as a read-only mirror from Supabase `task_urgency`
+
+### Task updates
+
+Writes approved task changes to the Supabase Tasks database:
+
+- Add new tasks
+- Mark tasks done
+- Reprioritize or flag tasks
+- Park tasks until a review date
+- Cancel tasks that should leave the active queue
+
+The markdown TODO block is not the source of truth. It is a generated mirror for offline/at-a-glance use.
 
 ### Learning candidates
 
@@ -74,7 +86,8 @@ After everything is saved, you'll see:
 
 ```
 Session #N logged ✓
-Project index updated ✓
+Tasks DB updated ✓
+Project index narrative + task mirror updated ✓
 [N] learning candidates ready for review ✓
 ```
 
@@ -108,20 +121,25 @@ Five steps:
 |---|---|
 | 1. Gather | Reads git diff, conversation history, file changes, transcript (if available) |
 | 2. Write session entry | Drafts → user reviews → appends to `project_session.md` |
-| 3. Update index | Rewrites `project_index.md` to reflect current state |
+| 3. Update index + tasks | Rewrites narrative notes, writes task changes to the Tasks DB, refreshes the read-only task mirror |
 | 4. Extract learnings | Identifies candidates, searches Open Brain for connections, presents for approval |
 | 5. Close out | Confirmation checkmarks + closing line |
 
 ### 4. Harness Adaptations
-The skill works across Claude Code, Cowork, and other environments. It requires file writing and conversation — everything else (git access, transcript tools, Open Brain) is optional and degrades gracefully. If something isn't available, it tells you and works around it.
+The skill works across Claude Code, Cowork, and other environments. It requires file writing and conversation — everything else (git access, transcript tools, Supabase Tasks DB, Open Brain) is optional and degrades gracefully. If Supabase is unavailable, it warns you, logs the session, and captures task-change intent without writing stale markdown TODOs.
 
 ### 5. Decision Rules
-Behavioral guardrails: respects "skip" at any point, handles first-ever sessions (creates both files), flags stale TODOs, manages archived decisions overflow, and ensures the minimum viable handoff (`Next:` field) is always populated even in rushed closes.
+Behavioral guardrails: respects "skip" at any point, handles first-ever sessions (creates both files), treats Tasks DB state as authoritative, manages archived decisions overflow, and ensures the minimum viable handoff (`Next:` field) is always populated even in rushed closes.
 
 ### 6. Eval Criteria
-Three lenses — output quality (entry ≤ 300 words, index ≤ 400 words, no duplication), workflow correctness (draft shown before writing, Open Brain gated on approval, ritual executed), and failure response (restart the step on boundary violations, edit in place on length/wording).
+Three lenses — output quality (entry ≤ 300 words, narrative index concise, no duplication), workflow correctness (draft shown before writing, task writes verified, Open Brain gated on approval, ritual executed), and failure response (restart the step on boundary violations, edit in place on length/wording).
 
 ### 7. Version & Changelog
+
+**v2.2.0** — 2026-07-05
+- Migrated task state to the Supabase Tasks database.
+- `## Active TODOs` is now a read-only mirror regenerated from `task_urgency`.
+- Added graceful degradation for harnesses without Supabase access.
 
 **v2.0.0** — 2026-05-01 — BREAKING
 - `newbeginning` mode extracted to its own skill.
