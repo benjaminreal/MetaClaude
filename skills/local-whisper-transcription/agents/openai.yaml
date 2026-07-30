@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Whisper Transcription"
+  short_description: "Audit-ready local transcription pipeline"
+  default_prompt: "Use $local-whisper-transcription to diagnose, prepare, transcribe, and assemble this recording locally."
