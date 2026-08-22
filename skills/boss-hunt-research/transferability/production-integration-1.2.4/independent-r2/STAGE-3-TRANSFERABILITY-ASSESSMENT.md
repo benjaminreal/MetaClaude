@@ -1,0 +1,10 @@
+# Stage 3 Transferability Assessment — 2026-08-21
+
+The clean test validated Sections 1, 2, 4, 5, and 7 for the offline/read-only workflow and validated the route mechanics represented by all six named behavioral cases. Section 3 successfully took the user from canonical target through a new evidence-complete V3 dossier and a hash-bound review request. Section 6's documented CLI expectations were mostly reproducible: planning and initialization returned the specified statuses, the pending attach was refused, and the validator failed closed. One gap remains: after `review_record.py prepare`, the documentation does not say how to bind the prepared pending record into the dossier. Without a manual copy intervention, validation emits both `REVIEW_PENDING` and `REVIEW_HASH_MISMATCH`, not the documented single pending diagnostic. A named human or isolated fresh context is also required for semantic review; that is an explicit external dependency, not a documentation gap. A competent user can author and freeze the dossier, but cannot complete the documented review-ready handoff without the pending-binding intervention.
+
+## Handoff-Ready Checkpoint — 2026-08-21 (working draft)
+
+- **Sections at transfer standard:** 1 Purpose & Scope; 2 Pre-flight Checklist; 4 Adaptations; 5 Decision Rules; 7 Version & Changelog.
+- **Sections not yet at transfer standard:** 3 Core Workflow and 6 Eval Criteria, specifically the pending-review binding step.
+- **What a competent user CAN do now:** validate the target; create an isolated plan; initialize and author a new V3 dossier from evidence; run structural/policy validation; execute the six route/edge controls; prepare a separate reviewer request; and stop safely at `REVIEW_PENDING`.
+- **What a competent user CANNOT yet do:** obtain the documented single-diagnostic pending state without manually copying the prepared review record; complete semantic review without a named human or isolated fresh-context reviewer; attach a pending review; or claim final promotion/readiness.

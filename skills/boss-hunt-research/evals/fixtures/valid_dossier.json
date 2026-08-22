@@ -1,0 +1,76 @@
+{
+  "schema_version": "BossHuntResearchDossierV3",
+  "run_id": "run-v3-synthetic-001",
+  "researcher_id": "researcher-synthetic",
+  "role": {
+    "target_id": "J-000123", "source_tracker_id": "J-000123", "intake_mode": "LIVE_REQUISITION",
+    "company": "Example Company", "company_domain": "example.com", "role_title": "Director of Product Design",
+    "job_url": "https://careers.example.com/jobs/director-product-design", "jd_source": "synthetic/example-jd.md",
+    "posting_status": "OPEN", "geography": "Mexico", "function": "Product Design", "explicit_boss_titles": ["VP Product"],
+    "authority_sources": [{"authority_type": "LOCAL_ROLE_RECORD", "source_ref": "synthetic/role-J-000123.json", "observed_at": "2026-08-21T09:00:00-06:00", "authority_scope": "J-000123 identity and read-only research", "evidence_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+    "owner_scope": "Read-only synthetic research; zero live connectors and credits."
+  },
+  "capabilities": {
+    "local_role_authority": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic target", "receipt_ref": "receipt:local-role", "evidence_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+    "public_web": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic evidence", "receipt_ref": "receipt:public-web", "evidence_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222"},
+    "authenticated_profile": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic profile", "receipt_ref": "receipt:auth-profile", "evidence_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+    "hunter_account_details": {"state": "UNAVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "offline eval", "receipt_ref": "receipt:hunter-account", "evidence_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"},
+    "hunter_email_finder": {"state": "UNAVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "offline eval", "receipt_ref": "receipt:hunter-finder", "evidence_sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"},
+    "hunter_domain_search": {"state": "NOT_APPLICABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "named route resolved", "receipt_ref": "receipt:hunter-domain", "evidence_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"},
+    "local_python": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "local scripts", "receipt_ref": "receipt:python", "evidence_sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"},
+    "schema_validation": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "V3", "receipt_ref": "receipt:schema", "evidence_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888"}
+  },
+  "guards": {
+    "overall_state": "CLEAR",
+    "receipts": [
+      {"guard": "NO_BYPASS", "result": "CLEAR", "source_ref": "synthetic/history.json", "observed_at": "2026-08-21T09:05:00-06:00", "authority_scope": "company and target", "evidence_sha256": "sha256:0101010101010101010101010101010101010101010101010101010101010101", "run_id": "run-v3-synthetic-001"},
+      {"guard": "TERMINAL_OUTREACH", "result": "CLEAR", "source_ref": "synthetic/history.json", "observed_at": "2026-08-21T09:05:00-06:00", "authority_scope": "company and target", "evidence_sha256": "sha256:0202020202020202020202020202020202020202020202020202020202020202", "run_id": "run-v3-synthetic-001"},
+      {"guard": "OWNER_CLOSED", "result": "CLEAR", "source_ref": "synthetic/history.json", "observed_at": "2026-08-21T09:05:00-06:00", "authority_scope": "company and target", "evidence_sha256": "sha256:0303030303030303030303030303030303030303030303030303030303030303", "run_id": "run-v3-synthetic-001"},
+      {"guard": "COMPANY_COLLISION", "result": "CLEAR", "source_ref": "synthetic/history.json", "observed_at": "2026-08-21T09:05:00-06:00", "authority_scope": "company-wide", "evidence_sha256": "sha256:0404040404040404040404040404040404040404040404040404040404040404", "run_id": "run-v3-synthetic-001"},
+      {"guard": "DISCONFIRMATION", "result": "CLEAR", "source_ref": "synthetic/disconfirmers.json", "observed_at": "2026-08-21T09:05:00-06:00", "authority_scope": "recipient and company", "evidence_sha256": "sha256:0505050505050505050505050505050505050505050505050505050505050505", "run_id": "run-v3-synthetic-001"}
+    ]
+  },
+  "search": {
+    "reporting_hypotheses": [{"title": "VP Product", "basis": "Synthetic JD states reports to VP Product.", "would_support": "Current VP Product with matching scope.", "would_refute": "Current org source assigns design elsewhere."}],
+    "literal_seat_result": "HIT",
+    "queries_run": [
+      {"stage": "EMPLOYER_CONTEXT", "surface": "synthetic-employer", "query": "resolve employer and role", "observed_at": "2026-08-21T09:10:00-06:00", "outcome": "HIT", "result_url": "https://example.com/careers/director-product-design", "run_id": "run-v3-synthetic-001", "note": "Synthetic evidence."},
+      {"stage": "LITERAL_SEAT", "surface": "synthetic-public", "query": "Example VP Product", "observed_at": "2026-08-21T09:12:00-06:00", "outcome": "HIT", "result_url": "https://example.com/team/jordan", "run_id": "run-v3-synthetic-001", "note": "Candidate only."},
+      {"stage": "REPORTING_ALTERNATIVES", "surface": "synthetic-public", "query": "Example alternative", "observed_at": "2026-08-21T09:14:00-06:00", "outcome": "MISS", "result_url": null, "run_id": "run-v3-synthetic-001", "note": null},
+      {"stage": "REQUISITION_AND_SEARCH_OWNER", "surface": "synthetic-public", "query": "Example hiring owner", "observed_at": "2026-08-21T09:16:00-06:00", "outcome": "MISS", "result_url": null, "run_id": "run-v3-synthetic-001", "note": null},
+      {"stage": "ADJACENT_ROUTES", "surface": "synthetic-public", "query": "Example adjacent routes", "observed_at": "2026-08-21T09:18:00-06:00", "outcome": "MISS", "result_url": null, "run_id": "run-v3-synthetic-001", "note": null},
+      {"stage": "AUTHENTICATED_CURRENTNESS", "surface": "synthetic-profile", "query": "observe Jordan current role", "observed_at": "2026-08-21T09:20:00-06:00", "outcome": "HIT", "result_url": "https://profiles.example.com/in/jordan", "run_id": "run-v3-synthetic-001", "note": "Synthetic currentness."},
+      {"stage": "HOOK_ARTIFACT", "surface": "synthetic-employer", "query": "Jordan operating model", "observed_at": "2026-08-21T09:25:00-06:00", "outcome": "HIT", "result_url": "https://example.com/insights/jordan-operating-model", "run_id": "run-v3-synthetic-001", "note": "Exact synthetic artifact."},
+      {"stage": "EMAIL_DISCOVERY_FIRST_PARTY", "surface": "synthetic-employer", "query": "published professional address", "observed_at": "2026-08-21T09:30:00-06:00", "outcome": "HIT", "result_url": "https://example.com/team/jordan", "run_id": "run-v3-synthetic-001", "note": "No Hunter required."}
+    ],
+    "authenticated_currentness": {"capability_receipt_ref": "receipt:auth-profile", "surface": "synthetic-profile", "identity_binding": {"recipient_name": "Jordan Example", "profile_url": "https://profiles.example.com/in/jordan", "company": "Example Company", "target_id": "J-000123"}, "observed_at": "2026-08-21T09:20:00-06:00", "fresh_until": "2026-08-22T09:20:00-06:00", "result": "CONFIRMED", "evidence_ref": "synthetic/profile-readback.json", "evidence_sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999", "run_id": "run-v3-synthetic-001"}
+  },
+  "recipient": {"name": "Jordan Example", "current_title": "VP Product", "route_class": "LIKELY_HM", "requisition_linkage": "ADJACENT", "profile_url": "https://profiles.example.com/in/jordan", "currentness_sources": [
+    {"url": "https://profiles.example.com/in/jordan", "observed_at": "2026-08-21T09:20:00-06:00", "run_id": "run-v3-synthetic-001", "supports": "CURRENT_TITLE_AND_EMPLOYER", "source_family": "AUTHENTICATED_PROFILE", "independence_key": "profile:jordan", "content_sha256": "sha256:abababababababababababababababababababababababababababababababab"},
+    {"url": "https://example.com/team/jordan", "observed_at": "2026-08-21T09:22:00-06:00", "run_id": "run-v3-synthetic-001", "supports": "CURRENT_TITLE_AND_EMPLOYER", "source_family": "EMPLOYER", "independence_key": "employer:jordan", "content_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  ]},
+  "hook": {"text": "Jordan described a product operating-model change.", "attribution": "PERSON", "artifact_url": "https://example.com/insights/jordan-operating-model", "artifact_date": "2026-06-15", "observed_at": "2026-08-21T09:25:00-06:00", "support_excerpt": "Jordan explains the operating-model change.", "support_state": "SUPPORTED", "run_id": "run-v3-synthetic-001", "evidence_binding": {"intent_id": "recipient-authored-operating-model", "result_url": "https://example.com/insights/jordan-operating-model", "content_sha256": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", "run_id": "run-v3-synthetic-001"}},
+  "hook_search": {"policy_version": "BossHuntHookSearchV2", "fallback_kind": "RECIPIENT_SPECIFIC", "coverage_claim": "COMPLETE", "intents": [
+    {"intent_id": "recipient-authored-operating-model", "family": "RECIPIENT_AUTHORED", "signature": {"subject": "jordan example", "claim": "authored operating model artifact", "surface_family": "employer authored content"}, "canonical_fingerprint": "sha256:1cb4d73c923c38671f7dfdb7e8d3d978223aaf673f5e03e829349be04423907e", "hypothesis": "Jordan authored substantive operating-model material.", "surface": "synthetic-employer", "query_or_action": "Jordan operating model", "observed_at": "2026-08-21T09:25:00-06:00", "run_id": "run-v3-synthetic-001", "outcome": "HIT", "result_url": "https://example.com/insights/jordan-operating-model", "content_sha256": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", "supports_selected_hook": true},
+    {"intent_id": "refute-operating-model-attribution", "family": "ATTRIBUTION_REFUTATION", "signature": {"subject": "jordan example", "claim": "refute operating model attribution", "surface_family": "exact artifact readback"}, "canonical_fingerprint": "sha256:a1eed97fd48b88964ea044cb700ef829218bc7033ee29234aabc61b3b5d2d1c9", "hypothesis": "The artifact may not substantively attribute the claim to Jordan.", "surface": "synthetic-readback", "query_or_action": "inspect byline and attributed text", "observed_at": "2026-08-21T09:27:00-06:00", "run_id": "run-v3-synthetic-001", "outcome": "HIT", "result_url": "https://example.com/insights/jordan-operating-model", "content_sha256": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", "supports_selected_hook": false}
+  ]},
+  "candidate_proof": {"claim": "Led a comparable product operating-model redesign.", "source_ref": "synthetic/approved-cv.md#proof-1", "source_kind": "APPROVED_CV", "evidence_sha256": "sha256:dededededededededededededededededededededededededededededededede", "run_id": "run-v3-synthetic-001", "support_state": "SUPPORTED"},
+  "channel": {"kind": "EMAIL", "address": "jordan@example.com", "state": "VERIFIED", "basis": "PUBLISHED_FIRST_PARTY", "source_url": "https://example.com/team/jordan", "hunter_usage": {"account_snapshot_at": null, "account_receipt_ref": null, "method": "NONE", "result": "NOT_USED", "domain_search_limit": null, "discovery_connector_calls": 0, "search_credits_used": 0, "verification_credits_used": 0}},
+  "decision": {"readiness": "DRAFT_READY_VERIFY_CHANNEL", "permitted_response": "CONVERSATION", "requires_owner_decision": false, "reason": "Synthetic likely functional owner with currentness, exact hook, proof, guards, and first-party channel.", "next_bounded_search": null},
+  "disconfirmers": [],
+  "quality_review": {"review_schema": "BossHuntIndependentReviewV2", "reviewer_id": "reviewer-synthetic", "review_subject_sha256": "sha256:f8658bca33bd1f4894d70d380c3eb8715a41dbefb3e11288523195949d7c8d78", "verdict": "PASS", "checks": [
+    {"name": "RESOURCE_COVERAGE", "verdict": "PASS", "evidence_refs": ["search.queries_run"]},
+    {"name": "ROUTE_HONESTY", "verdict": "PASS", "evidence_refs": ["recipient.route_class", "search.literal_seat_result"]},
+    {"name": "CURRENT_ROLE", "verdict": "PASS", "evidence_refs": ["search.authenticated_currentness", "recipient.currentness_sources"]},
+    {"name": "HOOK_ATTRIBUTION", "verdict": "PASS", "evidence_refs": ["hook.evidence_binding", "hook_search.intents"]},
+    {"name": "CHANNEL_SEPARATION", "verdict": "PASS", "evidence_refs": ["channel", "capabilities.hunter_email_finder"]},
+    {"name": "COLLISION_LIFECYCLE", "verdict": "PASS", "evidence_refs": ["guards.receipts"]}
+  ], "reviewed_at": "2026-08-21T09:40:00-06:00", "note": "Synthetic independent review."},
+  "query_access_limitations": [
+    {"capability": "hunter_account_details", "surface": "Hunter", "state": "UNAVAILABLE", "reason": "Offline evaluation; no account call permitted.", "observed_at": "2026-08-21T09:00:00-06:00", "receipt_ref": "receipt:hunter-account"},
+    {"capability": "hunter_email_finder", "surface": "Hunter", "state": "UNAVAILABLE", "reason": "Offline evaluation; first-party address made Hunter unnecessary.", "observed_at": "2026-08-21T09:00:00-06:00", "receipt_ref": "receipt:hunter-finder"},
+    {"capability": "hunter_domain_search", "surface": "Hunter", "state": "NOT_APPLICABLE", "reason": "A named route and first-party address were resolved.", "observed_at": "2026-08-21T09:00:00-06:00", "receipt_ref": "receipt:hunter-domain"}
+  ],
+  "owner_summary": {"route_summary": "LIKELY_HM candidate route with a published first-party address.", "weakest_assumption": "Requisition ownership is adjacent, not explicit.", "capability_limits": ["Hunter was unavailable and unused; zero credits."], "next_action_or_stop": "Research handoff only; any drafting requires a separate gate.", "authority_note": "No live truth, delivery, efficacy, drafting, send, or mutation claim."},
+  "notes": "All fixture identities and evidence are synthetic."
+}

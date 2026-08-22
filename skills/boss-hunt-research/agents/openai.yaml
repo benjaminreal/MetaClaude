@@ -1,0 +1,12 @@
+interface:
+  display_name: "Boss Hunt Research"
+  short_description: "Resolve role-linked candidate routes with evidence-backed ceilings"
+  default_prompt: "Use $boss-hunt-research to resolve a role-linked BossHunt contact route and produce an evidence-backed research dossier without drafting or sending outreach."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "codex_apps"
+      description: "Hunter connector provider; this skill uses only account details, Email Finder, and Domain Search under its no-mutation and credit limits."
+    - type: "mcp"
+      value: "node_repl"
+      description: "Codex runtime used by the external Chrome and harness internal-browser control skills for permitted read-only professional-profile access."
