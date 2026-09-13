@@ -31,8 +31,10 @@ The deterministic acquisition order is:
 
 Provider recognition is an optimization, not a requirement. An unfamiliar
 board can pass through JSON-LD or static HTML. HTTP 200, nonempty text, or a
-copied suffix is insufficient: the method-specific quality evidence must bind
-one posting and a structural end boundary.
+copied suffix is insufficient. Quality is recomputed from the description and
+method-specific structural identity, length, response/capture hash, truncation
+scan, and boundary evidence. Explicit ellipsis, clipped/truncated, and
+read-more signals block the record.
 
 When changing provider endpoint recognition or field mapping, read
 [public ATS adapters](providers/public_ats.md).
@@ -92,13 +94,22 @@ security prompt requiring owner action stops that attempt. Do not use
 screenshots, hidden requests, private endpoints, proxy rotation, CAPTCHA bypass,
 or copied authentication material.
 
-The current CLI emits the browser handoff but does not itself control a browser
-or merge browser output back into a V2 bundle. For non-LinkedIn browser captures,
-prepare the existing strict direct-record input described in
-[direct-source intake](direct_source_intake.md); preserve the failed V2 bundle
-as provenance. A batch may proceed with a successful subset only after the
-owner explicitly selects that subset and a new input accounts for exactly that
-narrowed scope. Do not silently remove failures from the original bundle.
+The CLI does not control a browser. Capture fallback evidence through an
+authorized user-visible surface or owner artifact, then merge it without
+changing scope:
+
+```bash
+python3 scripts/sync_jobs.py resume-url \
+  --bundle /private/tmp/sync-jobs-run/acquisition.json \
+  --replacements /private/tmp/sync-jobs-run/fallback.json \
+  --out /private/tmp/sync-jobs-run/acquisition-complete.json
+```
+
+`SourcePostingFallbackV2.outcomes` is a list keyed by `request_id`. It must
+cover every original failure exactly once, with either `record` or `failure`.
+Only `rendered_dom_text` and `owner_provided_artifact` records are accepted.
+Missing, extra, or duplicate IDs and attempts to replace accepted records
+fail. Unresolved outcomes append attempts and keep the merged bundle incomplete.
 
 An owner-supplied HTML, PDF, or text artifact is the final fallback. Hash and
 attribute the artifact and state that current live availability was not
@@ -106,18 +117,21 @@ verified. Do not infer omitted text or source dates.
 
 ## Security limits
 
-The public transport accepts only HTTP(S), rejects embedded credentials,
+The public transport accepts only HTTP(S), rejects and redacts embedded credentials and secret-bearing query parameters,
 localhost, literal and DNS-resolved private/loopback/link-local destinations,
 unsafe redirects, disallowed ports, excess redirects, oversized responses,
 unsupported content types, and unsupported compression. It requests static
-JSON or HTML and never executes downloaded scripts.
+JSON or HTML and never executes downloaded scripts. Each redirect hop resolves
+once and connects only to that validated public IPv4/IPv6 socket address while
+retaining the original Host header and verified TLS SNI. Gzip and deflate are
+streamed with the same decoded-byte cap as identity bodies.
 
 Do not add a new external extraction dependency merely to support one observed
 page. Read [dependency evaluation](dependency_evaluation.md) before changing the
 core. Live failures are maintenance evidence, not permission to weaken URL or
 quality checks.
 
-For the dated 2.4 canary results and outstanding promotion gates, read
+For the dated release evidence and outstanding promotion gates, read
 [release evidence](release_evidence_2026-09-13.md). Do not treat dated canaries
 as a permanent guarantee that a board remains anonymously accessible.
 

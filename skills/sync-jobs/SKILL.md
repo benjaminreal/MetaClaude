@@ -2,7 +2,7 @@
 name: sync-jobs
 description: Acquire and capture owner-selected LinkedIn, employer, ATS, Indeed, or unfamiliar job-board postings; sync validated jobs into a local Excel tracker and archive; and optionally triage them with an explicitly selected candidate profile. Use for posting URLs, saved-job sync, direct-source intake, sync-plus-triage, and owner-requested archive rechecks; excludes applications, cover letters, outreach, and general job discovery.
 metadata:
-  version: "2.4.0"
+  version: "2.5.0"
 ---
 
 # Sync jobs
@@ -21,9 +21,11 @@ Use `python3 scripts/sync_jobs.py --project-root <root> --profile <profile-id> <
 
 For owner-selected employer, ATS, Indeed, or unfamiliar job-board URLs, read [source acquisition](references/source_acquisition.md). `acquire-url` is non-mutating and accounts for every URL as a validated record or retained failure. It tries supported official public ATS endpoints, schema.org `JobPosting`, and bounded public HTML. LinkedIn is deliberately returned as a browser-required handoff; do not route it through an unauthorized scraping library or private endpoint.
 
+For an incomplete source-neutral bundle, `resume-url` merges an exactly covering set of browser/manual fallback outcomes. It preserves accepted records and selected scope, replaces only failures, appends attempts, and revalidates hashes and completion claims. This remains separate from LinkedIn `SelectedPostingAcquisitionV1` capture.
+
 For acquisition-only work on owner-selected posting IDs, read [LinkedIn adapter](references/linkedin_adapter.md) and [capture quality](references/acquisition_quality.md). This mode captures evidence without opening the tracker or archive gates and cannot label selected IDs as official new jobs or claim a completed sync.
 
-For validated external captures, read [direct-source intake](references/direct_source_intake.md). `external-ingest` accepts complete `SourcePostingAcquisitionV2` bundles or compatible legacy direct records, rehearses by default, and never treats a board or careers landing page as one job unless the evidence binds one unambiguous role.
+For validated external captures, read [direct-source intake](references/direct_source_intake.md). `external-ingest` accepts complete `SourcePostingAcquisitionV2` bundles or compatible legacy direct records, rehearses by default, and never treats a board or careers landing page as one job unless the evidence binds one unambiguous role. V2 identity prefers provider plus stable provider job ID; canonical URL is the fallback.
 
 For owner-requested rechecks or updates of existing archives, read [source verification](references/source_verification.md). `audit-existing` freezes selection before fresh browser capture and comparison; `refresh-existing` previews exact selected differences before an authorized commit. Both are strictly on demand and never run as part of normal sync or triage. Local-only checks cannot claim source completeness.
 

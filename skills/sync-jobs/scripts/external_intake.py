@@ -19,7 +19,9 @@ from openpyxl.utils.cell import range_boundaries
 import posting_compensation
 import posting_eligibility
 from acquisition_quality import validate_quality
-from source_acquisition import source_record_hash, validate_bundle as validate_source_bundle
+from excel_literal import write_literal_text
+from record_fields import normalize_description
+from source_acquisition import canonical_posting_url, source_record_hash, validate_bundle as validate_source_bundle
 from sync_ingest import country_from_location, header_index, posted_yyyymm, sanitize
 
 TRACKING_KEYS={"from","refid","source","eid","locale"}
@@ -38,6 +40,19 @@ def canonical_url(value: str) -> str:
 def source_id(url: str) -> str:
     return "ext-"+hashlib.sha256(canonical_url(url).encode()).hexdigest()[:20]
 
+def primary_identity(rec: dict, *, v2: bool):
+    canonical=(canonical_posting_url if v2 else canonical_url)(rec["url"])
+    provider=str(rec.get("provider") or "").strip().casefold()
+    provider_job_id=str(rec.get("provider_job_id") or "").strip()
+    if v2 and provider and provider_job_id:
+        return ("provider_job_id",provider,provider_job_id),canonical
+    return ("canonical_url",canonical),canonical
+
+def identity_source_id(rec: dict, *, v2: bool) -> str:
+    identity,_=primary_identity(rec,v2=v2)
+    if not v2:return source_id(rec["url"])
+    return "ext-"+hashlib.sha256(canonical_json(identity)).hexdigest()[:20]
+
 def canonical_json(value) -> bytes:
     return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()
 
@@ -55,17 +70,18 @@ def load_records(path: Path) -> tuple[list[dict], str | None]:
         raise ValueError("unsupported external input schema")
     if payload.get("failures") not in (None,[]):
         raise ValueError("external input retains failures; ingestion requires a complete batch")
-    records=[];seen=set()
+    records=[];seen=set();v2=bundle_sha is not None
     for raw in payload["records"]:
         if not isinstance(raw,dict): raise ValueError("external records must be objects")
-        rec=dict(raw);url=rec.get("url")
-        sid=source_id(url)
+        rec=normalize_description(raw);url=rec.get("url")
+        sid=identity_source_id(rec,v2=v2)
         if rec.get("source_id") not in (None,sid): raise ValueError(f"{sid}: supplied source_id does not match canonical URL")
         rec["source_id"]=sid;rec["id"]=sid
         for key in ("title","company","location","description"):
             if not isinstance(rec.get(key),str) or not rec[key].strip(): raise ValueError(f"{sid}: {key} is required")
-        if sid in seen: raise ValueError(f"duplicate external source identity {sid}")
-        seen.add(sid);quality=validate_quality(rec,require_pass=True)
+        identity,_=primary_identity(rec,v2=v2)
+        if identity in seen: raise ValueError(f"duplicate external source identity {sid}")
+        seen.add(identity);quality=validate_quality(rec,require_pass=True)
         description_sha=hashlib.sha256(rec["description"].encode()).hexdigest()
         if rec.get("description_sha256") not in (None,description_sha):
             raise ValueError(f"{sid}: supplied description_sha256 does not match description bytes")
@@ -94,7 +110,7 @@ def source_sidecar(rec: dict, tracker_id: str, archive_path: str, bundle_sha: st
         "acquisition_bundle_sha256":bundle_sha,
         "discovery_url":rec.get("supplied_url") or rec["url"],
         "final_url":rec.get("final_url") or rec["url"],
-        "canonical_url":rec.get("canonical_url") or canonical_url(rec["url"]),
+        "canonical_url":rec.get("canonical_url") or (canonical_posting_url(rec["url"]) if bundle_sha else canonical_url(rec["url"])),
         "provider":rec.get("provider"),
         "ats":rec.get("ats"),
         "provider_job_id":rec.get("provider_job_id"),
@@ -112,7 +128,7 @@ def render_md(rec: dict) -> str:
             f"Posted: {posted_yyyymm(rec)}\nSource: {rec['url'].strip()}\n"
             f"Source ID: {rec['source_id']}\n\n## About the Job\n\n{rec['description'].strip()}\n")
 
-def tracker_urls(ws,hdr):
+def tracker_urls(ws,hdr,canonicalizer=canonical_url):
     out={}
     cols=[hdr.get("Link puesto linkedin"),hdr.get("Link puesto empresa")]
     for row in range(2,ws.max_row+1):
@@ -120,21 +136,44 @@ def tracker_urls(ws,hdr):
         for col in cols:
             value=ws.cell(row,col).value if col else None
             if not value: continue
-            try:key=canonical_url(str(value))
+            try:key=canonicalizer(str(value))
             except ValueError: continue
             item=(tid,row)
             if item not in out.setdefault(key,[]):out[key].append(item)
     return out
 
-def archive_urls(postings: Path):
+def archive_urls(postings: Path,canonicalizer=canonical_url):
     out={}
     for path in postings.glob("*.md"):
         source=next((line.split(":",1)[1].strip() for line in path.read_text(errors="ignore").splitlines() if line.startswith("Source:")),None)
         if not source: continue
-        try:key=canonical_url(source)
+        try:key=canonicalizer(source)
         except ValueError: continue
         out.setdefault(key,[]).append(path)
     return out
+
+def source_sidecar_index(meta: Path):
+    """Index V2 identities and URL aliases already bound to durable sidecars."""
+    identities={};urls={}
+    for path in (meta/"sources").glob("*_PostingSourceProvenanceV2.json"):
+        payload=json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema")!="PostingSourceProvenanceV2":continue
+        provider=str(payload.get("provider") or "").strip().casefold()
+        job_id=str(payload.get("provider_job_id") or "").strip()
+        identity=("provider_job_id",provider,job_id) if provider and job_id else None
+        entry={"tracker_id":str(payload.get("tracker_id") or ""),"archive_path":str(payload.get("archive_path") or ""),"path":path,"identity":identity}
+        if identity:
+            prior=identities.get(identity)
+            if prior and prior["tracker_id"]!=entry["tracker_id"]:raise ValueError(f"conflicting source sidecars for stable identity {identity}")
+            identities[identity]=entry
+        for key in ("discovery_url","final_url","canonical_url"):
+            if not payload.get(key):continue
+            try:url=canonical_posting_url(payload[key])
+            except ValueError:continue
+            prior=urls.get(url)
+            if prior and prior["tracker_id"]!=entry["tracker_id"]:raise ValueError(f"conflicting source sidecars for URL alias {url}")
+            urls[url]=entry
+    return identities,urls
 
 def max_tracker_id(ws,col):
     values=[]
@@ -164,10 +203,35 @@ def main(argv=None):
     required=["Tracker ID","Previous Row","Puesto","Empresa","Pais","Estatus","Next Action","JD File","Link puesto linkedin","Link puesto empresa","Comentarios"]
     missing=[x for x in required if x not in hdr_ro]
     if missing:raise ValueError(f"tracker missing headers: {missing}")
-    urls=tracker_urls(ws_ro,hdr_ro);wb_ro.close();archives=archive_urls(postings)
+    urls=tracker_urls(ws_ro,hdr_ro);v2_urls=tracker_urls(ws_ro,hdr_ro,canonical_posting_url)
+    tracker_ids={str(ws_ro.cell(row,hdr_ro["Tracker ID"]).value or "") for row in range(2,ws_ro.max_row+1)}
+    wb_ro.close();archives=archive_urls(postings);v2_archives=archive_urls(postings,canonical_posting_url)
+    sidecar_identities,sidecar_urls=source_sidecar_index(meta)
     pending=[];already=[]
     for rec in records:
-        key=canonical_url(rec["url"]);t=urls.get(key,[]);a=archives.get(key,[])
+        if bundle_sha:
+            identity,key=primary_identity(rec,v2=True)
+            t=v2_urls.get(key,[]);a=v2_archives.get(key,[])
+            stable=sidecar_identities.get(identity) if identity[0]=="provider_job_id" else None
+            alias=sidecar_urls.get(key)
+            if stable and alias and stable["tracker_id"]!=alias["tracker_id"]:
+                raise ValueError(f"{rec['source_id']}: stable provider identity conflicts with canonical URL alias")
+            if alias and identity[0]=="provider_job_id" and alias.get("identity") not in (None,identity):
+                raise ValueError(f"{rec['source_id']}: canonical URL is already bound to a conflicting stable provider job ID")
+            existing=stable or alias
+            if existing:
+                if any(tid!=existing["tracker_id"] for tid,_row in t):
+                    raise ValueError(f"{rec['source_id']}: changed URL aliases another tracker record")
+                expected_archive=(root/existing["archive_path"]).resolve()
+                if any(path.resolve()!=expected_archive for path in a):
+                    raise ValueError(f"{rec['source_id']}: changed URL aliases another archive")
+                tracker_ok=existing["tracker_id"] in tracker_ids
+                archive_ok=(root/existing["archive_path"]).is_file()
+                if tracker_ok!=archive_ok or not tracker_ok:
+                    raise ValueError(f"{rec['source_id']}: source sidecar has partial tracker/archive state")
+                already.append(rec);continue
+        else:
+            key=canonical_url(rec["url"]);t=urls.get(key,[]);a=archives.get(key,[])
         if len(t)>1 or len(a)>1:raise ValueError(f"{rec['source_id']}: ambiguous existing direct-source identity")
         if bool(t)!=bool(a):raise ValueError(f"{rec['source_id']}: partial tracker/archive state requires explicit recovery")
         (already if t else pending).append(rec)
@@ -206,7 +270,11 @@ def main(argv=None):
         # the legacy LinkedIn-labelled column.
         linkedin_cell=rec["url"] if bundle_sha is None else ""
         values={"Tracker ID":tid,"Previous Row":row,"Puesto":rec["title"],"Empresa":rec["company"],"Pais":country_from_location(rec["location"]),"Estatus":"Saved","Next Action":"Triage","JD File":archive_rel,"Link puesto linkedin":linkedin_cell,"Link puesto empresa":rec["url"],"Comentarios":f"Direct-source intake {dt.date.today().isoformat()} — pending triage"}
-        for key,val in values.items():ws.cell(row,hdr[key],val)
+        text_headers={"Tracker ID","Puesto","Empresa","Pais","Estatus","Next Action","JD File","Link puesto linkedin","Link puesto empresa","Comentarios"}
+        for key,val in values.items():
+            cell=ws.cell(row,hdr[key])
+            if key in text_headers and isinstance(val,str):write_literal_text(cell,val)
+            else:cell.value=val
         written.append({"tracker_id":tid,"source_id":rec["source_id"],"url":rec["url"],"archive":values["JD File"],"source_sidecar":f"JobPostings/_meta/sources/{tid}_PostingSourceProvenanceV2.json","title":rec["title"],"company":rec["company"]})
     table_ref=extend_table(ws)
     fd,tmp=tempfile.mkstemp(prefix=".external-intake-",suffix=".xlsx",dir=target.parent);os.close(fd)

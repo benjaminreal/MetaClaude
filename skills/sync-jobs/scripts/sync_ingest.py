@@ -55,6 +55,8 @@ import openpyxl
 
 import posting_compensation
 import posting_eligibility
+from excel_literal import write_literal_text
+from record_fields import description_value, normalize_description
 from acquisition_capture import RECORD_FIELDS, validate_record
 from acquisition_quality import validate_quality
 from sync_integrity import saved_records, surfaces, archived_record
@@ -376,7 +378,7 @@ def cmd_ingest(args):
     if args.saved_json:
         saved_records(args.saved_json)  # validate BEFORE any writes
     initial_sha = hashlib.sha256(Path(args.tracker).read_bytes()).hexdigest()
-    jobs = load_jobs(args.jobs_json)
+    jobs = [normalize_description(rec) if isinstance(rec, dict) else rec for rec in load_jobs(args.jobs_json)]
     if not jobs:
         rows,archives=surfaces(args.tracker,PROJECT_ROOT,POSTINGS_DIR)
         if set(rows)^set(archives):raise ValueError('Tracker/archive inconsistencies remain; supply recovery records')
@@ -399,7 +401,7 @@ def cmd_ingest(args):
         seen_input.add(jid)
         if jid in archives and jid not in tracker_rows:
             rec = archived_record(archives[jid], jid, get(rec, 'status', default='Saved'))
-        if jid not in canon and not str(get(rec, "description", "descriptionText", default="")).strip():
+        if jid not in canon and not description_value(rec).strip():
             raise ValueError(f"Missing description for new job {jid}; no ingestion performed")
         complete = jid in canon and tracker_rows[jid].get('JD File') and (Path(PROJECT_ROOT)/str(tracker_rows[jid]['JD File'])).resolve() == archives[jid].resolve()
         # Require current acquisition-quality evidence only when this run would
@@ -580,7 +582,9 @@ def cmd_ingest(args):
 
         def setv(header, value):
             if existing_row and header != 'JD File':return
-            ws.cell(row=next_row, column=hdr[header], value=value)
+            cell=ws.cell(row=next_row, column=hdr[header])
+            if isinstance(value,str):write_literal_text(cell,value)
+            else:cell.value=value
 
         setv("Tracker ID", tracker_id)
         setv("Previous Row", next_row)

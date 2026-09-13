@@ -29,9 +29,9 @@ def main(argv=None):
     ap.add_argument('--profile')
     ap.add_argument('--tracker', help='Absolute or project-relative tracker path')
     ap.add_argument('--commit', action='store_true', help="Enable the selected command's authorized writes")
-    ap.add_argument('command', choices=['acquire-save','acquire-url','external-ingest','audit-existing','refresh-existing','diff','ingest','reconcile','worklist','score','write','report'])
+    ap.add_argument('command', choices=['acquire-save','acquire-url','resume-url','external-ingest','audit-existing','refresh-existing','diff','ingest','reconcile','worklist','score','write','report'])
     args, rest = ap.parse_known_args(argv)
-    if args.command in {'acquire-save', 'acquire-url'} and args.commit:
+    if args.command in {'acquire-save', 'acquire-url', 'resume-url'} and args.commit:
         ap.error(f'{args.command} is acquisition-only and does not accept --commit')
     if args.command == 'acquire-save':
         module = importlib.import_module('acquisition_capture')
@@ -39,6 +39,9 @@ def main(argv=None):
     if args.command == 'acquire-url':
         module = importlib.import_module('source_acquisition')
         return module.main(rest)
+    if args.command == 'resume-url':
+        module = importlib.import_module('source_acquisition')
+        return module.resume_main(rest)
     if not args.project_root:
         ap.error('--project-root is required for tracker and archive commands')
     if not args.profile:

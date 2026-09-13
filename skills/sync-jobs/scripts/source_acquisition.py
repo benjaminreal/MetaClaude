@@ -12,8 +12,8 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import datetime as dt
-import gzip
 import hashlib
+import http.client
 from html.parser import HTMLParser
 import ipaddress
 import json
@@ -24,9 +24,7 @@ import socket
 import ssl
 import tempfile
 from typing import Callable
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 import zlib
 
 from acquisition_quality import validate_quality
@@ -40,6 +38,20 @@ ALLOWED_CONTENT_TYPES = {
 }
 JOB_CONTAINER = re.compile(
     r"(?:^|[-_\s])(job[-_\s]?(?:description|details|content)|posting[-_\s]?description|description)(?:$|[-_\s])",
+    re.I,
+)
+JOB_CONTAINER_NORMALIZED = re.compile(
+    r"\b(?:job description(?: text)?|job details|job content|posting description|description)\b",
+    re.I,
+)
+SECRET_QUERY_KEY = re.compile(
+    r"(?:^|[_-])(?:access[_-]?token|auth(?:orization)?|api[_-]?key|client[_-]?secret|"
+    r"credential|jwt|password|passwd|secret|signature|sig|token)(?:$|[_-])",
+    re.I,
+)
+EXPLICIT_TRUNCATION = re.compile(
+    r"(?:\.\.\.|…)(?:\s*$|\s*(?:read|show|see|continue)\s+more\b)|"
+    r"\b(?:read|show|see|continue)\s+more\b|\b(?:content|description|text)\s+(?:was\s+)?(?:clipped|truncated)\b",
     re.I,
 )
 BLOCKED_TEXT = {
@@ -64,7 +76,7 @@ FAILURE_FIELDS = {"request_id", "supplied_url", "final_url", "provider", "ats", 
 ATTEMPT_FIELDS = {"method", "url", "status", "http_status", "final_url", "response_sha256", "reason"}
 BUNDLE_FIELDS = {"schema", "version", "created_at", "selected_requests", "records", "failures", "complete", "quality_complete", "claims", "bundle_sha256"}
 PROVENANCE_FIELDS = {"browser", "method", "captured_at", "complete_text", "completion_evidence", "status_certain", "status_uncertainty"}
-SOURCE_EVIDENCE_FIELDS = {"response_sha256", "content_type", "redirect_chain"}
+SOURCE_EVIDENCE_FIELDS = {"response_sha256", "capture_sha256", "artifact_sha256", "content_type", "redirect_chain"}
 
 
 def canonical_json(value) -> bytes:
@@ -96,10 +108,35 @@ def canonical_posting_url(value: str) -> str:
     query = []
     for key, val in parse_qsl(parsed.query, keep_blank_values=True):
         lower = key.casefold()
+        if SECRET_QUERY_KEY.search(lower):
+            raise ValueError("posting URL must not contain credential or secret query parameters")
         if lower.startswith("utm_") or lower in TRACKING_KEYS:
             continue
         query.append((key, val))
     return urlunsplit((parsed.scheme.lower(), netloc, parsed.path or "/", urlencode(query), ""))
+
+
+def redact_url(value: str) -> str:
+    """Return a persistence-safe URL-shaped value without changing fetch input."""
+    raw = str(value)
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return "redacted-invalid-url-" + sha256_bytes(raw.encode("utf-8"))[:20]
+    host = parsed.hostname or "invalid"
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port:
+        host += f":{port}"
+    query = []
+    for key, val in parse_qsl(parsed.query, keep_blank_values=True):
+        query.append((key, "[REDACTED]" if SECRET_QUERY_KEY.search(key.casefold()) else val))
+    safe = urlunsplit((parsed.scheme, host, parsed.path, urlencode(query), ""))
+    return safe or ("redacted-invalid-url-" + sha256_bytes(raw.encode("utf-8"))[:20])
 
 
 def request_id(url: str) -> str:
@@ -159,11 +196,6 @@ class FetchResponse:
         return sha256_bytes(self.body)
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # pragma: no cover - urllib callback
-        return None
-
-
 class BoundedFetcher:
     """HTTP reader with DNS, redirect, byte, timeout and content controls."""
 
@@ -183,59 +215,118 @@ class BoundedFetcher:
             context = ssl.create_default_context(cafile=str(system_bundle))
         else:
             context = ssl.create_default_context()
-        self.opener = build_opener(_NoRedirect(), HTTPSHandler(context=context))
+        self.ssl_context = context
 
-    def _decode(self, body: bytes, encoding: str) -> bytes:
+    def _resolve(self, url: str) -> tuple[str, list[tuple]]:
+        canonical = validate_public_url(url, resolve=False)
+        parsed = urlsplit(canonical)
+        host = parsed.hostname or ""
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise AcquisitionError("network_error", f"destination DNS resolution failed: {exc}", final_url=canonical) from exc
+        if not addresses or any(not _public_ip(item[4][0]) for item in addresses):
+            raise ValueError("destination resolves to a private or non-routable address")
+        return canonical, addresses
+
+    def _open_validated(self, url: str, addresses: list[tuple]):
+        """Connect only to a prevalidated sockaddr; hostname remains Host/SNI."""
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        last_error = None
+        for family, socktype, proto, _canonname, sockaddr in addresses:
+            sock = socket.socket(family, socktype, proto)
+            try:
+                sock.settimeout(self.timeout)
+                sock.connect(sockaddr)
+                if parsed.scheme == "https":
+                    sock = self.ssl_context.wrap_socket(sock, server_hostname=host)
+                conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+                conn.sock = sock
+                path = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+                conn.request("GET", path, headers={
+                    "Host": host if parsed.port is None else parsed.netloc,
+                    "User-Agent": "sync-jobs/2.5 public-posting-capture",
+                    "Accept": "application/json, application/ld+json, text/html;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, identity",
+                    "Connection": "close",
+                })
+                return conn, conn.getresponse()
+            except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+                last_error = exc
+                sock.close()
+        raise AcquisitionError("network_error", f"public request failed: {last_error}", final_url=url)
+
+    def _read_bounded(self, response, encoding: str) -> bytes:
         encoding = encoding.casefold().strip()
-        if encoding in {"", "identity"}:
-            return body
-        if encoding == "gzip":
-            try:
-                value = gzip.decompress(body)
-            except OSError as exc:
-                raise AcquisitionError("invalid_content_encoding", "invalid gzip response") from exc
-        elif encoding == "deflate":
-            try:
-                value = zlib.decompress(body)
-            except zlib.error as exc:
-                raise AcquisitionError("invalid_content_encoding", "invalid deflate response") from exc
-        else:
+        if encoding not in {"", "identity", "gzip", "deflate"}:
             raise AcquisitionError("unsupported_content_encoding", f"unsupported content encoding {encoding!r}")
-        if len(value) > self.max_bytes:
-            raise AcquisitionError("response_too_large", "decompressed response exceeds the configured byte limit")
-        return value
+        decoder = None
+        if encoding == "gzip":
+            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        elif encoding == "deflate":
+            decoder = zlib.decompressobj(zlib.MAX_WBITS)
+        output = bytearray()
+        encoded_total = 0
+        encoded_limit = max(self.max_bytes * 2, self.max_bytes + 65536)
+        try:
+            while True:
+                chunk = response.read(min(65536, self.max_bytes + 1))
+                if not chunk:
+                    break
+                encoded_total += len(chunk)
+                if encoded_total > encoded_limit:
+                    raise AcquisitionError("response_too_large", "encoded response exceeds the bounded transport limit")
+                if decoder is None:
+                    piece = chunk
+                else:
+                    piece = decoder.decompress(chunk, self.max_bytes + 1 - len(output))
+                output.extend(piece)
+                if len(output) > self.max_bytes or (decoder is not None and decoder.unconsumed_tail):
+                    raise AcquisitionError("response_too_large", "decompressed response exceeds the configured byte limit")
+            if decoder is not None:
+                output.extend(decoder.flush(self.max_bytes + 1 - len(output)))
+                if not decoder.eof:
+                    raise AcquisitionError("invalid_content_encoding", f"truncated {encoding} response")
+            if len(output) > self.max_bytes:
+                raise AcquisitionError("response_too_large", "decompressed response exceeds the configured byte limit")
+        except zlib.error as exc:
+            raise AcquisitionError("invalid_content_encoding", f"invalid {encoding} response") from exc
+        return bytes(output)
 
     def fetch(self, url: str) -> FetchResponse:
-        requested = validate_public_url(url, resolve=True)
+        requested = validate_public_url(url, resolve=False)
         current = requested
         redirects: list[str] = []
         for hop in range(self.max_redirects + 1):
-            req = Request(current, headers={
-                "User-Agent": "sync-jobs/2.4 public-posting-capture",
-                "Accept": "application/json, application/ld+json, text/html;q=0.9",
-                "Accept-Encoding": "identity",
-            })
+            current, addresses = self._resolve(current)
+            conn = None
             try:
-                response = self.opener.open(req, timeout=self.timeout)
-            except HTTPError as exc:
-                response = exc
-            except (URLError, TimeoutError, OSError) as exc:
+                conn, response = self._open_validated(current, addresses)
+            except (AcquisitionError, ValueError):
+                raise
+            except (TimeoutError, OSError) as exc:
                 raise AcquisitionError("network_error", f"public request failed: {exc}", final_url=current) from exc
-            status = int(response.getcode())
-            headers = {key.casefold(): value for key, value in response.headers.items()}
+            status = int(response.status)
+            headers = {key.casefold(): value for key, value in response.getheaders()}
             if status in {301, 302, 303, 307, 308}:
+                if conn:
+                    conn.close()
                 location = headers.get("location")
                 if not location:
                     raise AcquisitionError("invalid_redirect", "redirect response omitted Location", status=status, final_url=current)
                 if hop >= self.max_redirects:
                     raise AcquisitionError("redirect_limit", "redirect limit exceeded", status=status, final_url=current)
-                current = validate_public_url(urljoin(current, location), resolve=True)
+                current = validate_public_url(urljoin(current, location), resolve=False)
                 redirects.append(current)
                 continue
-            raw = response.read(self.max_bytes + 1)
-            if len(raw) > self.max_bytes:
-                raise AcquisitionError("response_too_large", "response exceeds the configured byte limit", status=status, final_url=current)
-            body = self._decode(raw, headers.get("content-encoding", ""))
+            try:
+                body = self._read_bounded(response, headers.get("content-encoding", ""))
+            finally:
+                if conn:
+                    conn.close()
             content_type = headers.get("content-type", "").split(";", 1)[0].strip().casefold()
             if content_type and content_type not in ALLOWED_CONTENT_TYPES:
                 raise AcquisitionError("unsupported_content_type", f"unsupported content type {content_type!r}", status=status, final_url=current)
@@ -321,7 +412,12 @@ class _JobPageParser(HTMLParser):
             if key and attrs.get("content"):
                 self.meta[key] = attrs["content"].strip()
         identity = " ".join((attrs.get("id", ""), attrs.get("class", "")))
-        if self.active_container is None and (JOB_CONTAINER.search(identity) or (tag == "article" and attrs.get("data-job-id"))):
+        normalized_identity = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", identity)
+        normalized_identity = re.sub(r"[^A-Za-z0-9]+", " ", normalized_identity)
+        if self.active_container is None and (
+            JOB_CONTAINER.search(identity) or JOB_CONTAINER_NORMALIZED.search(normalized_identity)
+            or (tag == "article" and attrs.get("data-job-id"))
+        ):
             self.containers.append({"depth": self.depth, "parts": [], "closed": False})
             self.active_container = len(self.containers) - 1
         if self.active_container is not None and tag in {"p", "div", "li", "br", "h2", "h3", "section"}:
@@ -460,26 +556,47 @@ def _end_marker(description: str) -> str:
     return normalized[-min(160, len(normalized)):]
 
 
+def _truncation_flags(description: str) -> list[str]:
+    flags = []
+    if EXPLICIT_TRUNCATION.search(description):
+        flags.append("EXPLICIT_CLIPPED_OR_READ_MORE_SIGNAL")
+    return flags
+
+
+def _quality_evidence(description: str, method: str, response: FetchResponse,
+                      structural_identity: str, extra: dict | None = None) -> dict:
+    normalized = re.sub(r"\s+", " ", description).strip()
+    flags = _truncation_flags(normalized)
+    evidence = {
+        "end_verified": not flags,
+        "end_marker": _end_marker(normalized),
+        "truncation_flags": flags,
+        "description_length": len(description),
+        "truncation_scan_sha256": sha256_bytes(canonical_json({
+            "method": method, "description": description, "flags": flags,
+        })),
+        "structural_identity": structural_identity,
+        "http_status": response.status,
+        "response_sha256": response.response_sha256,
+        "single_job_bound": True,
+    }
+    evidence.update(extra or {})
+    return evidence
+
+
 def _make_record(*, supplied_url: str, final_url: str, canonical_url: str, adapter: dict,
                  method: str, title: str, company: str, location: str, description: str,
                  response: FetchResponse, provider_job_id: str | None = None,
                  requisition_id: str | None = None, employment_type=None, posting_date=None,
-                 completion_evidence: str, quality_extra: dict | None = None,
+                 completion_evidence: str, structural_identity: str,
+                 quality_extra: dict | None = None,
                  attempts: list[dict] | None = None) -> dict:
     required = {"title": title, "company": company, "location": location, "description": description}
     missing = [key for key, value in required.items() if not isinstance(value, str) or not value.strip()]
     if missing:
         raise AcquisitionError("missing_required_fields", f"capture omitted required fields: {', '.join(missing)}", final_url=final_url)
     description = description.strip()
-    evidence = {
-        "end_verified": True,
-        "end_marker": _end_marker(description),
-        "truncation_flags": [],
-        "http_status": response.status,
-        "response_sha256": response.response_sha256,
-        "single_job_bound": True,
-    }
-    evidence.update(quality_extra or {})
+    evidence = _quality_evidence(description, method, response, structural_identity, quality_extra)
     record = {
         "schema": "SourceNeutralPostingV2",
         "request_id": request_id(supplied_url),
@@ -553,6 +670,7 @@ def _json_record(payload: dict, adapter: dict, supplied_url: str, response: Fetc
         requisition = _identifier(payload.get("requisition_id"))
         employment = payload.get("employment_type")
         posted = payload.get("updated_at")
+        structural_identity = "greenhouse:content"
     elif provider == "lever":
         actual = str(payload.get("id") or "")
         title = payload.get("text")
@@ -569,6 +687,7 @@ def _json_record(payload: dict, adapter: dict, supplied_url: str, response: Fetc
         requisition = _identifier(payload.get("requisition"))
         employment = categories.get("commitment") if isinstance(categories, dict) else None
         posted = payload.get("createdAt")
+        structural_identity = "lever:description+lists+additional"
     else:
         actual = str(payload.get("id") or "")
         title = payload.get("name") or payload.get("title")
@@ -580,6 +699,7 @@ def _json_record(payload: dict, adapter: dict, supplied_url: str, response: Fetc
         requisition = _identifier(payload.get("refNumber"))
         employment = (payload.get("typeOfEmployment") or {}).get("label") if isinstance(payload.get("typeOfEmployment"), dict) else payload.get("typeOfEmployment")
         posted = payload.get("releasedDate")
+        structural_identity = "smartrecruiters:jobAd.sections"
     if actual != expected:
         raise AcquisitionError("identity_mismatch", f"official API returned job ID {actual!r}, expected {expected!r}", final_url=response.final_url)
     canonical = canonical_posting_url(str(canonical))
@@ -589,6 +709,7 @@ def _json_record(payload: dict, adapter: dict, supplied_url: str, response: Fetc
         location=str(location or ""), description=description, response=response,
         provider_job_id=actual, requisition_id=requisition, employment_type=employment,
         posting_date=posted, completion_evidence="Official public ATS response supplied one complete description field.",
+        structural_identity=structural_identity,
         quality_extra={"endpoint": response.final_url, "provider_job_id": actual}, attempts=attempts,
     )
 
@@ -609,7 +730,9 @@ def _select_json_ld(items: list[dict], supplied_url: str, final_url: str) -> dic
     if len(bound) == 1:
         return bound[0]
     if len(items) == 1:
-        return items[0]
+        if not isinstance(items[0].get("url"), str):
+            return items[0]
+        raise AcquisitionError("identity_mismatch", "singleton JobPosting URL did not match the supplied or final page URL", final_url=final_url)
     raise AcquisitionError("multiple_postings", "page contains multiple JobPosting objects without one exact URL binding", final_url=final_url)
 
 
@@ -647,6 +770,7 @@ def _page_record(supplied_url: str, response: FetchResponse, adapter: dict, atte
             requisition_id=_identifier(item.get("identifier")), employment_type=item.get("employmentType"),
             posting_date=item.get("datePosted"),
             completion_evidence="One schema.org JobPosting object was bound to the posting URL and its complete description value was parsed.",
+            structural_identity="schema.org:JobPosting.description",
             quality_extra={"structured_type": "JobPosting", "container_count": len(items)}, attempts=attempts,
         )
     usable = [container for container in parser.containers if container["closed"]]
@@ -663,16 +787,25 @@ def _page_record(supplied_url: str, response: FetchResponse, adapter: dict, atte
         title=str(title or ""), company=str(company or ""), location=str(location or ""),
         description=description, response=response,
         completion_evidence="One closed posting-description container was bound to this page and read through its structural end boundary.",
+        structural_identity="html:closed-job-description-container",
         quality_extra={"container_count": 1, "container_closed": True}, attempts=attempts,
     )
 
 
 def _attempt(method: str, url: str, status: str, *, response: FetchResponse | None = None, reason: str | None = None) -> dict:
-    result = {"method": method, "url": url, "status": status}
+    result = {"method": method, "url": redact_url(url), "status": status}
     if response is not None:
-        result.update({"http_status": response.status, "final_url": response.final_url, "response_sha256": response.response_sha256})
+        result.update({"http_status": response.status, "final_url": redact_url(response.final_url), "response_sha256": response.response_sha256})
     if reason:
         result["reason"] = reason
+    return result
+
+
+def _redacted_attempt(attempt: dict) -> dict:
+    result = dict(attempt)
+    for key in ("url", "final_url"):
+        if key in result:
+            result[key] = redact_url(result[key])
     return result
 
 
@@ -682,7 +815,7 @@ def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tup
         validate_public_url(supplied, resolve=False)
     except ValueError as exc:
         raw_id = "req-" + sha256_bytes(str(supplied_url).encode("utf-8"))[:20]
-        return None, {"request_id": raw_id, "supplied_url": str(supplied_url), "failure_kind": "unsafe_url", "reason": str(exc), "attempts": [], "next_action": "correct_or_replace_url"}
+        return None, {"request_id": raw_id, "supplied_url": redact_url(str(supplied_url)), "failure_kind": "unsafe_url", "reason": str(exc), "attempts": [], "next_action": "correct_or_replace_url"}
     rid = request_id(supplied)
     adapter = recognize(supplied)
     attempts: list[dict] = []
@@ -723,7 +856,7 @@ def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tup
         attempts.append(_attempt("anonymous_http_or_parse", supplied, "rejected", reason=reason))
         next_action = "manual_artifact_or_stop" if kind == "source_unavailable" else "browser_fallback"
         return None, {
-            "request_id": rid, "supplied_url": supplied, "final_url": final_url,
+            "request_id": rid, "supplied_url": supplied, "final_url": redact_url(final_url) if final_url else None,
             "provider": adapter["provider"], "ats": adapter.get("ats"),
             "failure_kind": kind, "reason": reason, "attempts": attempts,
             "next_action": next_action,
@@ -750,6 +883,8 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
     if len(covered) != len(records) + len(failures) or len(set(covered)) != len(covered) or set(covered) != set(request_ids):
         raise ValueError("every selected URL must occur exactly once as a record or failure")
     selected_by_id = {item["request_id"]: item["supplied_url"] for item in selected}
+    if any(redact_url(item["supplied_url"]) != item["supplied_url"] for item in selected):
+        raise ValueError("selected request URL contains unredacted credentials or secrets")
     for record in records:
         if set(record) - RECORD_FIELDS:
             raise ValueError(f"source record contains unsupported fields: {sorted(set(record) - RECORD_FIELDS)}")
@@ -765,15 +900,35 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
         provenance = record["provenance"]
         if not isinstance(provenance, dict) or set(provenance) - PROVENANCE_FIELDS:
             raise ValueError("source record provenance contains unsupported fields")
-        if provenance.get("method") not in {"official_api", "public_json_ld", "public_html"}:
-            raise ValueError("public acquisition record has unsupported provenance method")
+        method = provenance.get("method")
+        if method not in {"official_api", "public_json_ld", "public_html", "rendered_dom_text", "owner_provided_artifact"}:
+            raise ValueError("source acquisition record has unsupported provenance method")
         if provenance.get("complete_text") is not True or not isinstance(provenance.get("captured_at"), str):
             raise ValueError("source record provenance is incomplete")
         evidence = record.get("source_evidence")
         if not isinstance(evidence, dict) or set(evidence) - SOURCE_EVIDENCE_FIELDS:
             raise ValueError("source record evidence contains unsupported fields")
-        if record.get("authentication_state") != "anonymous":
-            raise ValueError("public acquisition record must have anonymous authentication state")
+        redirects = evidence.get("redirect_chain")
+        if not isinstance(redirects, list):
+            raise ValueError("source record redirect chain must be a list")
+        for redirect in redirects:
+            validate_public_url(redirect, resolve=False)
+            if redact_url(redirect) != redirect:
+                raise ValueError("source record redirect contains unredacted credentials or secrets")
+        expected_auth = {
+            "official_api": "anonymous", "public_json_ld": "anonymous", "public_html": "anonymous",
+            "rendered_dom_text": "authorized_user_visible_browser",
+            "owner_provided_artifact": "owner_provided_artifact",
+        }[method]
+        if record.get("authentication_state") != expected_auth:
+            raise ValueError("source acquisition authentication state does not match its method")
+        if method in {"official_api", "public_json_ld", "public_html"}:
+            if evidence.get("response_sha256") != record["quality_evidence"].get("response_sha256"):
+                raise ValueError("public response evidence hashes disagree")
+        elif not isinstance(evidence.get("capture_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", evidence["capture_sha256"]):
+            raise ValueError("fallback capture evidence hash is missing")
+        if method == "owner_provided_artifact" and evidence.get("artifact_sha256") != record["quality_evidence"].get("artifact_sha256"):
+            raise ValueError("owner artifact evidence hashes disagree")
         _validate_attempts(record.get("attempts"))
         identity = record["source_identity"]
         if not isinstance(identity, dict) or set(identity) != {"kind", "provider", "provider_job_id", "canonical_url"}:
@@ -796,6 +951,8 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
                 raise ValueError("unsafe failure URL does not match its selected request")
         elif failure.get("supplied_url") != canonical_posting_url(selected_url):
             raise ValueError("failure supplied URL does not match its selected request")
+        if failure.get("final_url") is not None and redact_url(failure["final_url"]) != failure["final_url"]:
+            raise ValueError("failure final URL contains unredacted credentials or secrets")
         if not isinstance(failure.get("reason"), str) or not failure["reason"].strip():
             raise ValueError("failure requires a reason")
         _validate_attempts(failure.get("attempts"))
@@ -810,6 +967,143 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
     return payload
 
 
+def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("replacement record must be an object")
+    required = {"request_id", "url", "title", "company", "location", "description", "provenance", "quality_evidence"}
+    missing = required - set(raw)
+    if missing:
+        raise ValueError(f"replacement record omitted fields: {sorted(missing)}")
+    if raw["request_id"] != selected["request_id"]:
+        raise ValueError("replacement record request_id does not match its selected request")
+    supplied = selected["supplied_url"]
+    canonical = canonical_posting_url(raw["url"])
+    final_url = canonical_posting_url(raw.get("final_url") or canonical)
+    provenance = dict(raw["provenance"])
+    method = provenance.get("method")
+    if method not in {"rendered_dom_text", "owner_provided_artifact"}:
+        raise ValueError("replacement method must be rendered_dom_text or owner_provided_artifact")
+    if provenance.get("complete_text") is not True or not isinstance(provenance.get("captured_at"), str):
+        raise ValueError("replacement provenance must attest captured_at and complete_text")
+    if method == "rendered_dom_text":
+        if not isinstance(provenance.get("browser"), str) or provenance["browser"].strip().casefold() in {"", "none"}:
+            raise ValueError("rendered_dom_text replacement requires the user-visible browser name")
+        authentication_state = "authorized_user_visible_browser"
+        structural_identity = "rendered:description-only-dom"
+    else:
+        authentication_state = "owner_provided_artifact"
+        structural_identity = "owner:hashed-artifact"
+    description = str(raw["description"]).strip()
+    evidence = dict(raw["quality_evidence"])
+    flags = _truncation_flags(description)
+    evidence.update({
+        "end_verified": evidence.get("end_verified") is True and not flags,
+        "truncation_flags": flags,
+        "description_length": len(description),
+        "truncation_scan_sha256": sha256_bytes(canonical_json({
+            "method": method, "description": description, "flags": flags,
+        })),
+        "structural_identity": structural_identity,
+    })
+    provider = str(raw.get("provider") or recognize(canonical)["provider"])
+    provider_job_id = _identifier(raw.get("provider_job_id"))
+    attempts = [_redacted_attempt(item) for item in list(prior_attempts) + list(raw.get("attempts") or [])]
+    attempts.append(_attempt(method, canonical, "accepted", reason="validated fallback replacement"))
+    record = {
+        "schema": "SourceNeutralPostingV2", "request_id": selected["request_id"],
+        "supplied_url": supplied, "final_url": final_url, "canonical_url": canonical, "url": canonical,
+        "provider": provider, "ats": raw.get("ats"), "provider_job_id": provider_job_id,
+        "requisition_id": _identifier(raw.get("requisition_id")),
+        "source_identity": {
+            "kind": "provider_job_id" if provider_job_id else "canonical_url", "provider": provider,
+            "provider_job_id": provider_job_id, "canonical_url": canonical,
+        },
+        "cross_source_match": {"status": "review_candidate_only", "fingerprint_sha256": sha256_bytes(canonical_json({
+            "company": str(raw["company"]).casefold().strip(), "title": str(raw["title"]).casefold().strip(),
+            "location": str(raw["location"]).casefold().strip(),
+            "requisition_id": _identifier(raw.get("requisition_id")),
+            "description_sha256": sha256_bytes(description.encode("utf-8")),
+        }))},
+        "title": str(raw["title"]).strip(), "company": str(raw["company"]).strip(),
+        "location": str(raw["location"]).strip(), "employmentType": raw.get("employmentType"),
+        "listedAt": raw.get("listedAt"), "status": "Saved", "description": description,
+        "authentication_state": authentication_state, "provenance": provenance,
+        "quality_evidence": evidence,
+        "source_evidence": {
+            "capture_sha256": sha256_bytes(canonical_json({
+                "request_id": selected["request_id"], "url": canonical, "provenance": provenance,
+                "description": description, "quality_evidence": evidence,
+            })),
+            "artifact_sha256": evidence.get("artifact_sha256"),
+            "content_type": str(raw.get("content_type") or "text/plain"), "redirect_chain": [],
+        },
+        "attempts": attempts,
+    }
+    record["description_sha256"] = sha256_bytes(description.encode("utf-8"))
+    record["quality"] = validate_quality(record)
+    if not record["quality"]["eligible_for_ingest"]:
+        raise ValueError("replacement record quality is blocked: " + ", ".join(record["quality"]["unresolved_flags"]))
+    record["source_record_sha256"] = source_record_hash(record)
+    return record
+
+
+def resume_bundle(original: dict, replacements: dict) -> dict:
+    """Replace only failed requests in an incomplete V2 bundle."""
+    validate_bundle(original)
+    if original.get("complete") or not original.get("failures"):
+        raise ValueError("resume requires an incomplete SourcePostingAcquisitionV2 bundle")
+    if not isinstance(replacements, dict) or replacements.get("schema") != "SourcePostingFallbackV2":
+        raise ValueError("replacements require schema SourcePostingFallbackV2")
+    outcomes = replacements.get("outcomes")
+    if not isinstance(outcomes, list):
+        raise ValueError("fallback outcomes must be a list")
+    ids = [item.get("request_id") for item in outcomes if isinstance(item, dict)]
+    failed_by_id = {item["request_id"]: item for item in original["failures"]}
+    if len(ids) != len(outcomes) or len(set(ids)) != len(ids):
+        raise ValueError("fallback outcome request IDs must be present and unique")
+    if set(ids) != set(failed_by_id):
+        raise ValueError("fallback outcomes must cover exactly the original failed request IDs")
+    selected_by_id = {item["request_id"]: item for item in original["selected_requests"]}
+    records = list(original["records"])
+    failures = []
+    for outcome in outcomes:
+        if set(outcome) not in ({"request_id", "record"}, {"request_id", "failure"}):
+            raise ValueError("each fallback outcome must contain request_id and exactly one record or failure")
+        prior = failed_by_id[outcome["request_id"]]
+        if "record" in outcome:
+            if prior.get("failure_kind") == "unsafe_url":
+                raise ValueError("unsafe URL failures require a newly selected acquisition URL")
+            replacement = dict(outcome["record"])
+            replacement["request_id"] = outcome["request_id"]
+            records.append(_fallback_record(replacement, selected_by_id[outcome["request_id"]], prior["attempts"]))
+        else:
+            failure = dict(prior)
+            update = outcome["failure"]
+            if not isinstance(update, dict) or not isinstance(update.get("reason"), str):
+                raise ValueError("unresolved fallback failure requires a reason")
+            extra_attempts = update.get("attempts") or []
+            _validate_attempts(extra_attempts)
+            failure["attempts"] = [_redacted_attempt(item) for item in list(prior["attempts"]) + list(extra_attempts)]
+            failure["reason"] = update["reason"]
+            failure["failure_kind"] = str(update.get("failure_kind") or prior["failure_kind"])
+            failure["next_action"] = str(update.get("next_action") or prior["next_action"])
+            failures.append(failure)
+    records.sort(key=lambda item: [x["request_id"] for x in original["selected_requests"]].index(item["request_id"]))
+    result = {
+        **{key: value for key, value in original.items() if key not in {"records", "failures", "complete", "quality_complete", "bundle_sha256", "created_at"}},
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(), "records": records, "failures": failures,
+        "complete": not failures, "quality_complete": not failures,
+        "claims": {**original.get("claims", {}), "browser_fallback_executed": any(
+            item.get("record", {}).get("provenance", {}).get("method") == "rendered_dom_text" for item in outcomes
+        ), "authenticated_state_accessed": (
+            original.get("claims", {}).get("authenticated_state_accessed", False)
+            or any(item.get("record", {}).get("provenance", {}).get("method") == "rendered_dom_text" for item in outcomes)
+        )},
+    }
+    result["bundle_sha256"] = sha256_bytes(canonical_json(result))
+    return validate_bundle(result)
+
+
 def _validate_attempts(attempts) -> None:
     if not isinstance(attempts, list):
         raise ValueError("attempt ledger must be a list")
@@ -819,6 +1113,9 @@ def _validate_attempts(attempts) -> None:
         for key in ("method", "url", "status"):
             if not isinstance(attempt.get(key), str) or not attempt[key].strip():
                 raise ValueError(f"attempt ledger requires {key}")
+        for key in ("url", "final_url"):
+            if key in attempt and redact_url(attempt[key]) != attempt[key]:
+                raise ValueError("attempt ledger URL contains unredacted credentials or secrets")
 
 
 def acquire_urls(urls: list[str], fetch: Callable[[str], FetchResponse] | None = None) -> dict:
@@ -829,17 +1126,21 @@ def acquire_urls(urls: list[str], fetch: Callable[[str], FetchResponse] | None =
     for url in urls:
         try:
             rid = request_id(url)
+            persisted_url = canonical_posting_url(url)
         except ValueError:
             rid = "req-" + sha256_bytes(str(url).encode("utf-8"))[:20]
+            persisted_url = redact_url(str(url))
         if rid in seen:
             raise ValueError("duplicate supplied URL identity")
         seen.add(rid)
-        selected.append({"request_id": rid, "supplied_url": str(url)})
+        selected.append({"request_id": rid, "supplied_url": persisted_url})
     if fetch is None:
         fetch = BoundedFetcher().fetch
     records, failures = [], []
-    for item in selected:
-        record, failure = acquire_one(item["supplied_url"], fetch)
+    for item, raw_url in zip(selected, urls):
+        # Validate/fetch the original input.  A redacted persistence value is
+        # never reinterpreted as an authorized destination.
+        record, failure = acquire_one(raw_url, fetch)
         (records if record else failures).append(record or failure)
     payload = {
         "schema": "SourcePostingAcquisitionV2",
@@ -896,6 +1197,28 @@ def main(argv=None):
         payload = acquire_urls(args.url, fetcher.fetch)
         file_hash = atomic_write_json(Path(args.out).expanduser().resolve(), payload)
     except (ValueError, AcquisitionError) as exc:
+        parser.error(str(exc))
+    print(json.dumps({
+        "status": "ACQUIRED" if payload["complete"] else "INCOMPLETE_BROWSER_OR_MANUAL_FALLBACK_REQUIRED",
+        "path": str(Path(args.out).expanduser().resolve()), "sha256": file_hash,
+        "record_count": len(payload["records"]), "failure_count": len(payload["failures"]),
+        "complete": payload["complete"],
+    }, indent=2))
+    return 0
+
+
+def resume_main(argv=None):
+    parser = argparse.ArgumentParser(description="Merge browser/manual fallback outcomes into an incomplete source-neutral acquisition bundle.")
+    parser.add_argument("--bundle", required=True)
+    parser.add_argument("--replacements", required=True)
+    parser.add_argument("--out", required=True)
+    args = parser.parse_args(argv)
+    try:
+        original = json.loads(Path(args.bundle).read_text(encoding="utf-8"))
+        replacements = json.loads(Path(args.replacements).read_text(encoding="utf-8"))
+        payload = resume_bundle(original, replacements)
+        file_hash = atomic_write_json(Path(args.out).expanduser().resolve(), payload)
+    except (OSError, json.JSONDecodeError, ValueError, AcquisitionError) as exc:
         parser.error(str(exc))
     print(json.dumps({
         "status": "ACQUIRED" if payload["complete"] else "INCOMPLETE_BROWSER_OR_MANUAL_FALLBACK_REQUIRED",

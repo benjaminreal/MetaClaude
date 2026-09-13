@@ -9,7 +9,7 @@ import test_workflow as fixture
 
 SKILL=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(SKILL/"scripts"))
-from source_acquisition import FetchResponse,acquire_urls
+from source_acquisition import FetchResponse,acquire_urls,request_id,resume_bundle
 
 class ExternalIntake(unittest.TestCase):
     setUp=fixture.Workflow.setUp
@@ -19,6 +19,17 @@ class ExternalIntake(unittest.TestCase):
     def record(self):
         description="Coordinate a fully synthetic example process. This fixture ends here."
         return {"title":"Example role","company":"Example Corp","location":"Example location","url":"https://careers.example.com/jobs/42?utm_source=email","description":description,"status":"Saved","provenance":{"browser":"authorized-browser-a","method":"rendered_dom_text","captured_at":"2030-01-01T20:00:00Z","complete_text":True,"completion_evidence":"Expanded the posting and verified its final sentence.","status_certain":True},"quality_evidence":{"end_verified":True,"end_marker":"This fixture ends here.","truncation_flags":[]}}
+
+    def fallback_bundle(self,url,provider_job_id=None,title="Synthetic fallback role"):
+        original=acquire_urls([url],lambda _:self.fail("browser-only URL must not fetch"))
+        description="Complete synthetic browser capture with a verified ending."
+        replacements={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":request_id(url),"record":{
+            "url":url,"title":title,"company":"Example Corp","location":"Remote, US","description":description,
+            "provider":"linkedin","provider_job_id":provider_job_id,
+            "provenance":{"browser":"authorized-browser-a","method":"rendered_dom_text","captured_at":"2030-01-01T00:00:00Z","complete_text":True,"completion_evidence":"Expanded and checked the final section.","status_certain":False,"status_uncertainty":"Not asserted."},
+            "quality_evidence":{"end_verified":True,"end_marker":"verified ending.","truncation_flags":[]},
+        }}]}
+        return resume_bundle(original,replacements)
 
     def test_external_dry_run_commit_and_idempotency(self):
         payload=self.root/"external.json";payload.write_text(json.dumps({"records":[self.record()]}))
@@ -70,6 +81,9 @@ class ExternalIntake(unittest.TestCase):
         row=next(item for item in json.loads(worklist.read_text())["rows"] if item["tracker_id"]=="J-000002")
         self.assertEqual(row["job_url"],url)
         self.assertEqual(row["eligibility_evidence"]["availability"],"valid",{"worklist":row["eligibility_evidence"],"posting":eligibility.get("posting")})
+        after=fixture.digest(self.tracker)
+        replay=self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"v2-replay",commit=True)
+        self.assertIn('"status": "ALREADY_PRESENT"',replay.stdout);self.assertEqual(fixture.digest(self.tracker),after)
 
     def test_incomplete_or_tampered_v2_bundle_blocks_before_writes(self):
         url="https://www.linkedin.com/jobs/view/1234567890"
@@ -77,5 +91,43 @@ class ExternalIntake(unittest.TestCase):
         payload=self.root/"incomplete-v2.json";payload.write_text(json.dumps(bundle));before=fixture.digest(self.tracker)
         self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"incomplete",commit=True,ok=False)
         self.assertEqual(fixture.digest(self.tracker),before)
+
+    def test_resumed_v2_bundle_direct_ingest_dry_run(self):
+        bundle=self.fallback_bundle("https://www.linkedin.com/jobs/view/9876543210",provider_job_id="9876543210")
+        payload=self.root/"resumed.json";payload.write_text(json.dumps(bundle));before=fixture.digest(self.tracker)
+        result=self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"resumed-dry")
+        self.assertIn('"written_count": 1',result.stdout);self.assertEqual(fixture.digest(self.tracker),before)
+
+    def test_v2_stable_identity_survives_changed_url_and_rejects_conflict(self):
+        first=self.fallback_bundle("https://www.linkedin.com/jobs/view/5550001111?source=first",provider_job_id="stable-55")
+        path=self.root/"first.json";path.write_text(json.dumps(first))
+        self.runstage("external-ingest","--records-json",path,"--backup-dir",self.root/"first",commit=True)
+        second=self.fallback_bundle("https://www.linkedin.com/jobs/view/5550001111?source=changed",provider_job_id="stable-55")
+        path2=self.root/"second.json";path2.write_text(json.dumps(second))
+        result=self.runstage("external-ingest","--records-json",path2,"--backup-dir",self.root/"second",commit=True)
+        self.assertIn('"status": "ALREADY_PRESENT"',result.stdout)
+        conflict=self.fallback_bundle("https://www.linkedin.com/jobs/view/5550001111?source=first",provider_job_id="other-id")
+        conflict_path=self.root/"conflict.json";conflict_path.write_text(json.dumps(conflict))
+        self.runstage("external-ingest","--records-json",conflict_path,"--backup-dir",self.root/"conflict",commit=True,ok=False)
+
+    def test_v2_canonicalizer_preserves_identity_query_parameters(self):
+        urls=["https://static.example/jobs/77?source=one","https://static.example/jobs/77?source=two"]
+        body=(SKILL/"tests/fixtures/source_acquisition/generic_html.html").read_bytes()
+        bundle=acquire_urls(urls,lambda target:FetchResponse(target,target,200,{"content-type":"text/html"},body))
+        payload=self.root/"queries.json";payload.write_text(json.dumps(bundle))
+        result=self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"queries")
+        self.assertIn('"written_count": 2',result.stdout)
+
+    def test_conflicting_description_aliases_are_rejected(self):
+        rec=self.record();rec["descriptionText"]="Different nonempty description."
+        payload=self.root/"alias-conflict.json";payload.write_text(json.dumps({"records":[rec]}))
+        self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"alias",ok=False)
+
+    def test_external_workbook_text_is_formula_inert(self):
+        rec=self.record();rec["title"]=" \t=HYPERLINK(\"bad\")"
+        payload=self.root/"formula.json";payload.write_text(json.dumps({"records":[rec]}))
+        self.runstage("external-ingest","--records-json",payload,"--backup-dir",self.root/"formula",commit=True)
+        wb=openpyxl.load_workbook(self.tracker,data_only=False);cell=wb["Jobs"].cell(3,3)
+        self.assertEqual(cell.value,"' \t=HYPERLINK(\"bad\")");self.assertEqual(cell.data_type,"s");wb.close()
 
 if __name__=="__main__":unittest.main()

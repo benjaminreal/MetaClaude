@@ -12,6 +12,11 @@ NODE_ROLES = {'text', 'link'}
 CHECK_KINDS = {'independent_comparison', 'reacquisition'}
 INDEPENDENT_METHODS = {'rendered_dom_text', 'reference_description'}
 SOURCE_METHODS = {'official_api', 'public_json_ld', 'public_html', 'owner_provided_artifact'}
+EXPLICIT_TRUNCATION = re.compile(
+    r'(?:\.\.\.|…)(?:\s*$|\s*(?:read|show|see|continue)\s+more\b)|'
+    r'\b(?:read|show|see|continue)\s+more\b|\b(?:content|description|text)\s+(?:was\s+)?(?:clipped|truncated)\b',
+    re.I,
+)
 
 def _canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
@@ -58,6 +63,7 @@ def validate_quality(record, require_pass=False):
         'http_status', 'response_sha256', 'endpoint', 'provider_job_id',
         'structured_type', 'single_job_bound', 'container_count', 'container_closed',
         'artifact_sha256', 'artifact_path', 'availability_verified',
+        'description_length', 'truncation_scan_sha256', 'structural_identity',
     }
     unknown = set(evidence) - allowed_evidence
     if unknown:
@@ -72,6 +78,20 @@ def validate_quality(record, require_pass=False):
         hard.append('TRUNCATION_FLAGS_INVALID')
     elif reported:
         suspicions.append('EXPLICIT_TRUNCATION_FLAG')
+    recomputed_flags = (['EXPLICIT_CLIPPED_OR_READ_MORE_SIGNAL']
+                        if EXPLICIT_TRUNCATION.search(_norm(description)) else [])
+    if reported != recomputed_flags:
+        hard.append('TRUNCATION_SCAN_MISMATCH')
+    if recomputed_flags and 'EXPLICIT_TRUNCATION_FLAG' not in suspicions:
+        suspicions.append('EXPLICIT_TRUNCATION_FLAG')
+    if evidence.get('description_length') is not None:
+        if evidence.get('description_length') != len(description):
+            hard.append('DESCRIPTION_LENGTH_MISMATCH')
+        expected_scan = _digest({
+            'method': method, 'description': description, 'flags': recomputed_flags,
+        })
+        if evidence.get('truncation_scan_sha256') != expected_scan:
+            hard.append('TRUNCATION_SCAN_HASH_MISMATCH')
     if method == 'native_text':
         if evidence.get('native_scope') != 'job_description_only':
             hard.append('NATIVE_SCOPE_NOT_JOB_DESCRIPTION_ONLY')
@@ -96,6 +116,11 @@ def validate_quality(record, require_pass=False):
             hard.append('OFFICIAL_API_JOB_ID_MISSING')
         if evidence.get('single_job_bound') is not True:
             hard.append('OFFICIAL_API_NOT_SINGLE_JOB_BOUND')
+        if evidence.get('structural_identity') not in {
+            'greenhouse:content', 'lever:description+lists+additional',
+            'smartrecruiters:jobAd.sections',
+        }:
+            hard.append('OFFICIAL_API_STRUCTURE_INVALID')
     elif method == 'public_json_ld':
         if evidence.get('http_status') != 200:
             hard.append('JSON_LD_HTTP_STATUS_NOT_200')
@@ -107,6 +132,8 @@ def validate_quality(record, require_pass=False):
             hard.append('JSON_LD_NOT_SINGLE_JOB_BOUND')
         if not isinstance(evidence.get('container_count'), int) or evidence['container_count'] < 1:
             hard.append('JSON_LD_CONTAINER_COUNT_INVALID')
+        if evidence.get('structural_identity') != 'schema.org:JobPosting.description':
+            hard.append('JSON_LD_STRUCTURE_INVALID')
     elif method == 'public_html':
         if evidence.get('http_status') != 200:
             hard.append('PUBLIC_HTML_HTTP_STATUS_NOT_200')
@@ -116,6 +143,8 @@ def validate_quality(record, require_pass=False):
             hard.append('PUBLIC_HTML_NOT_SINGLE_JOB_BOUND')
         if evidence.get('container_closed') is not True:
             hard.append('PUBLIC_HTML_END_BOUNDARY_MISSING')
+        if evidence.get('structural_identity') != 'html:closed-job-description-container':
+            hard.append('PUBLIC_HTML_STRUCTURE_INVALID')
     elif method == 'owner_provided_artifact':
         if not isinstance(evidence.get('artifact_sha256'), str) or not HEX64.fullmatch(evidence['artifact_sha256']):
             hard.append('OWNER_ARTIFACT_HASH_MISSING')

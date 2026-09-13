@@ -12,7 +12,7 @@ class SkillPackage(unittest.TestCase):
         front=text.split("---",2)[1]
         for term in ("LinkedIn","employer","ATS","Indeed","job-board","owner-selected"):
             self.assertIn(term,front)
-        self.assertIn('version: "2.4.0"',front)
+        self.assertIn('version: "2.5.0"',front)
 
     def test_skill_references_are_discoverable_and_exist(self):
         text=(SKILL/"SKILL.md").read_text()

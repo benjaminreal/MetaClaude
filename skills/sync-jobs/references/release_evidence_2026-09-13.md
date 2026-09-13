@@ -1,4 +1,4 @@
-# Sync-jobs 2.4 release evidence — 2026-09-13
+# Sync-jobs 2.5 release evidence — 2026-09-13
 
 This is dated evidence for the public engine branch. It is not evidence that
 the skill was installed, promoted, used against an authenticated account, or
@@ -9,15 +9,16 @@ allowed to write a live tracker.
 - The pre-feature v2.3.0 engine baseline passed 80 tests.
 - The source-acquisition implementation passed 99 tests before the public
   privacy remediation.
+- The cohesive post-review suite passed 120 tests after the nine confirmed
+  findings were covered.
 - Skill validation and Python compilation passed.
 - Fixtures cover supported public ATS APIs, JSON-LD, bounded static HTML,
   multiple postings, JavaScript shells, login walls, CAPTCHA, expiration,
-  URL/DNS/redirect/size/content guards, LinkedIn short-circuiting, exact URL
-  accounting, tamper rejection, method-specific quality, temporary-workspace
-  V2 ingestion, and package triggers.
-
-Final post-remediation results belong in the branch review report rather than
-being inferred from this dated file.
+  exact JSON-LD URL binding, camelCase description containers, explicit
+  truncation rejection, single-resolution socket pinning, redirect and secret
+  URL guards, streaming compression boundaries, fallback resume/merge,
+  stable-provider identity aliases, Excel literal-text round trips,
+  temporary-workspace V2 ingestion, tamper rejection, and package triggers.
 
 ## Bounded public canaries
 
@@ -63,8 +64,8 @@ limited to tracker operations. See
 - Test the pinned tracker dependency in a clean isolated environment.
 - Forward-test realistic prompts with a private profile only in an authorized
   non-public workspace.
-- Consider a transport design that closes the DNS-resolution time-of-check to
-  time-of-use gap before treating hostile DNS rebinding as covered.
+- Repeat public canaries after review; deterministic transport tests do not
+  prove every provider remains anonymously accessible.
 
 Promotion or installation requires separate approval. Fixture or public-canary
 success does not authorize tracker mutation.

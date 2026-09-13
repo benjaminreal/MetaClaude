@@ -74,4 +74,9 @@ class Workflow(unittest.TestCase):
   self.assertIsNone(country_from_location('Example City'))
   self.assertEqual(country_from_location('Example City, ZZ'),'ZZ')
   self.assertEqual(country_from_location('country: GB'),'GB')
+ def test_ingest_workbook_text_is_formula_inert(self):
+  payload=json.loads(self.jobs.read_text());payload=payload[:1];payload[0]['title']='\t+HYPERLINK("bad")';self.jobs.write_text(json.dumps(payload))
+  self.runstage('ingest','--jobs-json',self.jobs,commit=True)
+  wb=openpyxl.load_workbook(self.tracker,data_only=False);cell=wb['Jobs'].cell(3,3)
+  self.assertEqual(cell.value,"'\t+HYPERLINK(\"bad\")");self.assertEqual(cell.data_type,'s');wb.close()
 if __name__=='__main__':unittest.main()

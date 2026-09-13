@@ -1,0 +1,9 @@
+{
+  "id": 12345,
+  "title": "Synthetic Role",
+  "company_name": "Example Corp",
+  "location": {"name": "Remote, US"},
+  "absolute_url": "https://boards.greenhouse.io/example/jobs/12345",
+  "content": "<p>Build and operate a fully synthetic system.</p><p>Read more...</p>",
+  "requisition_id": "REQ-12345"
+}

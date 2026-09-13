@@ -61,6 +61,7 @@ SHEET = "Jobs"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _cell_append import (SEP_LINE, SEP_PARAGRAPH, AppendError,  # noqa: E402
                           append_value, validate_append_block)
+from excel_literal import normalize_literal_text, write_literal_text  # noqa: E402
 
 COMMENTS_HEADER = "Comentarios"
 
@@ -254,7 +255,7 @@ def main(argv=None):
                     noop += 1
                 else:
                     changes.append((tid, COMMENTS_HEADER, existing, "<append> " + line))
-                    cell.value = newval
+                    write_literal_text(cell, newval)
 
         # ----- All other writable cells: header-name, formula-safe, idempotent -----
         for header, value in cells.items():
@@ -266,11 +267,15 @@ def main(argv=None):
             if is_formula(cell.value):
                 skipped_formula.append((tid, header))   # rule 5: never clobber a formula
                 continue
-            if cell.value == value:
+            safe_value = normalize_literal_text(value) if isinstance(value, str) else value
+            if cell.value == safe_value:
                 noop += 1                                 # rule 6: idempotent
                 continue
             changes.append((tid, header, cell.value, value))
-            cell.value = value
+            if isinstance(value, str):
+                write_literal_text(cell, value)
+            else:
+                cell.value = value
 
         # ----- Explicit `append` block: add without clobbering -----
         for header, addition in appends.items():
@@ -286,7 +291,7 @@ def main(argv=None):
                 noop += 1
                 continue
             changes.append((tid, header, cell.value, "<append> " + str(addition)))
-            cell.value = newval
+            write_literal_text(cell, newval)
 
     # ----- 7. Verify structure preserved -----
     post_table_ref = ws.tables["JobsTable"].ref if "JobsTable" in ws.tables else None
