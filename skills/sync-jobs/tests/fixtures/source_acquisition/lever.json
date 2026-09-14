@@ -1,0 +1,10 @@
+{
+  "id": "abc-123",
+  "text": "Example Operations Lead",
+  "company": "Example Lever Company",
+  "categories": {"location": "Example location", "commitment": "Full-time"},
+  "descriptionPlain": "Coordinate a fully synthetic example workflow.",
+  "additionalPlain": "The final stage is documented in this synthetic fixture.",
+  "hostedUrl": "https://jobs.lever.co/example/abc-123",
+  "createdAt": 1789293600000
+}
