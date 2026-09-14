@@ -9,15 +9,16 @@ allowed to write a live tracker.
 - The pre-feature v2.3.0 engine baseline passed 80 tests.
 - The source-acquisition implementation passed 99 tests before the public
   privacy remediation.
-- The cohesive post-review suite passed 120 tests after the nine confirmed
-  findings were covered.
+- The first cohesive post-review suite passed 120 tests after the nine confirmed
+  findings were covered. The follow-up hardening suite passed 125 tests.
 - Skill validation and Python compilation passed.
 - Fixtures cover supported public ATS APIs, JSON-LD, bounded static HTML,
   multiple postings, JavaScript shells, login walls, CAPTCHA, expiration,
   exact JSON-LD URL binding, camelCase description containers, explicit
   truncation rejection, single-resolution socket pinning, redirect and secret
   URL guards, streaming compression boundaries, fallback resume/merge,
-  stable-provider identity aliases, Excel literal-text round trips,
+  retained fallback artifact/capture verification, LinkedIn route separation,
+  stable-provider identity aliases and legacy-upgrade blocking, exact Excel literal-text round trips,
   temporary-workspace V2 ingestion, tamper rejection, and package triggers.
 
 ## Bounded public canaries
@@ -53,8 +54,6 @@ limited to tracker operations. See
   fixture with no real facts, targets, thresholds or preferences.
 - Production profiles are private installation-local overlays and require a
   separate promotion review.
-- The feature branch must be rewritten or squashed onto the public base before
-  publication; deleting a private profile in a later commit is not sufficient.
 
 ## Outstanding supervised gates
 

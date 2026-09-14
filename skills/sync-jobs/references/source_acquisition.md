@@ -102,6 +102,7 @@ changing scope:
 python3 scripts/sync_jobs.py resume-url \
   --bundle /private/tmp/sync-jobs-run/acquisition.json \
   --replacements /private/tmp/sync-jobs-run/fallback.json \
+  --evidence-base /private/tmp/sync-jobs-run/evidence \
   --out /private/tmp/sync-jobs-run/acquisition-complete.json
 ```
 
@@ -109,22 +110,40 @@ python3 scripts/sync_jobs.py resume-url \
 cover every original failure exactly once, with either `record` or `failure`.
 Only `rendered_dom_text` and `owner_provided_artifact` records are accepted.
 Missing, extra, or duplicate IDs and attempts to replace accepted records
-fail. Unresolved outcomes append attempts and keep the merged bundle incomplete.
+fail. A replacement URL must equal the original selected URL or an exact final
+URL retained by the failed transport attempt; provider and stable job ID are
+derived from that recognized URL rather than accepted from the caller.
+Unresolved outcomes append attempts and keep the merged bundle incomplete.
+`resume-url` refuses LinkedIn failures and directs them to `acquire-save`; a
+`SelectedPostingAcquisitionV1` bundle remains the only LinkedIn capture route.
 
-An owner-supplied HTML, PDF, or text artifact is the final fallback. Hash and
-attribute the artifact and state that current live availability was not
-verified. Do not infer omitted text or source dates.
+`--evidence-base` must resolve an existing directory. Every successful fallback
+names a retained file under that base; the merger reads and hashes those bytes
+and requires the submitted description to match their extracted text. Rendered
+HTML must contain exactly one closed description container and an unambiguous
+terminal text boundary; otherwise it also needs a valid independent complete-text
+match. Rendered UTF-8 text always needs that independent match. Owner-provided UTF-8 HTML,
+text, or Markdown is accepted with current live availability explicitly
+unverified. PDF currently stops honestly because the standard-library engine
+has no deterministic PDF text extractor. Nonexistent files, path escapes,
+arbitrary digests, copied suffixes that do not match the retained description,
+and explicit clipping/read-more signals fail.
 
 ## Security limits
 
-The public transport accepts only HTTP(S), rejects and redacts embedded credentials and secret-bearing query parameters,
+The public transport accepts only HTTP(S), rejects and redacts embedded credentials, secret-bearing query parameters, and common path/matrix session IDs,
 localhost, literal and DNS-resolved private/loopback/link-local destinations,
 unsafe redirects, disallowed ports, excess redirects, oversized responses,
 unsupported content types, and unsupported compression. It requests static
 JSON or HTML and never executes downloaded scripts. Each redirect hop resolves
 once and connects only to that validated public IPv4/IPv6 socket address while
 retaining the original Host header and verified TLS SNI. Gzip and deflate are
-streamed with the same decoded-byte cap as identity bodies.
+streamed with the same decoded-byte cap as identity bodies; concatenated gzip
+members and trailing compressed bytes are rejected rather than ignored.
+Unsafe credential variants of one credential-free target share one redacted
+request identity, so they fail as a duplicate ambiguity instead of producing
+distinct secret-derived identifiers. The original unsafe URL is validated and
+rejected; a stripped variant is never fetched.
 
 Do not add a new external extraction dependency merely to support one observed
 page. Read [dependency evaluation](dependency_evaluation.md) before changing the

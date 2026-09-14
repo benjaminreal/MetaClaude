@@ -121,6 +121,10 @@ class SourceAcquisition(unittest.TestCase):
             with self.subTest(encoding=encoding,body=body),self.assertRaises(AcquisitionError) as bad:
                 fetcher._read_bounded(HTTPStub(200,body),encoding)
             self.assertEqual(bad.exception.kind,"invalid_content_encoding")
+        for encoding,body in (("gzip",gzip.compress(b"one")+gzip.compress(b"two")),("deflate",zlib.compress(b"one")+b"trailing")):
+            with self.subTest(trailing=encoding),self.assertRaises(AcquisitionError) as trailing:
+                fetcher._read_bounded(HTTPStub(200,body),encoding)
+            self.assertEqual(trailing.exception.kind,"invalid_content_encoding")
 
     def test_greenhouse_official_api(self):
         page = "https://boards.greenhouse.io/example/jobs/12345"
@@ -171,6 +175,14 @@ class SourceAcquisition(unittest.TestCase):
         self.assertEqual(_select_json_ld([base],supplied,final),base)
         match={**base,"url":supplied}
         self.assertIs(_select_json_ld([match,{**base,"url":"https://example.test/jobs/2"}],supplied,final),match)
+        for key,value in (("@id",supplied),("mainEntityOfPage",supplied),("mainEntityOfPage",{"@id":supplied}),("mainEntityOfPage",{"url":supplied})):
+            item={**base,key:value};self.assertIs(_select_json_ld([item],supplied,final),item)
+        for key,value in (("@id","https://example.test/jobs/2"),("mainEntityOfPage",{"@id":"https://example.test/jobs/2"})):
+            with self.subTest(key=key),self.assertRaises(AcquisitionError):_select_json_ld([{**base,key:value}],supplied,final)
+        with self.assertRaises(AcquisitionError):
+            _select_json_ld([{**base,"url":supplied,"@id":"https://example.test/jobs/2"}],supplied,final)
+        with self.assertRaises(AcquisitionError):
+            _select_json_ld([{**base,"@id":"https://user:secret@example.test/jobs/1"}],supplied,final)
 
     def test_truncation_signals_block_all_public_methods(self):
         cases={
@@ -196,26 +208,56 @@ class SourceAcquisition(unittest.TestCase):
 
     def test_secret_urls_are_redacted_and_never_fetched(self):
         secret="s3cr3t-value"
-        urls=[f"https://user:{secret}@example.com/jobs/1",f"https://example.com/jobs/2?access_token={secret}&safe=1"]
+        urls=[f"https://user:{secret}@example.com/jobs/1",f"https://example.com/jobs/2?access_token={secret}&safe=1",f"https://user:{secret}@[bad/jobs"]
         fetch=MappingFetcher({})
         bundle=acquire_urls(urls,fetch)
         serialized=json.dumps(bundle)
         self.assertNotIn(secret,serialized)
         self.assertEqual(fetch.calls,[])
         self.assertTrue(all(x["failure_kind"]=="unsafe_url" for x in bundle["failures"]))
+        for value in (f"https://example.com/jobs/3?sessionid={secret}",f"https://example.com/jobs/4;jsessionid={secret}",f"https://example.com/jobs/4%3Bjsessionid={secret}"):
+            single=acquire_urls([value],fetch);self.assertNotIn(secret,json.dumps(single));self.assertEqual(single["failures"][0]["failure_kind"],"unsafe_url")
+        with self.assertRaisesRegex(ValueError,"duplicate supplied URL identity"):
+            acquire_urls([f"https://u:{secret}@example.com/jobs/5",f"https://u:other-secret@example.com/jobs/5"],fetch)
+        with self.assertRaisesRegex(ValueError,"duplicate supplied URL identity"):
+            acquire_urls([f"https://example.com/jobs/6?token={secret}","https://example.com/jobs/6?access_token=other-secret"],fetch)
+        with self.assertRaisesRegex(ValueError,"duplicate supplied URL identity"):
+            acquire_urls([f"https://u:{secret}@example.com/jobs/7","https://example.com/jobs/7"],fetch)
+        with self.assertRaisesRegex(ValueError,"duplicate supplied URL identity"):
+            acquire_urls([f"https://example.com/jobs/8;jsessionid={secret}","https://example.com/jobs/8;phpsessid=other-secret"],fetch)
 
     def test_resume_replaces_only_failures_and_recomputes_hashes(self):
-        accepted="https://static.example/jobs/77";failed="https://www.linkedin.com/jobs/view/1234567890"
-        original=acquire_urls([accepted,failed],MappingFetcher({accepted:response(accepted,fixture("generic_html.html"))}))
+        accepted="https://static.example/jobs/77";failed="https://js.example/jobs/1"
+        original=acquire_urls([accepted,failed],MappingFetcher({accepted:response(accepted,fixture("generic_html.html")),failed:response(failed,fixture("javascript_shell.html"))}))
         frozen=copy.deepcopy(original["records"][0])
         rid=request_id(failed);description="Full synthetic fallback description with a verified final sentence."
-        replacement={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":rid,"record":{
-            "url":failed,"title":"Synthetic role","company":"Synthetic Corp","location":"Remote, US","description":description,
-            "provider":"linkedin","provider_job_id":"1234567890",
-            "provenance":{"browser":"authorized-browser-a","method":"rendered_dom_text","captured_at":"2030-01-01T00:00:00Z","complete_text":True,"completion_evidence":"Expanded and checked the final section.","status_certain":False,"status_uncertainty":"Saved state not asserted."},
-            "quality_evidence":{"end_verified":True,"end_marker":"verified final sentence.","truncation_flags":[]},
-        }}]}
-        merged=resume_bundle(original,replacement)
+        with tempfile.TemporaryDirectory() as evidence_tmp:
+            evidence_root=Path(evidence_tmp)
+            (evidence_root/"capture.html").write_text(f'<div id="jobDescriptionText"><p>{description}</p></div>')
+            replacement={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":rid,"record":{
+                "url":failed,"title":"Synthetic role","company":"Synthetic Corp","location":"Remote, US","description":description,
+                "provider":"js.example",
+                "provenance":{"browser":"authorized-browser-a","method":"rendered_dom_text","captured_at":"2030-01-01T00:00:00Z","complete_text":True,"completion_evidence":"Expanded and checked the final section.","status_certain":False,"status_uncertainty":"Saved state not asserted."},
+                "quality_evidence":{"end_verified":True,"end_marker":"verified final sentence.","truncation_flags":[],"capture_path":"capture.html"},
+            }}]}
+            merged=resume_bundle(original,replacement,evidence_base=evidence_root)
+            unrelated=copy.deepcopy(replacement);unrelated["outcomes"][0]["record"]["url"]="https://other.example/jobs/999"
+            with self.assertRaisesRegex(ValueError,"not bound"):
+                resume_bundle(original,unrelated,evidence_base=evidence_root)
+            wrong_provider=copy.deepcopy(replacement);wrong_provider["outcomes"][0]["record"]["provider"]="invented-provider"
+            with self.assertRaisesRegex(ValueError,"provider conflicts"):
+                resume_bundle(original,wrong_provider,evidence_base=evidence_root)
+            invented_id=copy.deepcopy(replacement);invented_id["outcomes"][0]["record"]["provider_job_id"]="invented-id"
+            with self.assertRaisesRegex(ValueError,"not supported"):
+                resume_bundle(original,invented_id,evidence_base=evidence_root)
+            (evidence_root/"capture.html").write_text('<div id="jobDescriptionText"><p>verified final sentence.</p></div>')
+            with self.assertRaisesRegex(ValueError,"does not match retained"):
+                resume_bundle(original,replacement,evidence_base=evidence_root)
+            midword=copy.deepcopy(replacement);midword["outcomes"][0]["record"]["description"]="Captured description ends midword responsibil"
+            midword["outcomes"][0]["record"]["quality_evidence"]["end_marker"]="responsibil"
+            (evidence_root/"capture.html").write_text('<div id="jobDescriptionText"><p>Captured description ends midword responsibil</p></div>')
+            with self.assertRaisesRegex(ValueError,"complete-text boundary"):
+                resume_bundle(original,midword,evidence_base=evidence_root)
         self.assertTrue(merged["complete"]);self.assertEqual(merged["records"][0],frozen)
         fallback=next(x for x in merged["records"] if x["request_id"]==rid)
         self.assertGreater(len(fallback["attempts"]),len(original["failures"][0]["attempts"]))
@@ -229,15 +271,48 @@ class SourceAcquisition(unittest.TestCase):
             bad={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":x,"failure":{"reason":"still blocked","attempts":[]}} for x in bad_ids]}
             with self.assertRaises(ValueError):resume_bundle(original,bad)
 
+    def test_resume_accepts_only_an_exact_prior_final_redirect_url(self):
+        supplied="https://redirect.example/jobs/1";final="https://js.example/jobs/1"
+        redirected=FetchResponse(supplied,final,200,{"content-type":"text/html; charset=utf-8"},fixture("javascript_shell.html"),(final,))
+        original=acquire_urls([supplied],MappingFetcher({supplied:redirected}))
+        description="Complete redirected browser capture with a verified final sentence."
+        with tempfile.TemporaryDirectory() as evidence_tmp:
+            evidence_root=Path(evidence_tmp);(evidence_root/"capture.html").write_text(f'<div class="jobDescriptionText"><p>{description}</p></div>')
+            replacement={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":request_id(supplied),"record":{
+                "url":final,"final_url":final,"title":"Redirected role","company":"Example Corp","location":"Remote, US","description":description,
+                "provider":"js.example","provenance":{"browser":"authorized-browser-a","method":"rendered_dom_text","captured_at":"2030-01-01T00:00:00Z","complete_text":True,"completion_evidence":"Verified the closed description boundary.","status_certain":False,"status_uncertainty":"Not asserted."},
+                "quality_evidence":{"end_verified":True,"end_marker":"final sentence.","truncation_flags":[],"capture_path":"capture.html"},
+            }}]}
+            merged=resume_bundle(original,replacement,evidence_base=evidence_root)
+        self.assertTrue(merged["complete"]);self.assertEqual(merged["records"][0]["canonical_url"],final)
+
     def test_owner_artifact_fallback_requires_artifact_evidence(self):
-        url="https://www.linkedin.com/jobs/view/2233445566";original=acquire_urls([url],lambda _:self.fail("no fetch"));rid=request_id(url)
-        base={"url":url,"title":"Synthetic role","company":"Example Corp","location":"Remote, US","description":"Complete owner supplied artifact with final line.","provider":"linkedin","provider_job_id":"2233445566",
+        url="https://js.example/jobs/1";original=acquire_urls([url],MappingFetcher({url:response(url,fixture("javascript_shell.html"))}));rid=request_id(url)
+        description="Complete owner supplied artifact with final line."
+        base={"url":url,"title":"Synthetic role","company":"Example Corp","location":"Remote, US","description":description,"provider":"js.example",
               "provenance":{"browser":"none","method":"owner_provided_artifact","captured_at":"2030-01-01T00:00:00Z","complete_text":True,"completion_evidence":"Owner supplied a complete text artifact.","status_certain":False,"status_uncertainty":"Live availability not checked."},
               "quality_evidence":{"end_verified":True,"end_marker":"final line.","truncation_flags":[],"artifact_path":"owner/job.txt","availability_verified":False}}
-        bad={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":rid,"record":base}]}
-        with self.assertRaisesRegex(ValueError,"OWNER_ARTIFACT_HASH_MISSING"):resume_bundle(original,bad)
-        base["quality_evidence"]["artifact_sha256"]=sha256_bytes(b"synthetic owner artifact")
-        merged=resume_bundle(original,bad);self.assertTrue(merged["complete"])
+        payload={"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":rid,"record":base}]}
+        with tempfile.TemporaryDirectory() as evidence_tmp:
+            evidence_root=Path(evidence_tmp);(evidence_root/"owner").mkdir()
+            with self.assertRaisesRegex(ValueError,"does not exist"):resume_bundle(original,payload,evidence_base=evidence_root)
+            artifact=evidence_root/"owner/job.txt";artifact.write_text(description)
+            base["quality_evidence"]["artifact_sha256"]="0"*64
+            with self.assertRaisesRegex(ValueError,"does not match"):resume_bundle(original,payload,evidence_base=evidence_root)
+            base["quality_evidence"].pop("artifact_sha256")
+            merged=resume_bundle(original,payload,evidence_base=evidence_root);self.assertTrue(merged["complete"])
+            artifact.write_text("Complete but different artifact text.")
+            with self.assertRaisesRegex(ValueError,"does not match retained"):resume_bundle(original,payload,evidence_base=evidence_root)
+            base["quality_evidence"]["artifact_path"]="../escaped.txt"
+            with self.assertRaisesRegex(ValueError,"escaped"):resume_bundle(original,payload,evidence_base=evidence_root)
+            pdf=evidence_root/"owner/job.pdf";pdf.write_bytes(b"%PDF-1.4 synthetic")
+            base["quality_evidence"]["artifact_path"]="owner/job.pdf"
+            with self.assertRaisesRegex(ValueError,"PDF text extraction is unavailable"):resume_bundle(original,payload,evidence_base=evidence_root)
+
+    def test_linkedin_v2_resume_is_refused(self):
+        url="https://www.linkedin.com/jobs/view/2233445566";original=acquire_urls([url],lambda _:self.fail("no fetch"))
+        with self.assertRaisesRegex(ValueError,"acquire-save"):
+            resume_bundle(original,{"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":request_id(url),"failure":{"reason":"still blocked","attempts":[]}}]})
 
     def test_multiple_jobs_js_shell_and_challenges_are_retained(self):
         cases = {
@@ -312,7 +387,16 @@ class SourceAcquisition(unittest.TestCase):
                 "reason":"No authorized browser surface.","attempts":[],"failure_kind":"capability_missing","next_action":"manual_artifact_or_stop"
             }}]}))
             resumed=subprocess.run(base+["resume-url","--bundle",str(out),"--replacements",str(replacements),"--out",str(merged)],capture_output=True,text=True)
-            self.assertEqual(resumed.returncode,0,resumed.stdout+resumed.stderr);self.assertFalse(json.loads(merged.read_text())["complete"])
+            self.assertNotEqual(resumed.returncode,0);self.assertIn("acquire-save",resumed.stderr);self.assertFalse(merged.exists())
+
+            js_url="https://js.example/jobs/1";js_bundle=Path(tmp)/"js.json";js_merged=Path(tmp)/"js-merged.json"
+            original=acquire_urls([js_url],MappingFetcher({js_url:response(js_url,fixture("javascript_shell.html"))}))
+            js_bundle.write_text(json.dumps(original));rid=original["failures"][0]["request_id"]
+            replacements.write_text(json.dumps({"schema":"SourcePostingFallbackV2","outcomes":[{"request_id":rid,"failure":{
+                "reason":"No authorized browser surface.","attempts":[],"failure_kind":"capability_missing","next_action":"manual_artifact_or_stop"
+            }}]}))
+            resumed=subprocess.run(base+["resume-url","--bundle",str(js_bundle),"--replacements",str(replacements),"--out",str(js_merged)],capture_output=True,text=True)
+            self.assertEqual(resumed.returncode,0,resumed.stdout+resumed.stderr);self.assertFalse(json.loads(js_merged.read_text())["complete"])
 
 
 if __name__ == "__main__":

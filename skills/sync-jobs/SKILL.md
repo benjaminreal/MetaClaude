@@ -21,7 +21,7 @@ Use `python3 scripts/sync_jobs.py --project-root <root> --profile <profile-id> <
 
 For owner-selected employer, ATS, Indeed, or unfamiliar job-board URLs, read [source acquisition](references/source_acquisition.md). `acquire-url` is non-mutating and accounts for every URL as a validated record or retained failure. It tries supported official public ATS endpoints, schema.org `JobPosting`, and bounded public HTML. LinkedIn is deliberately returned as a browser-required handoff; do not route it through an unauthorized scraping library or private endpoint.
 
-For an incomplete source-neutral bundle, `resume-url` merges an exactly covering set of browser/manual fallback outcomes. It preserves accepted records and selected scope, replaces only failures, appends attempts, and revalidates hashes and completion claims. This remains separate from LinkedIn `SelectedPostingAcquisitionV1` capture.
+For an incomplete non-LinkedIn source-neutral bundle, `resume-url` merges an exactly covering set of retained browser/manual fallback outcomes. It preserves accepted records and selected scope, replaces only failures, appends attempts, and revalidates evidence bytes, hashes, URL identity and completion claims. It refuses LinkedIn outcomes: `acquire-save` producing `SelectedPostingAcquisitionV1` remains the only LinkedIn capture route.
 
 For acquisition-only work on owner-selected posting IDs, read [LinkedIn adapter](references/linkedin_adapter.md) and [capture quality](references/acquisition_quality.md). This mode captures evidence without opening the tracker or archive gates and cannot label selected IDs as official new jobs or claim a completed sync.
 

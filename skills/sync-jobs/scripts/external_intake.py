@@ -21,12 +21,13 @@ import posting_eligibility
 from acquisition_quality import validate_quality
 from excel_literal import write_literal_text
 from record_fields import normalize_description
-from source_acquisition import canonical_posting_url, source_record_hash, validate_bundle as validate_source_bundle
+from source_acquisition import canonical_posting_url, recognize, reject_secret_url, source_record_hash, validate_bundle as validate_source_bundle
 from sync_ingest import country_from_location, header_index, posted_yyyymm, sanitize
 
 TRACKING_KEYS={"from","refid","source","eid","locale"}
 
 def canonical_url(value: str) -> str:
+    reject_secret_url(value)
     parsed=urlsplit(str(value).strip())
     if parsed.scheme.lower() not in {"http","https"} or not parsed.netloc:
         raise ValueError("direct posting URL must be absolute HTTP(S)")
@@ -70,7 +71,7 @@ def load_records(path: Path) -> tuple[list[dict], str | None]:
         raise ValueError("unsupported external input schema")
     if payload.get("failures") not in (None,[]):
         raise ValueError("external input retains failures; ingestion requires a complete batch")
-    records=[];seen=set();v2=bundle_sha is not None
+    records=[];seen=set();canonical_identities={};v2=bundle_sha is not None
     for raw in payload["records"]:
         if not isinstance(raw,dict): raise ValueError("external records must be objects")
         rec=normalize_description(raw);url=rec.get("url")
@@ -79,8 +80,12 @@ def load_records(path: Path) -> tuple[list[dict], str | None]:
         rec["source_id"]=sid;rec["id"]=sid
         for key in ("title","company","location","description"):
             if not isinstance(rec.get(key),str) or not rec[key].strip(): raise ValueError(f"{sid}: {key} is required")
-        identity,_=primary_identity(rec,v2=v2)
+        identity,canonical=primary_identity(rec,v2=v2)
         if identity in seen: raise ValueError(f"duplicate external source identity {sid}")
+        prior_identity=canonical_identities.get(canonical)
+        if prior_identity is not None and prior_identity!=identity:
+            raise ValueError(f"{sid}: canonical URL has conflicting stable provider identities in this batch")
+        canonical_identities[canonical]=identity
         seen.add(identity);quality=validate_quality(rec,require_pass=True)
         description_sha=hashlib.sha256(rec["description"].encode()).hexdigest()
         if rec.get("description_sha256") not in (None,description_sha):
@@ -175,6 +180,17 @@ def source_sidecar_index(meta: Path):
             urls[url]=entry
     return identities,urls
 
+def recognized_workspace_identities(urls,archives):
+    """Infer only provider IDs that are structurally present in stored URLs."""
+    result={}
+    for url in set(urls)|set(archives):
+        adapter=recognize(url);job_id=str(adapter.get("job_id") or "").strip()
+        if not job_id:continue
+        identity=("provider_job_id",str(adapter["provider"]).casefold(),job_id)
+        entry=result.setdefault(identity,{"tracker":[],"archives":[]})
+        entry["tracker"].extend(urls.get(url,[]));entry["archives"].extend(archives.get(url,[]))
+    return result
+
 def max_tracker_id(ws,col):
     values=[]
     for row in range(2,ws.max_row+1):
@@ -207,6 +223,7 @@ def main(argv=None):
     tracker_ids={str(ws_ro.cell(row,hdr_ro["Tracker ID"]).value or "") for row in range(2,ws_ro.max_row+1)}
     wb_ro.close();archives=archive_urls(postings);v2_archives=archive_urls(postings,canonical_posting_url)
     sidecar_identities,sidecar_urls=source_sidecar_index(meta)
+    workspace_identities=recognized_workspace_identities(v2_urls,v2_archives)
     pending=[];already=[]
     for rec in records:
         if bundle_sha:
@@ -216,8 +233,11 @@ def main(argv=None):
             alias=sidecar_urls.get(key)
             if stable and alias and stable["tracker_id"]!=alias["tracker_id"]:
                 raise ValueError(f"{rec['source_id']}: stable provider identity conflicts with canonical URL alias")
-            if alias and identity[0]=="provider_job_id" and alias.get("identity") not in (None,identity):
-                raise ValueError(f"{rec['source_id']}: canonical URL is already bound to a conflicting stable provider job ID")
+            if alias and identity[0]=="provider_job_id":
+                if alias.get("identity") is None:
+                    raise ValueError(f"{rec['source_id']}: identity_upgrade_required for existing legacy tracker/archive record")
+                if alias["identity"]!=identity:
+                    raise ValueError(f"{rec['source_id']}: canonical URL is already bound to a conflicting stable provider job ID")
             existing=stable or alias
             if existing:
                 if any(tid!=existing["tracker_id"] for tid,_row in t):
@@ -230,6 +250,11 @@ def main(argv=None):
                 if tracker_ok!=archive_ok or not tracker_ok:
                     raise ValueError(f"{rec['source_id']}: source sidecar has partial tracker/archive state")
                 already.append(rec);continue
+            inferred=workspace_identities.get(identity) if identity[0]=="provider_job_id" else None
+            if inferred:
+                if not inferred["tracker"] or not inferred["archives"]:
+                    raise ValueError(f"{rec['source_id']}: partial legacy identity state requires recovery")
+                raise ValueError(f"{rec['source_id']}: identity_upgrade_required for existing legacy tracker/archive record")
         else:
             key=canonical_url(rec["url"]);t=urls.get(key,[]);a=archives.get(key,[])
         if len(t)>1 or len(a)>1:raise ValueError(f"{rec['source_id']}: ambiguous existing direct-source identity")

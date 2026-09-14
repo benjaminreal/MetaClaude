@@ -24,7 +24,7 @@ import socket
 import ssl
 import tempfile
 from typing import Callable
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 import zlib
 
 from acquisition_quality import validate_quality
@@ -46,7 +46,12 @@ JOB_CONTAINER_NORMALIZED = re.compile(
 )
 SECRET_QUERY_KEY = re.compile(
     r"(?:^|[_-])(?:access[_-]?token|auth(?:orization)?|api[_-]?key|client[_-]?secret|"
-    r"credential|jwt|password|passwd|secret|signature|sig|token)(?:$|[_-])",
+    r"credential|jwt|password|passwd|secret|session(?:id|key|token)?|jsessionid|phpsessid|"
+    r"signature|sig|token)(?:$|[_-])",
+    re.I,
+)
+SECRET_PATH_VALUE = re.compile(
+    r"(?P<prefix>(?:^|[;/])(?:jsessionid|phpsessid|sessionid|session|sid)=)[^/?#;]*",
     re.I,
 )
 EXPLICIT_TRUNCATION = re.compile(
@@ -93,6 +98,8 @@ def canonical_posting_url(value: str) -> str:
         raise ValueError("posting URL must be absolute HTTP(S)")
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("posting URL must not contain credentials")
+    if SECRET_PATH_VALUE.search(unquote(parsed.path)):
+        raise ValueError("posting URL must not contain path or matrix session credentials")
     host = parsed.hostname.lower().rstrip(".")
     try:
         port = parsed.port
@@ -121,9 +128,9 @@ def redact_url(value: str) -> str:
     raw = str(value)
     try:
         parsed = urlsplit(raw)
+        host = parsed.hostname or "invalid"
     except ValueError:
-        return "redacted-invalid-url-" + sha256_bytes(raw.encode("utf-8"))[:20]
-    host = parsed.hostname or "invalid"
+        return "//invalid/redacted-invalid-url"
     if ":" in host:
         host = f"[{host}]"
     try:
@@ -135,8 +142,52 @@ def redact_url(value: str) -> str:
     query = []
     for key, val in parse_qsl(parsed.query, keep_blank_values=True):
         query.append((key, "[REDACTED]" if SECRET_QUERY_KEY.search(key.casefold()) else val))
-    safe = urlunsplit((parsed.scheme, host, parsed.path, urlencode(query), ""))
-    return safe or ("redacted-invalid-url-" + sha256_bytes(raw.encode("utf-8"))[:20])
+    decoded_path = unquote(parsed.path)
+    safe_path = (SECRET_PATH_VALUE.sub(lambda match: match.group("prefix") + "[REDACTED]", decoded_path)
+                 if SECRET_PATH_VALUE.search(decoded_path) else parsed.path)
+    safe = urlunsplit((parsed.scheme, host, safe_path, urlencode(query), ""))
+    return safe or "//invalid/redacted-invalid-url"
+
+
+def reject_secret_url(value: str) -> None:
+    """Reject credential-bearing URLs without applying source canonicalization."""
+    try:
+        parsed = urlsplit(str(value).strip())
+    except ValueError as exc:
+        raise ValueError("posting URL is malformed") from exc
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("posting URL must not contain credentials")
+    if SECRET_PATH_VALUE.search(unquote(parsed.path)):
+        raise ValueError("posting URL must not contain path or matrix session credentials")
+    if any(SECRET_QUERY_KEY.search(key.casefold()) for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
+        raise ValueError("posting URL must not contain credential or secret query parameters")
+
+
+def unsafe_request_id(value: str) -> str:
+    raw = str(value)
+    try:
+        parsed = urlsplit(raw.strip())
+        host = parsed.hostname or "invalid"
+        if ":" in host:
+            host = f"[{host}]"
+        port = parsed.port
+        if port is not None:
+            host += f":{port}"
+        decoded_path = unquote(parsed.path)
+        path = SECRET_PATH_VALUE.sub(
+            lambda match: "/" if match.group("prefix").startswith("/") else "",
+            decoded_path if SECRET_PATH_VALUE.search(decoded_path) else parsed.path,
+        )
+        query = [(key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+                 if not SECRET_QUERY_KEY.search(key.casefold())]
+        credential_free = urlunsplit((parsed.scheme, host, path, urlencode(query), ""))
+        try:
+            credential_free = canonical_posting_url(credential_free)
+        except ValueError:
+            credential_free = redact_url(credential_free)
+    except ValueError:
+        credential_free = redact_url(raw)
+    return "req-" + sha256_bytes(credential_free.encode("utf-8"))[:20]
 
 
 def request_id(url: str) -> str:
@@ -284,6 +335,8 @@ class BoundedFetcher:
                 else:
                     piece = decoder.decompress(chunk, self.max_bytes + 1 - len(output))
                 output.extend(piece)
+                if decoder is not None and decoder.unused_data:
+                    raise AcquisitionError("invalid_content_encoding", f"trailing or concatenated {encoding} data is not allowed")
                 if len(output) > self.max_bytes or (decoder is not None and decoder.unconsumed_tail):
                     raise AcquisitionError("response_too_large", "decompressed response exceeds the configured byte limit")
             if decoder is not None:
@@ -486,6 +539,36 @@ def _job_postings(parser: _JobPageParser) -> list[dict]:
             if isinstance(types, list) and any(str(t).casefold() == "jobposting" for t in types):
                 found.append(item)
     return found
+
+
+def _jsonld_identity_urls(item: dict) -> tuple[set[str], bool]:
+    values = []
+    for key in ("url", "@id"):
+        if isinstance(item.get(key), str):
+            values.append(item[key])
+    main = item.get("mainEntityOfPage")
+    if isinstance(main, str):
+        values.append(main)
+    elif isinstance(main, dict):
+        values.extend(main[key] for key in ("url", "@id") if isinstance(main.get(key), str))
+    result = set()
+    explicit = False
+    for value in values:
+        try:
+            parsed = urlsplit(value.strip())
+            is_absolute = parsed.scheme.casefold() in {"http", "https"} and bool(parsed.netloc)
+        except ValueError:
+            is_absolute = False
+        if not is_absolute:
+            continue
+        explicit = True
+        try:
+            result.add(canonical_posting_url(value))
+        except ValueError:
+            # An unsafe/malformed absolute binding is still explicit and must
+            # not turn a singleton into an apparently URL-less object.
+            continue
+    return result, explicit
 
 
 def _organization_name(value) -> str | None:
@@ -720,19 +803,16 @@ def _select_json_ld(items: list[dict], supplied_url: str, final_url: str) -> dic
     targets = {canonical_posting_url(supplied_url), canonical_posting_url(final_url)}
     bound = []
     for item in items:
-        candidate = item.get("url")
-        if isinstance(candidate, str):
-            try:
-                if canonical_posting_url(candidate) in targets:
-                    bound.append(item)
-            except ValueError:
-                pass
+        identities, explicit = _jsonld_identity_urls(item)
+        if explicit and identities and identities.issubset(targets):
+            bound.append(item)
     if len(bound) == 1:
         return bound[0]
     if len(items) == 1:
-        if not isinstance(items[0].get("url"), str):
+        _identities, explicit = _jsonld_identity_urls(items[0])
+        if not explicit:
             return items[0]
-        raise AcquisitionError("identity_mismatch", "singleton JobPosting URL did not match the supplied or final page URL", final_url=final_url)
+        raise AcquisitionError("identity_mismatch", "singleton JobPosting identity URL did not match the supplied or final page URL", final_url=final_url)
     raise AcquisitionError("multiple_postings", "page contains multiple JobPosting objects without one exact URL binding", final_url=final_url)
 
 
@@ -814,7 +894,7 @@ def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tup
         supplied = canonical_posting_url(supplied_url)
         validate_public_url(supplied, resolve=False)
     except ValueError as exc:
-        raw_id = "req-" + sha256_bytes(str(supplied_url).encode("utf-8"))[:20]
+        raw_id = unsafe_request_id(str(supplied_url))
         return None, {"request_id": raw_id, "supplied_url": redact_url(str(supplied_url)), "failure_kind": "unsafe_url", "reason": str(exc), "attempts": [], "next_action": "correct_or_replace_url"}
     rid = request_id(supplied)
     adapter = recognize(supplied)
@@ -925,15 +1005,20 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
         if method in {"official_api", "public_json_ld", "public_html"}:
             if evidence.get("response_sha256") != record["quality_evidence"].get("response_sha256"):
                 raise ValueError("public response evidence hashes disagree")
-        elif not isinstance(evidence.get("capture_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", evidence["capture_sha256"]):
-            raise ValueError("fallback capture evidence hash is missing")
+        elif method == "rendered_dom_text":
+            if not isinstance(evidence.get("capture_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", evidence["capture_sha256"]):
+                raise ValueError("fallback capture evidence hash is missing")
+            if evidence.get("capture_sha256") != record["quality_evidence"].get("capture_sha256"):
+                raise ValueError("rendered capture evidence hashes disagree")
         if method == "owner_provided_artifact" and evidence.get("artifact_sha256") != record["quality_evidence"].get("artifact_sha256"):
             raise ValueError("owner artifact evidence hashes disagree")
         _validate_attempts(record.get("attempts"))
         identity = record["source_identity"]
         if not isinstance(identity, dict) or set(identity) != {"kind", "provider", "provider_job_id", "canonical_url"}:
             raise ValueError("source identity has unsupported fields")
-        if identity["canonical_url"] != record["canonical_url"] or identity["provider"] != record.get("provider"):
+        expected_identity_kind = "provider_job_id" if record.get("provider_job_id") else "canonical_url"
+        if (identity["canonical_url"] != record["canonical_url"] or identity["provider"] != record.get("provider")
+                or identity["provider_job_id"] != record.get("provider_job_id") or identity["kind"] != expected_identity_kind):
             raise ValueError("source identity does not match record")
         if record.get("description_sha256") != sha256_bytes(record["description"].encode("utf-8")):
             raise ValueError("description hash mismatch")
@@ -967,7 +1052,58 @@ def validate_bundle(payload: dict, *, require_hash: bool = True) -> dict:
     return payload
 
 
-def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> dict:
+def _evidence_file(base: Path | None, submitted_path: str, *, method: str,
+                   independent_check=None) -> tuple[str, bytes, str, str, str]:
+    if base is None:
+        raise ValueError("fallback records require an explicitly resolved evidence base")
+    base = base.expanduser().resolve()
+    if not base.is_dir():
+        raise ValueError("fallback evidence base must be an existing directory")
+    if not isinstance(submitted_path, str) or not submitted_path.strip():
+        raise ValueError("fallback evidence requires a capture/artifact path")
+    candidate = Path(submitted_path).expanduser()
+    candidate = candidate.resolve() if candidate.is_absolute() else (base / candidate).resolve()
+    if not candidate.is_relative_to(base):
+        raise ValueError("fallback evidence path escaped its explicit base")
+    if not candidate.is_file():
+        raise ValueError("fallback evidence file does not exist")
+    raw_bytes = candidate.read_bytes()
+    suffix = candidate.suffix.casefold()
+    if suffix == ".pdf":
+        raise ValueError("deterministic PDF text extraction is unavailable; provide verified HTML or UTF-8 text")
+    if suffix in {".html", ".htm"}:
+        try:
+            source = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("fallback HTML evidence must be UTF-8") from exc
+        if method == "rendered_dom_text":
+            parser = _JobPageParser(); parser.feed(source); parser.close()
+            containers = [item for item in parser.containers if item["closed"]]
+            if len(containers) != 1:
+                raise ValueError("rendered HTML evidence requires one closed job-description container")
+            description = html_text("".join(containers[0]["parts"]))
+            structure = "rendered:closed-job-description-container"
+        else:
+            description = html_text(source)
+            structure = "owner:utf8-html-artifact"
+        content_type = "text/html"
+    elif suffix in {".txt", ".md"}:
+        try:
+            description = raw_bytes.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError("fallback text evidence must be UTF-8") from exc
+        if method == "rendered_dom_text" and independent_check is None:
+            raise ValueError("rendered text evidence requires an independent complete-text match")
+        structure = ("rendered:text-capture-with-independent-check" if method == "rendered_dom_text"
+                     else "owner:utf8-text-artifact")
+        content_type = "text/markdown" if suffix == ".md" else "text/plain"
+    else:
+        raise ValueError("fallback evidence must be UTF-8 .html/.htm/.txt/.md; PDF extraction is unavailable")
+    return str(candidate.relative_to(base)), raw_bytes, description, structure, content_type
+
+
+def _fallback_record(raw: dict, selected: dict, prior_failure: dict,
+                     evidence_base: Path | None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("replacement record must be an object")
     required = {"request_id", "url", "title", "company", "location", "description", "provenance", "quality_evidence"}
@@ -979,6 +1115,16 @@ def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> d
     supplied = selected["supplied_url"]
     canonical = canonical_posting_url(raw["url"])
     final_url = canonical_posting_url(raw.get("final_url") or canonical)
+    allowed_urls = {canonical_posting_url(selected["supplied_url"])}
+    for item in prior_failure.get("attempts", []):
+        if (isinstance(item, dict) and item.get("method") == "anonymous_http"
+                and isinstance(item.get("http_status"), int)
+                and isinstance(item.get("response_sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", item["response_sha256"])
+                and item.get("final_url")):
+            allowed_urls.add(canonical_posting_url(item["final_url"]))
+    if canonical not in allowed_urls or final_url not in allowed_urls:
+        raise ValueError("replacement URL is not bound to the selected URL or a prior validated final URL")
     provenance = dict(raw["provenance"])
     method = provenance.get("method")
     if method not in {"rendered_dom_text", "owner_provided_artifact"}:
@@ -989,12 +1135,26 @@ def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> d
         if not isinstance(provenance.get("browser"), str) or provenance["browser"].strip().casefold() in {"", "none"}:
             raise ValueError("rendered_dom_text replacement requires the user-visible browser name")
         authentication_state = "authorized_user_visible_browser"
-        structural_identity = "rendered:description-only-dom"
+        path_key = "capture_path"
     else:
         authentication_state = "owner_provided_artifact"
-        structural_identity = "owner:hashed-artifact"
+        path_key = "artifact_path"
     description = str(raw["description"]).strip()
     evidence = dict(raw["quality_evidence"])
+    evidence_path, evidence_bytes, extracted_description, structural_identity, content_type = _evidence_file(
+        evidence_base, evidence.get(path_key), method=method,
+        independent_check=evidence.get("independent_check"),
+    )
+    if re.sub(r"\s+", " ", extracted_description).strip() != re.sub(r"\s+", " ", description).strip():
+        raise ValueError("submitted description does not match retained fallback evidence bytes")
+    if method == "rendered_dom_text" and re.search(r"\w$", description) and evidence.get("independent_check") is None:
+        raise ValueError("rendered capture ends without a verifiable complete-text boundary")
+    evidence_hash = sha256_bytes(evidence_bytes)
+    submitted_hash = evidence.get("capture_sha256" if method == "rendered_dom_text" else "artifact_sha256")
+    if submitted_hash not in (None, evidence_hash):
+        raise ValueError("submitted fallback evidence hash does not match retained bytes")
+    evidence[path_key] = evidence_path
+    evidence["capture_sha256" if method == "rendered_dom_text" else "artifact_sha256"] = evidence_hash
     flags = _truncation_flags(description)
     evidence.update({
         "end_verified": evidence.get("end_verified") is True and not flags,
@@ -1005,9 +1165,19 @@ def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> d
         })),
         "structural_identity": structural_identity,
     })
-    provider = str(raw.get("provider") or recognize(canonical)["provider"])
-    provider_job_id = _identifier(raw.get("provider_job_id"))
-    attempts = [_redacted_attempt(item) for item in list(prior_attempts) + list(raw.get("attempts") or [])]
+    adapter = recognize(canonical)
+    provider = str(adapter["provider"])
+    submitted_provider = str(raw.get("provider") or provider)
+    if submitted_provider.casefold() != provider.casefold():
+        raise ValueError("replacement provider conflicts with recognized URL evidence")
+    expected_job_id = _identifier(adapter.get("job_id"))
+    submitted_job_id = _identifier(raw.get("provider_job_id"))
+    if submitted_job_id is not None and expected_job_id is None:
+        raise ValueError("replacement provider job ID is not supported by recognized URL evidence")
+    if expected_job_id is not None and submitted_job_id not in (None, expected_job_id):
+        raise ValueError("replacement provider job ID conflicts with recognized URL evidence")
+    provider_job_id = expected_job_id
+    attempts = [_redacted_attempt(item) for item in list(prior_failure["attempts"]) + list(raw.get("attempts") or [])]
     attempts.append(_attempt(method, canonical, "accepted", reason="validated fallback replacement"))
     record = {
         "schema": "SourceNeutralPostingV2", "request_id": selected["request_id"],
@@ -1030,12 +1200,9 @@ def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> d
         "authentication_state": authentication_state, "provenance": provenance,
         "quality_evidence": evidence,
         "source_evidence": {
-            "capture_sha256": sha256_bytes(canonical_json({
-                "request_id": selected["request_id"], "url": canonical, "provenance": provenance,
-                "description": description, "quality_evidence": evidence,
-            })),
-            "artifact_sha256": evidence.get("artifact_sha256"),
-            "content_type": str(raw.get("content_type") or "text/plain"), "redirect_chain": [],
+            "capture_sha256": evidence_hash if method == "rendered_dom_text" else None,
+            "artifact_sha256": evidence_hash if method == "owner_provided_artifact" else None,
+            "content_type": content_type, "redirect_chain": [],
         },
         "attempts": attempts,
     }
@@ -1047,7 +1214,7 @@ def _fallback_record(raw: dict, selected: dict, prior_attempts: list[dict]) -> d
     return record
 
 
-def resume_bundle(original: dict, replacements: dict) -> dict:
+def resume_bundle(original: dict, replacements: dict, *, evidence_base: Path | None = None) -> dict:
     """Replace only failed requests in an incomplete V2 bundle."""
     validate_bundle(original)
     if original.get("complete") or not original.get("failures"):
@@ -1059,6 +1226,16 @@ def resume_bundle(original: dict, replacements: dict) -> dict:
         raise ValueError("fallback outcomes must be a list")
     ids = [item.get("request_id") for item in outcomes if isinstance(item, dict)]
     failed_by_id = {item["request_id"]: item for item in original["failures"]}
+    def is_linkedin_failure(item):
+        if item.get("provider") == "linkedin":
+            return True
+        try:
+            return recognize(item["supplied_url"])["provider"] == "linkedin"
+        except ValueError:
+            return False
+
+    if any(is_linkedin_failure(item) for item in original["failures"]):
+        raise ValueError("LinkedIn failures must use acquire-save and SelectedPostingAcquisitionV1, not resume-url")
     if len(ids) != len(outcomes) or len(set(ids)) != len(ids):
         raise ValueError("fallback outcome request IDs must be present and unique")
     if set(ids) != set(failed_by_id):
@@ -1075,7 +1252,7 @@ def resume_bundle(original: dict, replacements: dict) -> dict:
                 raise ValueError("unsafe URL failures require a newly selected acquisition URL")
             replacement = dict(outcome["record"])
             replacement["request_id"] = outcome["request_id"]
-            records.append(_fallback_record(replacement, selected_by_id[outcome["request_id"]], prior["attempts"]))
+            records.append(_fallback_record(replacement, selected_by_id[outcome["request_id"]], prior, evidence_base))
         else:
             failure = dict(prior)
             update = outcome["failure"]
@@ -1114,8 +1291,10 @@ def _validate_attempts(attempts) -> None:
             if not isinstance(attempt.get(key), str) or not attempt[key].strip():
                 raise ValueError(f"attempt ledger requires {key}")
         for key in ("url", "final_url"):
-            if key in attempt and redact_url(attempt[key]) != attempt[key]:
-                raise ValueError("attempt ledger URL contains unredacted credentials or secrets")
+            if key in attempt:
+                if redact_url(attempt[key]) != attempt[key]:
+                    raise ValueError("attempt ledger URL contains unredacted credentials or secrets")
+                validate_public_url(attempt[key], resolve=False)
 
 
 def acquire_urls(urls: list[str], fetch: Callable[[str], FetchResponse] | None = None) -> dict:
@@ -1128,7 +1307,7 @@ def acquire_urls(urls: list[str], fetch: Callable[[str], FetchResponse] | None =
             rid = request_id(url)
             persisted_url = canonical_posting_url(url)
         except ValueError:
-            rid = "req-" + sha256_bytes(str(url).encode("utf-8"))[:20]
+            rid = unsafe_request_id(str(url))
             persisted_url = redact_url(str(url))
         if rid in seen:
             raise ValueError("duplicate supplied URL identity")
@@ -1211,12 +1390,14 @@ def resume_main(argv=None):
     parser = argparse.ArgumentParser(description="Merge browser/manual fallback outcomes into an incomplete source-neutral acquisition bundle.")
     parser.add_argument("--bundle", required=True)
     parser.add_argument("--replacements", required=True)
+    parser.add_argument("--evidence-base", help="Explicit base directory containing retained fallback capture/artifact files")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     try:
         original = json.loads(Path(args.bundle).read_text(encoding="utf-8"))
         replacements = json.loads(Path(args.replacements).read_text(encoding="utf-8"))
-        payload = resume_bundle(original, replacements)
+        evidence_base = Path(args.evidence_base).expanduser().resolve() if args.evidence_base else None
+        payload = resume_bundle(original, replacements, evidence_base=evidence_base)
         file_hash = atomic_write_json(Path(args.out).expanduser().resolve(), payload)
     except (OSError, json.JSONDecodeError, ValueError, AcquisitionError) as exc:
         parser.error(str(exc))

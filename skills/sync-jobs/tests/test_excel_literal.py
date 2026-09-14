@@ -20,7 +20,9 @@ class ExcelLiteral(unittest.TestCase):
             wb.save(path);check=openpyxl.load_workbook(path,data_only=False)
             for row,value in enumerate(values,1):
                 cell=check.active.cell(row,1)
-                self.assertEqual(cell.value,normalize_literal_text(value));self.assertEqual(cell.data_type,"s")
+                self.assertEqual(cell.value,normalize_literal_text(value));self.assertNotEqual(cell.data_type,"f")
+            self.assertEqual(check.active.cell(1,1).value,"=1+1")
+            self.assertEqual(check.active.cell(5,1).value," \t=HYPERLINK(\"x\")")
             self.assertEqual(check.active.cell(8,1).value,"Málaga")
             self.assertEqual(check.active.cell(9,1).value,"https://example.com/jobs/1")
             check.close()
@@ -40,7 +42,7 @@ class ExcelLiteral(unittest.TestCase):
             results.write_text(json.dumps({"report_batch":"synthetic.json","results":{"J-000001":{"cells":{"Triage Summary":"  =HYPERLINK(\"bad\")"}}}}))
             self.assertEqual(write_tracker_main(["--tracker",str(tracker),"--results",str(results),"--backup-dir",str(root)]),0)
             check=openpyxl.load_workbook(tracker,data_only=False);cell=check["Jobs"].cell(2,2)
-            self.assertEqual(cell.value,"'  =HYPERLINK(\"bad\")");self.assertEqual(cell.data_type,"s");check.close()
+            self.assertEqual(cell.value,"  =HYPERLINK(\"bad\")");self.assertNotEqual(cell.data_type,"f");check.close()
 
 
 if __name__=="__main__":unittest.main()

@@ -63,6 +63,7 @@ def validate_quality(record, require_pass=False):
         'http_status', 'response_sha256', 'endpoint', 'provider_job_id',
         'structured_type', 'single_job_bound', 'container_count', 'container_closed',
         'artifact_sha256', 'artifact_path', 'availability_verified',
+        'capture_sha256', 'capture_path',
         'description_length', 'truncation_scan_sha256', 'structural_identity',
     }
     unknown = set(evidence) - allowed_evidence
@@ -152,7 +153,13 @@ def validate_quality(record, require_pass=False):
             hard.append('OWNER_ARTIFACT_PATH_MISSING')
         if evidence.get('availability_verified') is not False:
             hard.append('OWNER_ARTIFACT_MUST_NOT_CLAIM_LIVE_AVAILABILITY')
-    elif method != 'rendered_dom_text':
+    elif method == 'rendered_dom_text':
+        if evidence.get('capture_sha256') is not None:
+            if not isinstance(evidence.get('capture_sha256'), str) or not HEX64.fullmatch(evidence['capture_sha256']):
+                hard.append('RENDERED_CAPTURE_HASH_INVALID')
+            if not isinstance(evidence.get('capture_path'), str) or not evidence['capture_path'].strip():
+                hard.append('RENDERED_CAPTURE_PATH_MISSING')
+    else:
         hard.append('CAPTURE_METHOD_UNSUPPORTED')
     independent = evidence.get('independent_check')
     independent_ok = False
