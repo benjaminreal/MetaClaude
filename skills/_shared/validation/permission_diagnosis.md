@@ -32,10 +32,13 @@ Static checks passed: the corrected allow and deny use Edit, no path-based
 Write rule remains, only Write is exposed for file creation, and the prepared
 launcher parses. A launch guard requires recorded specific owner approval.
 No model request or native Write permission decision was exercised by these
-checks. The correction is prepared; a fresh native preflight is still needed
-to verify the complete opening.
+local checks. The owner subsequently approved the prepared corrected run.
+That 65.70-second preflight observed the scratch Write succeed, envelope
+validation return `valid: true`, and complete outer fixture hashes remain
+unchanged. See `preflight_review.md` and `preflight_execution.json`. The
+configuration correction is verified for this scoped opening, without changing
+the candidate packages or global configuration.
 
-Candidate packages and their frozen hashes are unchanged. The existing Claude
-runs remain incomplete evidence; they do not become passes because the local
-cause was found. The integration matrix and independent certification remain
-NOT RUN.
+Candidate packages and their frozen hashes are unchanged. The earlier Claude
+runs remain incomplete evidence; the new pass comes from the approved corrected
+run. The integration matrix and independent certification remain NOT RUN.

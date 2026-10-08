@@ -80,8 +80,39 @@ a validator PASS or evidence of a candidate-validator defect.
 Two Claude attempts have now encountered scratch-permission blocks. No third
 model run has been attempted. The owner then authorized local-only diagnosis,
 which identified the rule-name error and prepared corrected `Edit(path)` rules.
-The correction has only static evidence; native permission execution still
-requires a newly approved model run.
+At that point the correction had only static evidence. The subsequent approved
+run below verifies the required native scratch Write and opening validation.
+
+## Owner-approved corrected Claude preflight — 65.70 seconds
+
+The owner approved the prepared corrected run. It used Opus 5.5/high through
+Claude Code with the existing Max login, the unchanged candidate packages,
+synthetic notes and minimal harness metadata, a five-minute limit, and no
+paid API or alternate-model fallback.
+
+The native Skill calls injected both project-local candidates. MCP servers
+were absent. Snapshot returned the 831-byte bounded projection. Write created
+`opening_envelope.json` in the unique external scratch directory, and the
+separate `python3 -I -B ... validate` tool result returned `valid: true` with
+no failures. The model gave a bounded brief naming the unavailable Tasks state
+and preserving the recorded Next. It then loaded closingtime without executing
+its workflow. The observed model usage contains only Opus 5.5 and no subagent
+was spawned.
+
+The optional `find ... shasum` baseline command was denied again; it was not
+needed to validate the opening. The model reported its weaker directory-listing
+check honestly. The outer harness independently compared complete before/after
+fixture hashes and found no changes or bytecode caches. Its scratch manifest
+contains only the envelope written during the run. Trace, prompt, settings,
+envelope and receipt hashes are retained in `preflight_execution.json` and
+private scratch. The raw trace hash matches the execution receipt.
+
+**Current scoped outcomes: Codex PASS; corrected Claude PASS.** This establishes
+native discovery, an isolated Tasks-absent opening and scratch-envelope
+validation for the prepared configurations. It does not test live Tasks,
+closeout execution, ancestor instruction handling, recovery, concurrency,
+learning capture or independent transferability. The earlier incomplete runs
+remain historical evidence.
 
 The ten-cell integration matrix, current live Tasks-read preflight,
 independent transfer review, installation and production promotion remain

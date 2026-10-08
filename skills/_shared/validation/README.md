@@ -10,15 +10,14 @@ Any package change requires a fresh identity and eligibility decision.
 - Local deterministic tests: PASS; see `local_checks.json`.
 - Instruction-presence comparison with the August interim baseline: PASS;
   see `instruction_comparison.json`. This is not a model-behavior comparison.
-- Raw traces reviewed for the two approved synthetic preflights. Codex passed
-  the scoped discovery/Tasks-absent opening preflight. Claude discovered both
-  packages but its envelope validation was permission-blocked. Its approved
-  retest prevented cache writes, but scratch-envelope creation was still denied,
-  so its opening preflight remains incomplete. See
-  `preflight_execution.json` and `preflight_review.md`. Neither run is certification.
-- Local-only diagnosis identified ignored `Write(path)` permission rules;
-  corrected `Edit(path)` rules are prepared and statically checked, but have
-  not been exercised in another model run. See `permission_diagnosis.md`.
+- Raw traces reviewed: Codex and the owner-approved corrected Claude run pass
+  the scoped discovery/Tasks-absent opening preflight. Both loaded the local
+  candidates, validated an 831-byte projection's envelope, and left fixture
+  hashes unchanged. Earlier incomplete Claude runs are retained in
+  `preflight_execution.json` and `preflight_review.md`. These are not certification.
+- Ignored `Write(path)` permission rules caused the Claude setup block.
+  Corrected `Edit(path)` rules allowed the scratch Write in the approved run;
+  explicit `-I -B` prevented cache writes. See `permission_diagnosis.md`.
 - Fresh controlled behavioral validation: NOT RUN for these hashes.
 - Independent transferability review: NOT RUN for these hashes.
 - Production promotion: NOT AUTHORIZED by a draft source PR.

@@ -99,6 +99,43 @@
       ],
       "permission_rule_status": "Cause identified locally: Write(path) rules accepted but ignored; file-writing paths require Edit(path) rules",
       "external_model_retry": "No further model run attempted; owner-authorized local diagnosis completed and corrected rules prepared"
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 65.7,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "scratch_hashes": {
+        "opening_envelope.json": "1cb39dde1f1d1aef4544fe7b0c03008062ff4d78c31fb1201255e2cafbf434bb"
+      },
+      "trace_sha256": "2454229b53dfc12df821e7ea48fb39102b5ec6403b0ef90bedef8a1d670a6c11",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prompt_sha256": "67218b07b7c8801b29c12ea6dc5a1d84beb107906cba3967fe0ee3437eae0c15",
+      "settings_sha256": "e796a61979183991effa2d45a0107ba77753d30cd56cf82cc8834bb61172fdb6",
+      "preflight_only": true,
+      "outcome": "PASS_SCOPED_PREFLIGHT",
+      "observed_model": "claude-opus-5-5",
+      "native_discovery": "PASS",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "successful tool result",
+      "projection_bytes": 831,
+      "envelope_validation": {
+        "valid": true,
+        "failures": []
+      },
+      "read_only_fixture": "PASS: complete outer before/after hashes unchanged; no cache files",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "complete_opening_brief": true,
+      "permission_denials": [
+        "Optional baseline-hashing Bash command; outer manifest provides independent hash evidence"
+      ],
+      "permission_rule_status": "Edit(path) scratch grant observed allowing Write; corrected setup now works for this scoped preflight"
     }
   ],
   "startup_rejection": {
@@ -119,10 +156,10 @@
     "cache_files": 0,
     "external_model_called": false
   },
-  "retest": "OWNER-APPROVED RUN COMPLETE, TRACE REVIEWED; cache mutation resolved in this run, scratch-envelope creation still denied; no further attempt made",
+  "retest": "OWNER-APPROVED CORRECTED RUN COMPLETE, TRACE REVIEWED; scratch Write allowed and envelope valid; no fixture mutation",
   "current_outcomes": {
     "codex": "PASS_SCOPED_PREFLIGHT",
-    "claude": "INCOMPLETE_SCRATCH_WRITE_DENIED"
+    "claude": "PASS_SCOPED_PREFLIGHT"
   },
   "permission_diagnosis": {
     "status": "PASS_STATIC_CONFIGURATION_CHECK",
@@ -133,7 +170,7 @@
     "only_write_tool_exposed_for_file_creation": true,
     "launcher_syntax_valid": true,
     "model_called": false,
-    "native_permission_execution": "NOT VERIFIED; requires separately approved run",
+    "native_permission_execution": "OBSERVED: scratch Write allowed; envelope validate returned valid:true in approved corrected preflight",
     "document": "permission_diagnosis.md"
   }
 }
