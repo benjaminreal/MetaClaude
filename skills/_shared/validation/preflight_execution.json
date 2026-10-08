@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-08",
+  "candidate_commit": "110432e178cdb70038ca41886ce10dedef311cd3",
+  "candidate_manifest": "candidate_manifest.json",
+  "purpose": "Native discovery and synthetic Tasks-absent opening preflights only",
+  "approved_scope": "Candidate packages, synthetic notes, minimal harness metadata; five minutes each; subscription login; no paid API or alternate-model fallback",
+  "runs": [
+    {
+      "harness": "Codex CLI",
+      "requested_model": "gpt-6.1-sol",
+      "requested_effort": "high",
+      "subscription_login": "ChatGPT",
+      "elapsed_seconds": 57.53,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "trace_sha256": "10ecbf00704c45dc176f13ba4dc2e460e35f889b2c173d46fc766b37efdc624d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "execution_receipt_sha256": "35679f600e652c10974c0e422c6dcb32d8a70c0522442308d75c0ea780897095",
+      "outcome": "EXECUTED_OUTCOME_NOT_REVIEWED"
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 68.15,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [
+        ".claude/skills/newbeginning/scripts/__pycache__/helpers.cpython-312.pyc",
+        ".claude/skills/newbeginning/scripts/__pycache__/schemas.cpython-312.pyc"
+      ],
+      "trace_sha256": "6af0a910487973e9d6a52a616b3a7d585d39211cfbe825d9aa65bb16339a1fe5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "execution_receipt_sha256": "8bddce0a0ed4817a982ec974b71dc68aa345aa614a535c6cbc7505d44d80777c",
+      "outcome": "EXECUTED_OUTCOME_NOT_REVIEWED"
+    }
+  ],
+  "startup_rejection": {
+    "harness": "Codex CLI",
+    "model_request_made": false,
+    "error": "Invalid MCP transport from enabled-only overrides with ignored user config",
+    "correction": "Removed incomplete MCP overrides; user config remains ignored"
+  },
+  "trace_review": "PENDING: raw traces retained privately; this report records execution only",
+  "fresh_controlled_behavioral_validation": "NOT RUN",
+  "independent_transferability_review": "NOT RUN",
+  "production_promotion": "NOT AUTHORIZED"
+}

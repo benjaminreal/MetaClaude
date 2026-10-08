@@ -10,6 +10,10 @@ Any package change requires a fresh identity and eligibility decision.
 - Local deterministic tests: PASS; see `local_checks.json`.
 - Instruction-presence comparison with the August interim baseline: PASS;
   see `instruction_comparison.json`. This is not a model-behavior comparison.
+- Two approved synthetic harness preflights executed within five minutes each;
+  exit codes are 0, but outcomes are not reviewed. Claude created two Python
+  cache files; project notes and candidate sources were unchanged. See
+  `preflight_execution.json`. This does not establish a behavioral PASS.
 - Fresh controlled behavioral validation: NOT RUN for these hashes.
 - Independent transferability review: NOT RUN for these hashes.
 - Production promotion: NOT AUTHORIZED by a draft source PR.
