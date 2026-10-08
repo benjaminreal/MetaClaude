@@ -12,8 +12,9 @@ Any package change requires a fresh identity and eligibility decision.
   see `instruction_comparison.json`. This is not a model-behavior comparison.
 - Raw traces reviewed for the two approved synthetic preflights. Codex passed
   the scoped discovery/Tasks-absent opening preflight. Claude discovered both
-  packages but its envelope validation was permission-blocked and it created
-  two Python caches, so its opening preflight is incomplete. See
+  packages but its envelope validation was permission-blocked. Its approved
+  retest prevented cache writes, but scratch-envelope creation was still denied,
+  so its opening preflight remains incomplete. See
   `preflight_execution.json` and `preflight_review.md`. Neither run is certification.
 - Fresh controlled behavioral validation: NOT RUN for these hashes.
 - Independent transferability review: NOT RUN for these hashes.

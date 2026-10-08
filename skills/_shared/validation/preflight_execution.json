@@ -61,6 +61,44 @@
       "recorded_next_executed": false,
       "complete_opening_brief": false,
       "subscription_overage_observed": false
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 74.4,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "scratch_hashes": {},
+      "trace_sha256": "d9b63970610016e061a04b5fadddabfd5bbcf2c18880b835a174677331e31345",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prompt_sha256": "ef15814501ddb4b5cae3d266b95322ac0b7572139e65d66d324b46348d4780f6",
+      "settings_sha256": "fe0f58ccea77272abdb1a28a16472c653939f9629dc04738872a5a63d9880e8b",
+      "preflight_only": true,
+      "outcome": "INCOMPLETE_SCRATCH_WRITE_DENIED",
+      "observed_model": "claude-opus-5-5",
+      "native_discovery": "PASS",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "successful tool result",
+      "projection_bytes": 831,
+      "envelope_validation": {
+        "exit_code": 2,
+        "error": "EINPUT: envelope file absent after Write denial",
+        "valid": false
+      },
+      "read_only_fixture": "PASS: outer before/after hashes unchanged; no cache files",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "brief_status": "Explicitly labeled unvalidated; recorded Next and unavailable Tasks surfaced",
+      "permission_denials": [
+        "Optional baseline-hashing Bash command",
+        "Write: intended scratch-envelope file"
+      ],
+      "permission_rule_status": "Scratch-only CLI Write grant was not honored; cause not established",
+      "external_model_retry": "STOPPED after two Claude preflights with scratch-permission blocks; no further run authorized"
     }
   ],
   "startup_rejection": {
@@ -81,5 +119,9 @@
     "cache_files": 0,
     "external_model_called": false
   },
-  "retest": "Claude retest configuration and prompt prepared privately; NOT RUN; fresh specific approval required"
+  "retest": "OWNER-APPROVED RUN COMPLETE, TRACE REVIEWED; cache mutation resolved in this run, scratch-envelope creation still denied; no further attempt made",
+  "current_outcomes": {
+    "codex": "PASS_SCOPED_PREFLIGHT",
+    "claude": "INCOMPLETE_SCRATCH_WRITE_DENIED"
+  }
 }

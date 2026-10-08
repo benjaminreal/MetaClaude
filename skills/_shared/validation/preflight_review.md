@@ -53,19 +53,34 @@ unchanged. A separate local-only check on a disposable copy ran
 manifest. This verifies the launcher adjustment locally; it does not establish
 a successful Claude retest or a change to candidate behavior.
 
-## Next run prepared, not authorized or executed
+## Owner-approved Claude retest — 74.40 seconds
 
-The private retest preparation preserves candidate hashes, gives the Write
-tool permission only in a unique external scratch directory, keeps project
-writes denied, and explicitly requires `python3 -I -B` for helper commands.
-The unchanged `dontAsk` mode still denies unapproved operations. Native
-permission behavior must be observed in a fresh run; it is not yet verified.
+The owner approved a single retest on the same model, effort, subscription,
+inputs, five-minute cap and no-fallback limits. Candidate files were verified
+byte-identical before launch. The retest exposed Write and supplied a CLI
+allow rule for the unique external scratch directory, kept project writes
+denied, and required `python3 -I -B` for helper commands.
 
-Recommended next action: one newly approved Claude Opus 5.5/high preflight
-through Claude Code and the existing Max login, capped at five minutes and
-US$0 additional subscription cost, with no paid API or alternate-model fallback.
-Inputs remain the two unchanged packages, synthetic notes and minimal harness
-metadata. No further model call was made during this review.
+The trace reports Opus 5.5, native loading of both local candidates, no MCP
+servers, a successful 831-byte snapshot, no subagents, and no closing workflow
+or recorded Next execution. Both helper commands used explicit `-I -B`.
+The outer harness compared complete before/after fixture hashes: no changes
+and no Python caches. Cache suppression therefore worked in the actual retest.
+
+The intended scratch Write was denied by `dontAsk` despite the configured
+allow rule. The reason that rule did not match is not established. The scratch
+directory remained empty, and the subsequent `validate` command exited 2 with
+`EINPUT` because its envelope file did not exist. The optional baseline-hashing
+Bash command was also denied. The model did not retry or bypass either denial.
+Its brief named the unavailable Tasks state, preserved the recorded Next, and
+explicitly said the opening was unvalidated. This is still **INCOMPLETE**, not
+a validator PASS or evidence of a candidate-validator defect.
+
+Two Claude attempts have now encountered scratch-permission blocks. No third
+model run or alternative permission approach has been attempted. The next
+recommended action is a local-only review of permission-rule matching before
+proposing another model run. That local review awaits the owner's decision
+under the project's two-attempt rule.
 
 The ten-cell integration matrix, current live Tasks-read preflight,
 independent transfer review, installation and production promotion remain
