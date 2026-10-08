@@ -59,6 +59,9 @@ authoritative claim.
 a new sync-conflict artifact, an over-cap entry, or a readback mismatch. It is
 the only sanctioned writer of `project_session.md` and creates the journal
 record inside the same operation.
+List the resolved session filename (for example, `project_session.md`) in the
+approved `mutation_scope.M2` list. Approval of index or external operations
+alone does not authorize a session append.
 
 `audit` matches exact journal receipts first. A project policy may list an
 owner-approved `documented_unverified_exceptions` item with the session number,
@@ -67,6 +70,8 @@ checks both hashes and reports a matching entry in `documented_unverified`,
 separately from `journaled` and `grandfathered`. A changed entry, changed note,
 or unused exception remains an audit error. The exception records a known
 historical gap; it does not verify the original append or its claims.
+Without a policy, the historical exemption ceiling is zero: matching receipts
+can verify a fresh project, while entries without receipts remain unjournaled.
 
 ## Compatibility
 

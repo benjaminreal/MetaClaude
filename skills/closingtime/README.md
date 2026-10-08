@@ -8,7 +8,7 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.0.3 candidate
+**Version:** 3.0.4 candidate
 
 Local checks cover deterministic behavior and packaging. Fresh controlled
 behavioral validation and independent transferability review are pending.

@@ -8,7 +8,7 @@ When you start a new session and ask an LLM "where did we leave off?" in a multi
 
 **newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief capped at 250 words, from a bounded set of reads. You get the same situational awareness in seconds, with a clean context window ready for actual work.
 
-**Version:** 2.0.2 candidate
+**Version:** 2.0.3 candidate
 
 Local checks cover deterministic behavior and packaging. Fresh controlled
 behavioral validation and independent transferability review are pending.

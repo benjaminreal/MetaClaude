@@ -64,7 +64,9 @@ lock, rechecks the observed tail hash, appends exactly one allocated session,
 reads it back, and writes its journal record before releasing the lock. The tail
 hash is the cross-device control; the lock cannot observe a Dropbox write from
 another machine. `audit_session_log` detects direct writes after the fact and
-grandfathers only the ceiling recorded once at Phase 2 start.
+grandfathers only the ceiling recorded once at Phase 2 start. With no policy,
+the ceiling is zero; complete journal receipts can verify a first close.
+Append requires the resolved session filename in approved M2 scope.
 
 The bounded projection cap is **16,384 bytes**. It was selected from the largest
 of the current project and three documented-maximum prototypes, with 25%

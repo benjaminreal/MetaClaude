@@ -459,6 +459,13 @@ def append_session_entry(envelope: dict, entry_text: str) -> dict:
 
     root = _resolve_root(envelope.get("workspace_root", ""))
     session_path = _session_path_from_envelope(root, envelope)
+    session_relative = session_path.relative_to(root).as_posix()
+    approved_local = (envelope.get("mutation_scope") or {}).get("M2", [])
+    if not isinstance(approved_local, list) or session_relative not in approved_local:
+        raise HelperError(
+            S.SCOPE_UNAPPROVED,
+            f"session append requires {session_relative} in the approved M2 scope",
+        )
     warnings: list[str] = []
 
     with _advisory_lock(root, invocation_id) as stale_recovered:
@@ -536,7 +543,9 @@ def _read_audit_policy(
 ) -> tuple[int, dict[tuple[int, str], str], list[str]]:
     policy = journal_dir / GRANDFATHER_POLICY
     if not policy.exists():
-        return 0, {}, ["ENOPOLICY"]
+        # No policy grants no historical exemptions. A fresh project with
+        # complete journal receipts can still verify its first close.
+        return 0, {}, []
     ceiling = 0
     try:
         value = json.loads(policy.read_text(encoding="utf-8"))
@@ -592,9 +601,9 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
         return {
             "entries": len(entries),
             "journaled": 0,
-            "grandfathered": entries,
+            "grandfathered": [],
             "documented_unverified": [],
-            "unjournaled": [],
+            "unjournaled": entries,
             "orphan_records": [],
             "errors": ["ENOJOURNAL"],
         }

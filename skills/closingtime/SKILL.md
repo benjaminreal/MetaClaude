@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.3"
+  version: "3.0.4"
 ---
 
 # closingtime
@@ -286,6 +286,11 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.0.4 — 2026-10-08 — candidate**
+
+- Shared append now requires the session filename in approved M2 scope; first-close audit needs no historical policy.
+- Prior preflights remain evidence for earlier package hashes.
 
 **v3.0.3 — 2026-10-08 — candidate**
 

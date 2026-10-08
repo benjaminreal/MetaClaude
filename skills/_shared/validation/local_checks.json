@@ -31,5 +31,10 @@
     }
   ],
   "behavioral_validation": "NOT RUN",
-  "independent_transferability": "NOT RUN"
+  "independent_transferability": "NOT RUN",
+  "review_regressions": [
+    "Task-only and index-only approval refuse session append without file or journal changes",
+    "First close verifies with no historical policy",
+    "Missing journal or policy never grandfathers existing entries"
+  ]
 }

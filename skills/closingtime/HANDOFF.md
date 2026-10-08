@@ -1,4 +1,4 @@
-# closingtime 3.0.3 — candidate handoff
+# closingtime 3.0.4 — candidate handoff
 
 **Status:** Independent transferability review NOT RUN for this candidate.
 The July certificate applied to an earlier version; it does not certify this

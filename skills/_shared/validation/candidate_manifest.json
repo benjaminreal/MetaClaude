@@ -2,14 +2,14 @@
   "schema_version": "1.0",
   "candidates": {
     "newbeginning": {
-      "version": "2.0.2",
-      "candidate_tree_sha256": "sha256:52f8d1af56768ad4a5f66879a2746df0898202c4c7fe0f437d81ca25d1250342",
-      "instruction_bytes_loaded": 10739
+      "version": "2.0.3",
+      "candidate_tree_sha256": "sha256:f9283a2794342a12dbe0f2429300e46982cfadec91ff72a01d0c9d83a259e847",
+      "instruction_bytes_loaded": 10962
     },
     "closingtime": {
-      "version": "3.0.3",
-      "candidate_tree_sha256": "sha256:c12bb754d4087d6745926fa7603e928d6cdf402422fc9af98cb9388c4e8a74a5",
-      "instruction_bytes_loaded": 13646
+      "version": "3.0.4",
+      "candidate_tree_sha256": "sha256:d10f5276fff830d16c9129db178b14362b05c3eec32201c7418429e0542f0b37",
+      "instruction_bytes_loaded": 13869
     }
   }
 }

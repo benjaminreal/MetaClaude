@@ -1,6 +1,6 @@
 # Session-skills candidate validation — 2026-10-08
 
-Candidates: **newbeginning 2.0.2** and **closingtime 3.0.3**.
+Candidates: **newbeginning 2.0.3** and **closingtime 3.0.4**.
 Exact package identities are frozen in `candidate_manifest.json` and verified
 by `verify_candidates.py`. Hashing excludes Python caches and `.DS_Store`.
 Any package change requires a fresh identity and eligibility decision.
@@ -8,19 +8,38 @@ Any package change requires a fresh identity and eligibility decision.
 ## Current evidence
 
 - Local deterministic tests: PASS; see `local_checks.json`.
-- Instruction-presence comparison with the August interim baseline: PASS;
-  see `instruction_comparison.json`. This is not a model-behavior comparison.
-- Raw traces reviewed: Codex and the owner-approved corrected Claude run pass
+- Instruction-presence comparison with the August interim baseline: historical
+  PASS for 2.0.2 / 3.0.3; see `instruction_comparison.json`. This is not a
+  model-behavior comparison or a current-hash result.
+- Historical raw traces reviewed: Codex and the corrected Claude run passed
   the scoped discovery/Tasks-absent opening preflight. Both loaded the local
   candidates, validated an 831-byte projection's envelope, and left fixture
   hashes unchanged. Earlier incomplete Claude runs are retained in
-  `preflight_execution.json` and `preflight_review.md`. These are not certification.
+  `preflight_execution.json` and `preflight_review.md`. These tested 2.0.2 / 3.0.3,
+  not the current hashes, and are not certification.
 - Ignored `Write(path)` permission rules caused the Claude setup block.
   Corrected `Edit(path)` rules allowed the scratch Write in the approved run;
   explicit `-I -B` prevented cache writes. See `permission_diagnosis.md`.
 - Fresh controlled behavioral validation: NOT RUN for these hashes.
 - Independent transferability review: NOT RUN for these hashes.
 - Production promotion: NOT AUTHORIZED by a draft source PR.
+
+The source review reproduced and repaired two gaps: approval of an unrelated
+operation no longer permits session append, and first-close audit accepts exact
+journal receipts without requiring a historical exemption policy. Regression
+fixtures also verify that missing policy never grants historical exemptions.
+See `source_review.md` for the review scope and checks.
+
+## Candidate merge scope
+
+The owner agreed to one focused synthetic closing smoke test and an ordinary
+PR review before candidate merge. The smoke test checks draft-before-approval,
+approved local persistence, readback/audit, and an untouched frozen task mirror.
+Its exact external-model run requires separate approval. It is not live
+integration testing or independent transferability certification.
+
+The larger matrix below is reserved for production promotion. It is not a
+mandatory gate for merging an explicitly unpromoted candidate source PR.
 
 The previous packet targeted newbeginning 2.0.1 / closingtime 3.0.1 and older
 package hashes. Its preflight receipts and July transfer certificates are

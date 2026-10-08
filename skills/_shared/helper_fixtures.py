@@ -228,11 +228,49 @@ def check_f9_invalid_envelope_refusal() -> list[str]:
             issues,
             f"F9-{name}",
         )
+    # Approval of another operation must never authorize a session append.
+    for local_scope in ([], ["project_index.md"]):
+        with workspace() as root:
+            env = _envelope(root)
+            env["mutation_scope"] = {
+                "M2": local_scope, "M3": ["tasks:create:unrelated"], "M4": [],
+            }
+            env["approval"]["scope_string"] = "Approve only the listed operations"
+            before = (root / "project_session.md").read_bytes()
+            _expect_error(
+                fixtures.S.SCOPE_UNAPPROVED,
+                lambda: H.append_session_entry(env, ENTRY_DRAFT),
+                issues,
+                f"F9-unrelated-scope-{local_scope}",
+            )
+            if (root / "project_session.md").read_bytes() != before:
+                issues.append("F9-unrelated-scope: session bytes changed")
+            if (root / "private-artifacts").exists():
+                issues.append("F9-unrelated-scope: journal created")
     return issues
 
 
 def check_f10_concurrency_and_audit() -> list[str]:
     issues: list[str] = []
+
+    # A first close needs no historical exemptions or policy-file mutation.
+    with workspace(index_name=None, session_name=None) as root:
+        result = H.append_session_entry(_envelope(root), ENTRY_DRAFT)
+        audit = H.audit_session_log(root)
+        if result["session_number"] != 1 or audit["journaled"] != 1:
+            issues.append(f"F10-first-close: {result}, {audit}")
+        if audit["errors"] or audit["unjournaled"] or audit["orphan_records"]:
+            issues.append(f"F10-first-close-audit: {audit}")
+
+    # Without a policy, existing entries never become grandfathered by default.
+    with workspace() as root:
+        missing = H.audit_session_log(root)
+        if missing["grandfathered"] or len(missing["unjournaled"]) != 2:
+            issues.append(f"F10-no-journal-no-exemptions: {missing}")
+        H.append_session_entry(_envelope(root), ENTRY_DRAFT)
+        audit = H.audit_session_log(root)
+        if audit["grandfathered"] or len(audit["unjournaled"]) != 2 or audit["journaled"] != 1:
+            issues.append(f"F10-no-policy-no-exemptions: {audit}")
 
     # A foreign write after observation must stop before any append or journal.
     with workspace() as root:
