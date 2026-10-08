@@ -16,6 +16,9 @@ Any package change requires a fresh identity and eligibility decision.
   retest prevented cache writes, but scratch-envelope creation was still denied,
   so its opening preflight remains incomplete. See
   `preflight_execution.json` and `preflight_review.md`. Neither run is certification.
+- Local-only diagnosis identified ignored `Write(path)` permission rules;
+  corrected `Edit(path)` rules are prepared and statically checked, but have
+  not been exercised in another model run. See `permission_diagnosis.md`.
 - Fresh controlled behavioral validation: NOT RUN for these hashes.
 - Independent transferability review: NOT RUN for these hashes.
 - Production promotion: NOT AUTHORIZED by a draft source PR.

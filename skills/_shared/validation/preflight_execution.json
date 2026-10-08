@@ -97,8 +97,8 @@
         "Optional baseline-hashing Bash command",
         "Write: intended scratch-envelope file"
       ],
-      "permission_rule_status": "Scratch-only CLI Write grant was not honored; cause not established",
-      "external_model_retry": "STOPPED after two Claude preflights with scratch-permission blocks; no further run authorized"
+      "permission_rule_status": "Cause identified locally: Write(path) rules accepted but ignored; file-writing paths require Edit(path) rules",
+      "external_model_retry": "No further model run attempted; owner-authorized local diagnosis completed and corrected rules prepared"
     }
   ],
   "startup_rejection": {
@@ -123,5 +123,17 @@
   "current_outcomes": {
     "codex": "PASS_SCOPED_PREFLIGHT",
     "claude": "INCOMPLETE_SCRATCH_WRITE_DENIED"
+  },
+  "permission_diagnosis": {
+    "status": "PASS_STATIC_CONFIGURATION_CHECK",
+    "cli_version": "2.1.295",
+    "documentation": "https://code.claude.com/docs/en/permissions#read-and-edit",
+    "installed_binary_confirms_unmatched_write_path_rules": true,
+    "corrected_allow_and_deny_use_edit": true,
+    "only_write_tool_exposed_for_file_creation": true,
+    "launcher_syntax_valid": true,
+    "model_called": false,
+    "native_permission_execution": "NOT VERIFIED; requires separately approved run",
+    "document": "permission_diagnosis.md"
   }
 }

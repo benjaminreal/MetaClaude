@@ -58,8 +58,8 @@ a successful Claude retest or a change to candidate behavior.
 The owner approved a single retest on the same model, effort, subscription,
 inputs, five-minute cap and no-fallback limits. Candidate files were verified
 byte-identical before launch. The retest exposed Write and supplied a CLI
-allow rule for the unique external scratch directory, kept project writes
-denied, and required `python3 -I -B` for helper commands.
+allow rule for the unique external scratch directory, configured a project-path
+write denial, and required `python3 -I -B` for helper commands.
 
 The trace reports Opus 5.5, native loading of both local candidates, no MCP
 servers, a successful 831-byte snapshot, no subagents, and no closing workflow
@@ -68,7 +68,8 @@ The outer harness compared complete before/after fixture hashes: no changes
 and no Python caches. Cache suppression therefore worked in the actual retest.
 
 The intended scratch Write was denied by `dontAsk` despite the configured
-allow rule. The reason that rule did not match is not established. The scratch
+allow rule. Later local diagnosis established that the allow and deny path rules
+used the ignored `Write(path)` form; see `permission_diagnosis.md`. The scratch
 directory remained empty, and the subsequent `validate` command exited 2 with
 `EINPUT` because its envelope file did not exist. The optional baseline-hashing
 Bash command was also denied. The model did not retry or bypass either denial.
@@ -77,10 +78,10 @@ explicitly said the opening was unvalidated. This is still **INCOMPLETE**, not
 a validator PASS or evidence of a candidate-validator defect.
 
 Two Claude attempts have now encountered scratch-permission blocks. No third
-model run or alternative permission approach has been attempted. The next
-recommended action is a local-only review of permission-rule matching before
-proposing another model run. That local review awaits the owner's decision
-under the project's two-attempt rule.
+model run has been attempted. The owner then authorized local-only diagnosis,
+which identified the rule-name error and prepared corrected `Edit(path)` rules.
+The correction has only static evidence; native permission execution still
+requires a newly approved model run.
 
 The ten-cell integration matrix, current live Tasks-read preflight,
 independent transfer review, installation and production promotion remain
