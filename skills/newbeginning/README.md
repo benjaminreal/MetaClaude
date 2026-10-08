@@ -6,9 +6,13 @@
 
 When you start a new session and ask an LLM "where did we leave off?" in a multi-session project, it has no memory of your last conversation. Without structured notes, it has to scan your project from scratch — listing files, reading source code, checking git history — burning through tokens and context window just to reconstruct what you already knew yesterday. On a large project that can cost thousands of tokens before any real work begins, and the context it builds is noisy because it's guessing at priorities, not reading them.
 
-**newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief in under 2.5K tokens total — reads and output combined. You get the same situational awareness in seconds, with a clean context window ready for actual work.
+**newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief capped at 250 words, from a bounded set of reads. You get the same situational awareness in seconds, with a clean context window ready for actual work.
 
-**Version:** 1.1.0
+**Version:** 2.0.2 candidate
+
+Local checks cover deterministic behavior and packaging. Fresh controlled
+behavioral validation and independent transferability review are pending.
+See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and validation status.
 
 ---
 
@@ -60,13 +64,15 @@ You'll get a short summary (under 250 words) covering:
 Then it asks what you'd like to do:
 
 1. **Pick up** where you left off
-2. **Adjust priorities** — reprioritize, park, cancel, or mark tasks done before starting
+2. **Create a task** — draft and approve a new Tasks DB row before starting
 3. **Focus on something else** — the skill steps aside, no pressure
-4. **Review pending learnings** — if your last `closingtime` session left insights you hadn't reviewed yet (requires Open Brain)
+4. **Review pending learnings** — if your last `closingtime` session left
+   insights you hadn't reviewed yet; wording is checked for plain, standalone
+   English or Spanish before approved capture (requires Open Brain)
 
 ### What it won't do
 
-newbeginning is read-mostly by design. It won't start working on your top task, won't log this session, and won't update narrative project state — those are `closingtime`'s jobs. The only time it writes anything is during first-time setup/index reconstruction or when you explicitly ask to adjust task priorities in the Tasks DB, and both require your confirmation first.
+newbeginning is read-mostly by design. It won't start working on your top task, won't log this session, and won't update narrative project state — those are `closingtime`'s jobs. It may write during first-time setup/index reconstruction or when you explicitly approve creating a task in the Tasks DB. Both require your confirmation first.
 
 ---
 
@@ -100,6 +106,15 @@ Behavioral guardrails: respects "skip" at any point, flags drift between the ind
 How the skill judges its own output — the brief should be under 250 words, the "Next" field should be front and center, task claims should come from `task_urgency`, and it should never fabricate information that isn't in your project files or the DB result.
 
 ### 7. Version & Changelog
+
+**v2.0.1 candidate** — 2026-08-25
+- Applies the bilingual candidate-quality contract during pending-learning
+  review and after owner edits.
+
+**v2.0.0 candidate** — 2026-08-05
+- Uses a bundled bounded-snapshot and evidence-envelope runtime.
+- Adds explicit bootstrap, reconstruction, conflict, and four-state capability paths.
+- Keeps continuity files compatible with earlier releases; deployment waits for validation.
 
 **v1.1.0** — 2026-07-05
 - Migrated active task sourcing from per-project markdown TODO blocks to Supabase `task_urgency`.

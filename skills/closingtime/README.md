@@ -6,9 +6,13 @@
 
 If you work on long-running projects across multiple sessions, you know the problem: every time you start a new conversation, the model has no memory of what came before. You lose decisions, context, and momentum. You can try to summarize manually, but at the end of a long session you'll miss things, and git log alone doesn't capture the *why* behind decisions or what you intended to do next.
 
-**closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work in ≤ 2.5K tokens instead of thousands spent scanning files and guessing at priorities.
+**closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 2.2.0
+**Version:** 3.0.3 candidate
+
+Local checks cover deterministic behavior and packaging. Fresh controlled
+behavioral validation and independent transferability review are pending.
+See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and validation status.
 
 ---
 
@@ -77,6 +81,10 @@ The markdown TODO block is not the source of truth. It is a generated mirror for
 Optional, via Open Brain:
 
 - Insights, patterns, or connections worth remembering beyond this project
+- Plain, standalone wording in the user's chosen language, or the dominant
+  English/Spanish session language
+- One central insight per candidate, with uncertainty preserved and volatile
+  session IDs, codes, model tokens, and absolute paths kept out of the insight
 - Presented for your review — nothing saved without your explicit approval
 - If you skip or defer, candidates are stored in `pending_learnings.md` for next time
 
@@ -135,6 +143,20 @@ Behavioral guardrails: respects "skip" at any point, handles first-ever sessions
 Three lenses — output quality (entry ≤ 300 words, narrative index concise, no duplication), workflow correctness (draft shown before writing, task writes verified, Open Brain gated on approval, ritual executed), and failure response (restart the step on boundary violations, edit in place on length/wording).
 
 ### 7. Version & Changelog
+
+**v3.0.2 candidate** — 2026-08-29
+- Matches exact session-number and entry-hash receipts before applying the
+  grandfather ceiling, preventing valid historical receipts from appearing as
+  orphan records.
+
+**v3.0.1 candidate** — 2026-08-25
+- Adds a progressively loaded bilingual learning-candidate quality contract.
+- Rechecks owner-edited wording and requires fresh approval for semantic repairs.
+
+**v3.0.0 candidate** — 2026-08-05
+- Uses validated evidence envelopes and a collision-safe append/journal helper.
+- Adds explicit skip, conflict, interruption, and four-state capability paths.
+- Keeps continuity files compatible with earlier releases; deployment waits for validation.
 
 **v2.2.0** — 2026-07-05
 - Migrated task state to the Supabase Tasks database.

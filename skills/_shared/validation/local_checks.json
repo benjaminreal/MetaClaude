@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-08",
+  "candidate_manifest": "candidate_manifest.json",
+  "checks": [
+    {
+      "command": "python skills/_shared/run_contract_tests.py",
+      "result": "PASS",
+      "valid_envelopes": 10,
+      "one_defect_variants": 12,
+      "helper_groups": 12,
+      "workflow_package_groups": 6,
+      "candidate_quality_catalog": "English/Spanish positive/negative fixtures pass; semantic expectations not independently graded"
+    },
+    {
+      "command": "python skills/newbeginning/evals/structural_eval.py",
+      "result": "PASS",
+      "checks": 9
+    },
+    {
+      "command": "python skills/closingtime/evals/structural_eval.py",
+      "result": "PASS",
+      "checks": 9
+    },
+    {
+      "command": "skill-creator quick_validate.py for each candidate",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "behavioral_validation": "NOT RUN",
+  "independent_transferability": "NOT RUN"
+}
