@@ -1,0 +1,13 @@
+{
+  "verdict": null,
+  "raw_fit_score": null,
+  "track": null,
+  "failed_hard_gate": null,
+  "fatal_red_flag": null,
+  "triage_summary": null,
+  "decision_driver": null,
+  "primary_risk": null,
+  "discard_reason_plain_english": null,
+  "next_action": null,
+  "comment_note": null
+}

@@ -1,0 +1,14 @@
+{
+  "id": "xyz123",
+  "name": "Example Delivery Manager",
+  "company": {"name": "Example Smart Company"},
+  "location": {"city": "Example City", "region": "Example Region", "country": "Example Country"},
+  "jobAd": {
+    "sections": {
+      "jobDescription": {"text": "<p>Coordinate a fully synthetic example delivery process.</p>"},
+      "qualifications": {"text": "<p>Experience leading complex transformation is required.</p>"}
+    }
+  },
+  "typeOfEmployment": {"label": "Full-time"},
+  "releasedDate": "2026-09-13T09:00:00Z"
+}

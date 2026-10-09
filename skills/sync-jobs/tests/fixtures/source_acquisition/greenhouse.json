@@ -1,0 +1,11 @@
+{
+  "id": 12345,
+  "title": "Example Program Manager",
+  "company_name": "Example Greenhouse Company",
+  "location": {"name": "Example location"},
+  "content": "<p>Coordinate a fully synthetic example program.</p><p>This fixture ends after the final review period.</p>",
+  "absolute_url": "https://boards.greenhouse.io/example/jobs/12345",
+  "requisition_id": "REQ-12345",
+  "employment_type": "Full-time",
+  "updated_at": "2026-09-13T10:00:00Z"
+}

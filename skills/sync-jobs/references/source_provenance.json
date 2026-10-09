@@ -1,0 +1,7 @@
+{
+  "schema": "PublicSkillProvenanceV1",
+  "baseline": "sync-jobs 2.3.0 installation-local engine",
+  "private_profiles_included": false,
+  "local_source_paths_included": false,
+  "note": "Historical migration inputs are not runtime dependencies or public release artifacts."
+}

@@ -1,0 +1,13 @@
+{
+  "id": "example",
+  "version": "1.0.0-synthetic",
+  "policy": "triage_policy.py",
+  "judgment_template": "judgment_template.json",
+  "synthetic_fixture": true,
+  "default_workspace": {
+    "tracker_name": "jobs.xlsx",
+    "sheet": "Jobs",
+    "postings": "JobPostings/postings",
+    "reports": "JobPostings/_meta"
+  }
+}

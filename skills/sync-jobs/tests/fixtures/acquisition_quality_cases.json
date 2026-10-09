@@ -1,0 +1,13 @@
+{
+  "native_512_case": {
+    "id": "fixture-native-512",
+    "repeat_character": "x",
+    "repeat_count": 512,
+    "source_note": "Fully synthetic fixed-length node used to exercise the conservative truncation sentinel."
+  },
+  "known_good_case": {
+    "id": "fixture-known-good",
+    "description": "Qualifications are documented. This complete fixture ends here.",
+    "source_note": "Minimal synthetic complete boundary fixture."
+  }
+}
