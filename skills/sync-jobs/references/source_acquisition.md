@@ -145,6 +145,27 @@ request identity, so they fail as a duplicate ambiguity instead of producing
 distinct secret-derived identifiers. The original unsafe URL is validated and
 rejected; a stripped variant is never fetched.
 
+Each selected posting receives a 120-second total acquisition budget, shared
+by its API and public-page attempts. Later postings receive fresh budgets.
+A socket watchdog interrupts header and body reads at the deadline, including
+sources that keep sending small amounts of data before an inactivity timeout.
+The TLS handshake relies on its socket timeout while the socket is being
+wrapped; code review identified a possible overrun of the nominal budget by
+up to the inactivity timeout (15 seconds by default). This limit has not been
+validated against a live slow TLS server.
+DNS waits use the same budget and at most two resolver calls may remain active
+per fetcher. A timed-out system lookup can continue in a daemon thread; if both
+slots are still occupied, later lookups fail explicitly instead of creating
+unbounded background work. Deadline and ordinary read failures remain recorded
+for the affected URL while the batch retains the other selected outcomes.
+An API destination rejected by DNS or redirect safety checks is recorded as a
+rejected API attempt; the public-page fallback and later URLs still run.
+
+JSON parsing accepts at most 64 nesting levels and 100,000 structural tokens;
+traversal is also bounded. An over-limit source yields `json_resource_limit`,
+not an aborted batch. A bundle containing failures remains ineligible for
+ingestion until the selected scope has valid covering fallback outcomes.
+
 Do not add a new external extraction dependency merely to support one observed
 page. Read [dependency evaluation](dependency_evaluation.md) before changing the
 core. Live failures are maintenance evidence, not permission to weaken URL or

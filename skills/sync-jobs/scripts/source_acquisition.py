@@ -23,6 +23,8 @@ import re
 import socket
 import ssl
 import tempfile
+import threading
+import time
 from typing import Callable
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 import zlib
@@ -82,6 +84,8 @@ ATTEMPT_FIELDS = {"method", "url", "status", "http_status", "final_url", "respon
 BUNDLE_FIELDS = {"schema", "version", "created_at", "selected_requests", "records", "failures", "complete", "quality_complete", "claims", "bundle_sha256"}
 PROVENANCE_FIELDS = {"browser", "method", "captured_at", "complete_text", "completion_evidence", "status_certain", "status_uncertainty"}
 SOURCE_EVIDENCE_FIELDS = {"response_sha256", "capture_sha256", "artifact_sha256", "content_type", "redirect_chain"}
+MAX_JSON_DEPTH = 64
+MAX_JSON_TOKENS = 100_000
 
 
 def canonical_json(value) -> bytes:
@@ -233,6 +237,46 @@ class AcquisitionError(Exception):
         self.final_url = final_url
 
 
+class JSONResourceLimitError(ValueError):
+    """A JSON document exceeded the bounded parser's structural limits."""
+
+
+def _bounded_json_loads(raw: str):
+    """Check JSON nesting and structural work in linear time before parsing."""
+    depth = 0
+    tokens = 0
+    in_string = False
+    escaped = False
+    for char in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            depth += 1
+            tokens += 1
+            if depth > MAX_JSON_DEPTH:
+                raise JSONResourceLimitError(f"JSON nesting exceeds the {MAX_JSON_DEPTH}-level limit")
+        elif char in "}],:":
+            tokens += 1
+            if char in "}]":
+                depth = max(0, depth - 1)
+        if tokens > MAX_JSON_TOKENS:
+            raise JSONResourceLimitError(f"JSON structure exceeds the {MAX_JSON_TOKENS}-token limit")
+    try:
+        return json.loads(raw)
+    except RecursionError as exc:
+        # Explicitly translate only the parser's known recursion-limit failure;
+        # unrelated implementation errors still propagate.
+        raise JSONResourceLimitError("JSON parser recursion limit exceeded") from exc
+
+
 @dataclass(frozen=True)
 class FetchResponse:
     requested_url: str
@@ -248,14 +292,36 @@ class FetchResponse:
 
 
 class BoundedFetcher:
-    """HTTP reader with DNS, redirect, byte, timeout and content controls."""
+    """HTTP reader with DNS, redirect, byte and per-posting deadline controls.
 
-    def __init__(self, timeout: float = 15.0, max_bytes: int = 3_000_000, max_redirects: int = 5):
-        if timeout <= 0 or max_bytes < 1024 or not 0 <= max_redirects <= 10:
+    ``total_timeout`` defaults to 120 seconds for one selected posting, shared
+    across its official API and public-page attempts. A new selected posting
+    receives a fresh budget so one slow source does not starve later URLs.
+    """
+
+    def __init__(self, timeout: float = 15.0, max_bytes: int = 3_000_000,
+                 max_redirects: int = 5, total_timeout: float = 120.0,
+                 monotonic: Callable[[], float] = time.monotonic,
+                 resolver_wait: Callable[[threading.Event, float], bool] | None = None,
+                 watchdog_wait: Callable[[threading.Event, float], bool] | None = None):
+        if timeout <= 0 or total_timeout <= 0 or max_bytes < 1024 or not 0 <= max_redirects <= 10:
             raise ValueError("invalid fetch limits")
         self.timeout = timeout
         self.max_bytes = max_bytes
         self.max_redirects = max_redirects
+        self.total_timeout = total_timeout
+        self.monotonic = monotonic
+        self.resolver_wait = resolver_wait or (lambda event, timeout: event.wait(timeout))
+        self.watchdog_wait = watchdog_wait or (lambda event, timeout: event.wait(timeout))
+        self._request_deadline: float | None = None
+        self._deadline_state_lock = threading.Lock()
+        self._active_socket = None
+        self._watchdog_cancel: threading.Event | None = None
+        self._watchdog_thread: threading.Thread | None = None
+        # A timed-out libc resolver cannot be cancelled. Keep at most two
+        # daemon resolver calls outstanding per fetcher; completed calls free
+        # capacity themselves, including after the request has failed.
+        self._resolver_slots = threading.BoundedSemaphore(2)
         verify_paths = ssl.get_default_verify_paths()
         system_bundle = Path("/etc/ssl/cert.pem")
         if verify_paths.cafile is None and system_bundle.is_file():
@@ -268,35 +334,163 @@ class BoundedFetcher:
             context = ssl.create_default_context()
         self.ssl_context = context
 
-    def _resolve(self, url: str) -> tuple[str, list[tuple]]:
+    def start_request(self) -> None:
+        """Start one monotonic deadline shared across this posting's attempts."""
+        self.end_request()
+        deadline = self.monotonic() + self.total_timeout
+        cancel = threading.Event()
+        with self._deadline_state_lock:
+            self._request_deadline = deadline
+            self._watchdog_cancel = cancel
+            self._active_socket = None
+            watchdog = threading.Thread(
+                target=self._deadline_watchdog,
+                args=(deadline, cancel),
+                name="sync-jobs-deadline",
+                daemon=True,
+            )
+            self._watchdog_thread = watchdog
+        try:
+            watchdog.start()
+        except BaseException:
+            with self._deadline_state_lock:
+                self._request_deadline = None
+                self._watchdog_cancel = None
+                self._watchdog_thread = None
+            raise
+
+    def end_request(self) -> None:
+        with self._deadline_state_lock:
+            cancel = self._watchdog_cancel
+            watchdog = self._watchdog_thread
+            self._request_deadline = None
+            self._watchdog_cancel = None
+            self._watchdog_thread = None
+            self._active_socket = None
+        if cancel is not None:
+            cancel.set()
+        if watchdog is not None and watchdog is not threading.current_thread():
+            watchdog.join()
+
+    def check_request_deadline(self, url: str) -> None:
+        if self._request_deadline is not None:
+            self._remaining(self._request_deadline, url)
+
+    def _deadline_watchdog(self, deadline: float, cancel: threading.Event) -> None:
+        if self.watchdog_wait(cancel, max(0.0, deadline - self.monotonic())):
+            return
+        with self._deadline_state_lock:
+            if self._request_deadline != deadline or self._watchdog_cancel is not cancel:
+                return
+            sock = self._active_socket
+        if sock is None:
+            return
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+    def _track_active_socket(self, sock) -> None:
+        with self._deadline_state_lock:
+            if self._request_deadline is not None:
+                self._active_socket = sock
+
+    def _clear_active_socket(self) -> None:
+        with self._deadline_state_lock:
+            self._active_socket = None
+
+    def _deadline(self) -> float:
+        return self._request_deadline if self._request_deadline is not None else self.monotonic() + self.total_timeout
+
+    def _remaining(self, deadline: float, url: str) -> float:
+        remaining = deadline - self.monotonic()
+        if remaining <= 0:
+            raise AcquisitionError("acquisition_deadline_exceeded", "per-posting acquisition deadline exceeded", final_url=url)
+        return remaining
+
+    def _set_socket_timeout(self, sock, deadline: float, url: str) -> None:
+        sock.settimeout(min(self.timeout, self._remaining(deadline, url)))
+
+    def _resolve_addresses(self, host: str, port: int, deadline: float, url: str) -> list[tuple]:
+        self._remaining(deadline, url)
+        if not self._resolver_slots.acquire(blocking=False):
+            raise AcquisitionError(
+                "dns_resolver_capacity_exhausted",
+                "DNS resolution capacity is occupied by earlier timed-out lookups",
+                final_url=url,
+            )
+        result: dict[str, object] = {}
+        completed = threading.Event()
+
+        def resolve_in_background():
+            try:
+                result["addresses"] = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            except BaseException as exc:
+                # Preserve resolver errors for the calling thread; do not
+                # silently turn unexpected worker failures into empty results.
+                result["error"] = exc
+            finally:
+                self._resolver_slots.release()
+                completed.set()
+
+        worker = threading.Thread(target=resolve_in_background, name="sync-jobs-dns", daemon=True)
+        try:
+            worker.start()
+        except BaseException:
+            self._resolver_slots.release()
+            raise
+        remaining = self._remaining(deadline, url)
+        if not self.resolver_wait(completed, remaining):
+            raise AcquisitionError(
+                "acquisition_deadline_exceeded",
+                "per-posting acquisition deadline exceeded while waiting for DNS resolution",
+                final_url=url,
+            )
+        self._remaining(deadline, url)
+        error = result.get("error")
+        if isinstance(error, OSError):
+            raise AcquisitionError("network_error", f"destination DNS resolution failed: {error}", final_url=url) from error
+        if error is not None:
+            raise error
+        return result["addresses"]
+
+    def _resolve(self, url: str, deadline: float) -> tuple[str, list[tuple]]:
         canonical = validate_public_url(url, resolve=False)
         parsed = urlsplit(canonical)
         host = parsed.hostname or ""
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        try:
-            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-        except OSError as exc:
-            raise AcquisitionError("network_error", f"destination DNS resolution failed: {exc}", final_url=canonical) from exc
+        addresses = self._resolve_addresses(host, port, deadline, canonical)
         if not addresses or any(not _public_ip(item[4][0]) for item in addresses):
             raise ValueError("destination resolves to a private or non-routable address")
         return canonical, addresses
 
-    def _open_validated(self, url: str, addresses: list[tuple]):
+    def _open_validated(self, url: str, addresses: list[tuple], deadline: float | None = None):
         """Connect only to a prevalidated sockaddr; hostname remains Host/SNI."""
+        deadline = deadline if deadline is not None else self._deadline()
         parsed = urlsplit(url)
         host = parsed.hostname or ""
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         last_error = None
         for family, socktype, proto, _canonname, sockaddr in addresses:
+            self._remaining(deadline, url)
             sock = socket.socket(family, socktype, proto)
+            self._track_active_socket(sock)
             try:
-                sock.settimeout(self.timeout)
+                self._set_socket_timeout(sock, deadline, url)
                 sock.connect(sockaddr)
+                self._remaining(deadline, url)
                 if parsed.scheme == "https":
                     sock = self.ssl_context.wrap_socket(sock, server_hostname=host)
-                conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+                    self._track_active_socket(sock)
+                self._remaining(deadline, url)
+                conn = http.client.HTTPConnection(host, port, timeout=min(self.timeout, self._remaining(deadline, url)))
                 conn.sock = sock
                 path = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+                self._set_socket_timeout(conn.sock, deadline, url)
                 conn.request("GET", path, headers={
                     "Host": host if parsed.port is None else parsed.netloc,
                     "User-Agent": "sync-jobs/2.5 public-posting-capture",
@@ -304,13 +498,28 @@ class BoundedFetcher:
                     "Accept-Encoding": "gzip, deflate, identity",
                     "Connection": "close",
                 })
-                return conn, conn.getresponse()
+                self._set_socket_timeout(conn.sock, deadline, url)
+                response = conn.getresponse()
+                self._remaining(deadline, url)
+                return conn, response
+            except AcquisitionError:
+                sock.close()
+                self._clear_active_socket()
+                raise
             except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
                 last_error = exc
                 sock.close()
+                self._clear_active_socket()
+                try:
+                    self._remaining(deadline, url)
+                except AcquisitionError as deadline_error:
+                    raise deadline_error from exc
         raise AcquisitionError("network_error", f"public request failed: {last_error}", final_url=url)
 
-    def _read_bounded(self, response, encoding: str) -> bytes:
+    def _read_bounded(self, response, encoding: str, deadline: float | None = None,
+                      final_url: str = "") -> bytes:
+        deadline = deadline if deadline is not None else self._deadline()
+        final_url = final_url or "//unknown/response"
         encoding = encoding.casefold().strip()
         if encoding not in {"", "identity", "gzip", "deflate"}:
             raise AcquisitionError("unsupported_content_encoding", f"unsupported content encoding {encoding!r}")
@@ -324,7 +533,16 @@ class BoundedFetcher:
         encoded_limit = max(self.max_bytes * 2, self.max_bytes + 65536)
         try:
             while True:
+                try:
+                    sock = response.fp.raw._sock
+                except AttributeError:
+                    sock = None
+                if sock is not None:
+                    self._set_socket_timeout(sock, deadline, final_url)
+                else:
+                    self._remaining(deadline, final_url)
                 chunk = response.read(min(65536, self.max_bytes + 1))
+                self._remaining(deadline, final_url)
                 if not chunk:
                     break
                 encoded_total += len(chunk)
@@ -345,28 +563,49 @@ class BoundedFetcher:
                     raise AcquisitionError("invalid_content_encoding", f"truncated {encoding} response")
             if len(output) > self.max_bytes:
                 raise AcquisitionError("response_too_large", "decompressed response exceeds the configured byte limit")
+        except AcquisitionError:
+            raise
         except zlib.error as exc:
             raise AcquisitionError("invalid_content_encoding", f"invalid {encoding} response") from exc
+        except (TimeoutError, OSError, ssl.SSLError, http.client.HTTPException) as exc:
+            try:
+                self._remaining(deadline, final_url)
+            except AcquisitionError as deadline_error:
+                raise deadline_error from exc
+            raise AcquisitionError("network_error", f"response body read failed: {exc}", final_url=final_url) from exc
         return bytes(output)
 
     def fetch(self, url: str) -> FetchResponse:
+        owns_request = self._request_deadline is None
+        if owns_request:
+            self.start_request()
+        try:
+            return self._fetch_in_request(url)
+        finally:
+            if owns_request:
+                self.end_request()
+
+    def _fetch_in_request(self, url: str) -> FetchResponse:
+        deadline = self._deadline()
         requested = validate_public_url(url, resolve=False)
         current = requested
         redirects: list[str] = []
         for hop in range(self.max_redirects + 1):
-            current, addresses = self._resolve(current)
+            self._remaining(deadline, current)
+            current, addresses = self._resolve(current, deadline)
             conn = None
             try:
-                conn, response = self._open_validated(current, addresses)
+                conn, response = self._open_validated(current, addresses, deadline)
             except (AcquisitionError, ValueError):
                 raise
-            except (TimeoutError, OSError) as exc:
+            except (TimeoutError, OSError, ssl.SSLError, http.client.HTTPException) as exc:
                 raise AcquisitionError("network_error", f"public request failed: {exc}", final_url=current) from exc
             status = int(response.status)
             headers = {key.casefold(): value for key, value in response.getheaders()}
             if status in {301, 302, 303, 307, 308}:
                 if conn:
                     conn.close()
+                self._clear_active_socket()
                 location = headers.get("location")
                 if not location:
                     raise AcquisitionError("invalid_redirect", "redirect response omitted Location", status=status, final_url=current)
@@ -376,10 +615,11 @@ class BoundedFetcher:
                 redirects.append(current)
                 continue
             try:
-                body = self._read_bounded(response, headers.get("content-encoding", ""))
+                body = self._read_bounded(response, headers.get("content-encoding", ""), deadline, current)
             finally:
                 if conn:
                     conn.close()
+                self._clear_active_socket()
             content_type = headers.get("content-type", "").split(";", 1)[0].strip().casefold()
             if content_type and content_type not in ALLOWED_CONTENT_TYPES:
                 raise AcquisitionError("unsupported_content_type", f"unsupported content type {content_type!r}", status=status, final_url=current)
@@ -517,20 +757,26 @@ class _JobPageParser(HTMLParser):
 
 
 def _walk_json(value):
-    if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from _walk_json(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk_json(child)
+    """Walk decoded JSON iteratively with a second node-count guard."""
+    stack = [value]
+    visited = 0
+    while stack:
+        node = stack.pop()
+        visited += 1
+        if visited > MAX_JSON_TOKENS:
+            raise JSONResourceLimitError(f"JSON traversal exceeds the {MAX_JSON_TOKENS}-node limit")
+        if isinstance(node, dict):
+            yield node
+            stack.extend(reversed(list(node.values())))
+        elif isinstance(node, list):
+            stack.extend(reversed(node))
 
 
 def _job_postings(parser: _JobPageParser) -> list[dict]:
     found = []
     for raw in parser.json_ld:
         try:
-            payload = json.loads(raw)
+            payload = _bounded_json_loads(raw)
         except json.JSONDecodeError:
             continue
         for item in _walk_json(payload):
@@ -889,7 +1135,34 @@ def _redacted_attempt(attempt: dict) -> dict:
     return result
 
 
+def _fetch_response(fetch: Callable[[str], FetchResponse], url: str) -> FetchResponse:
+    try:
+        return fetch(url)
+    except AcquisitionError:
+        raise
+    except (TimeoutError, OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise AcquisitionError("network_error", f"public request failed: {exc}", final_url=url) from exc
+
+
+def _check_active_fetch_deadline(fetch: Callable[[str], FetchResponse], url: str) -> None:
+    fetcher = getattr(fetch, "__self__", None)
+    if isinstance(fetcher, BoundedFetcher):
+        fetcher.check_request_deadline(url)
+
+
 def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tuple[dict | None, dict | None]:
+    fetcher = getattr(fetch, "__self__", None)
+    owns_request = isinstance(fetcher, BoundedFetcher) and fetcher._request_deadline is None
+    if owns_request:
+        fetcher.start_request()
+    try:
+        return _acquire_one_in_request(supplied_url, fetch)
+    finally:
+        if owns_request:
+            fetcher.end_request()
+
+
+def _acquire_one_in_request(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tuple[dict | None, dict | None]:
     try:
         supplied = canonical_posting_url(supplied_url)
         validate_public_url(supplied, resolve=False)
@@ -905,25 +1178,47 @@ def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tup
     if adapter["kind"] == "official_api":
         endpoint = api_url(adapter)
         try:
-            response = fetch(endpoint)
+            response = _fetch_response(fetch, endpoint)
+        except (AcquisitionError, ValueError) as exc:
+            reason = exc.reason if isinstance(exc, AcquisitionError) else str(exc)
+            attempts.append(_attempt("official_api", endpoint, "rejected", reason=reason))
+        else:
             attempts.append(_attempt("official_api", endpoint, "received", response=response))
             if response.status == 200:
-                payload = json.loads(decode_body(response))
-                if not isinstance(payload, dict):
-                    raise AcquisitionError("invalid_api_payload", "official API response must be a JSON object", final_url=response.final_url)
-                record = _json_record(payload, adapter, supplied, response, attempts)
-                attempts[-1]["status"] = "accepted"
-                record["attempts"] = attempts
-                record["source_record_sha256"] = source_record_hash(record)
-                return record, None
-            attempts[-1].update({"status": "rejected", "reason": f"HTTP {response.status}"})
-        except (AcquisitionError, ValueError, json.JSONDecodeError) as exc:
-            reason = exc.reason if isinstance(exc, AcquisitionError) else str(exc)
-            attempts.append(_attempt("official_api_parse", endpoint, "rejected", reason=reason))
+                try:
+                    payload = _bounded_json_loads(decode_body(response))
+                    if not isinstance(payload, dict):
+                        raise AcquisitionError("invalid_api_payload", "official API response must be a JSON object", final_url=response.final_url)
+                    record = _json_record(payload, adapter, supplied, response, attempts)
+                    _check_active_fetch_deadline(fetch, endpoint)
+                except (AcquisitionError, ValueError, json.JSONDecodeError) as exc:
+                    if isinstance(exc, AcquisitionError):
+                        kind, reason = exc.kind, exc.reason
+                    elif isinstance(exc, JSONResourceLimitError):
+                        kind, reason = "json_resource_limit", str(exc)
+                    else:
+                        kind, reason = "invalid_api_payload", str(exc)
+                    attempts.append(_attempt("official_api_parse", endpoint, "rejected", reason=reason))
+                    if isinstance(exc, JSONResourceLimitError):
+                        return None, {
+                            "request_id": rid, "supplied_url": supplied,
+                            "final_url": redact_url(response.final_url),
+                            "provider": adapter["provider"], "ats": adapter.get("ats"),
+                            "failure_kind": "json_resource_limit", "reason": reason,
+                            "attempts": attempts, "next_action": "browser_fallback",
+                        }
+                else:
+                    attempts[-1]["status"] = "accepted"
+                    record["attempts"] = attempts
+                    record["source_record_sha256"] = source_record_hash(record)
+                    return record, None
+            else:
+                attempts[-1].update({"status": "rejected", "reason": f"HTTP {response.status}"})
     try:
-        response = fetch(supplied)
+        response = _fetch_response(fetch, supplied)
         attempts.append(_attempt("anonymous_http", supplied, "received", response=response))
         record = _page_record(supplied, response, adapter, attempts)
+        _check_active_fetch_deadline(fetch, supplied)
         attempts[-1]["status"] = "accepted"
         record["attempts"] = attempts
         record["source_record_sha256"] = source_record_hash(record)
@@ -931,6 +1226,8 @@ def acquire_one(supplied_url: str, fetch: Callable[[str], FetchResponse]) -> tup
     except (AcquisitionError, ValueError, json.JSONDecodeError) as exc:
         if isinstance(exc, AcquisitionError):
             kind, reason, final_url = exc.kind, exc.reason, exc.final_url
+        elif isinstance(exc, JSONResourceLimitError):
+            kind, reason, final_url = "json_resource_limit", str(exc), None
         else:
             kind, reason, final_url = "parse_error", str(exc), None
         attempts.append(_attempt("anonymous_http_or_parse", supplied, "rejected", reason=reason))
@@ -1314,13 +1611,24 @@ def acquire_urls(urls: list[str], fetch: Callable[[str], FetchResponse] | None =
         seen.add(rid)
         selected.append({"request_id": rid, "supplied_url": persisted_url})
     if fetch is None:
-        fetch = BoundedFetcher().fetch
+        fetcher = BoundedFetcher()
+        fetch = fetcher.fetch
+    else:
+        fetcher = getattr(fetch, "__self__", None)
+        if not isinstance(fetcher, BoundedFetcher):
+            fetcher = None
     records, failures = [], []
     for item, raw_url in zip(selected, urls):
-        # Validate/fetch the original input.  A redacted persistence value is
-        # never reinterpreted as an authorized destination.
-        record, failure = acquire_one(raw_url, fetch)
-        (records if record else failures).append(record or failure)
+        if fetcher is not None:
+            fetcher.start_request()
+        try:
+            # Validate/fetch the original input. A redacted persistence value
+            # is never reinterpreted as an authorized destination.
+            record, failure = acquire_one(raw_url, fetch)
+            (records if record else failures).append(record or failure)
+        finally:
+            if fetcher is not None:
+                fetcher.end_request()
     payload = {
         "schema": "SourcePostingAcquisitionV2",
         "version": "2.0",

@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+from types import SimpleNamespace
 import unittest
 import zlib
 from unittest import mock
@@ -52,6 +54,43 @@ class ConnStub:
     def close(self): pass
 
 
+class FakeClock:
+    def __init__(self): self.now = 0.0
+    def __call__(self): return self.now
+    def advance(self, amount): self.now += amount
+
+
+class AdvancingHTTPStub(HTTPStub):
+    def __init__(self, clock, status, body=b"", headers=None, step=0.0):
+        super().__init__(status, body, headers)
+        self.clock=clock; self.step=step
+    def read(self, size):
+        self.clock.advance(self.step)
+        return super().read(size)
+
+
+class ReadTimeoutHTTPStub(HTTPStub):
+    def read(self, size): raise TimeoutError("synthetic body-read timeout")
+
+
+class BlockingSocketStub:
+    def __init__(self):
+        self.read_started=threading.Event(); self.interrupted=threading.Event(); self.timeout=None
+    def settimeout(self, value): self.timeout=value
+    def connect(self, sockaddr): pass
+    def shutdown(self, how): self.interrupted.set()
+    def close(self): self.interrupted.set()
+    def read(self):
+        self.read_started.set()
+        if not self.interrupted.wait(2): raise TimeoutError("watchdog did not interrupt synthetic read")
+        raise OSError("synthetic socket shutdown")
+
+
+class BlockingReadResponse:
+    def __init__(self, sock): self.fp=SimpleNamespace(raw=SimpleNamespace(_sock=sock))
+    def read(self, size): return self.fp.raw._sock.read()
+
+
 class SourceAcquisition(unittest.TestCase):
     def test_provider_recognition_and_identity_parameters(self):
         self.assertEqual(recognize("https://boards.greenhouse.io/acme/jobs/123")["provider"], "greenhouse")
@@ -89,6 +128,41 @@ class SourceAcquisition(unittest.TestCase):
                 fetcher.fetch("https://public.example/job")
         self.assertEqual(content.exception.kind,"unsupported_content_type")
 
+    def test_unsafe_api_dns_or_redirect_retains_failure_and_later_posting(self):
+        page = "https://boards.greenhouse.io/example/jobs/12345"
+        endpoint = "https://boards-api.greenhouse.io/v1/boards/example/jobs/12345"
+        later = "https://careers.unknown.example/openings/42"
+        for rejection in ("private_dns", "private_redirect"):
+            with self.subTest(rejection=rejection):
+                fetcher = BoundedFetcher()
+
+                def resolve(host, port, *args, **kwargs):
+                    ip = "10.0.0.5" if rejection == "private_dns" and host == "boards-api.greenhouse.io" else "93.184.216.34"
+                    return [(2, 1, 6, "", (ip, port))]
+
+                def open_validated(url, addresses, deadline):
+                    if url == endpoint:
+                        self.assertEqual(rejection, "private_redirect")
+                        return ConnStub(), HTTPStub(302, headers={"Location": "http://127.0.0.1/private"})
+                    if url == page:
+                        return ConnStub(), HTTPStub(503, headers={"Content-Type": "text/html"})
+                    self.assertEqual(url, later)
+                    return ConnStub(), HTTPStub(200, fixture("generic_jsonld.html"), {"Content-Type": "text/html"})
+
+                with mock.patch("source_acquisition.socket.getaddrinfo", side_effect=resolve), \
+                     mock.patch.object(fetcher, "_open_validated", side_effect=open_validated) as opened:
+                    bundle = acquire_urls([page, later], fetcher.fetch)
+                validate_bundle(bundle)
+                self.assertEqual([record["supplied_url"] for record in bundle["records"]], [later])
+                self.assertEqual([failure["supplied_url"] for failure in bundle["failures"]], [page])
+                self.assertFalse(bundle["complete"])
+                self.assertEqual(len(bundle["selected_requests"]), 2)
+                attempt = bundle["failures"][0]["attempts"][0]
+                self.assertEqual((attempt["method"], attempt["status"]), ("official_api", "rejected"))
+                self.assertIn("private", attempt["reason"])
+                expected = [page, later] if rejection == "private_dns" else [endpoint, page, later]
+                self.assertEqual([call.args[0] for call in opened.call_args_list], expected)
+
     def test_transport_uses_single_validated_resolution_and_never_private_second_lookup(self):
         fetcher=BoundedFetcher(max_bytes=1024)
         fake_sock=mock.Mock()
@@ -125,6 +199,139 @@ class SourceAcquisition(unittest.TestCase):
             with self.subTest(trailing=encoding),self.assertRaises(AcquisitionError) as trailing:
                 fetcher._read_bounded(HTTPStub(200,body),encoding)
             self.assertEqual(trailing.exception.kind,"invalid_content_encoding")
+
+    def test_body_transport_failures_are_retained_and_later_urls_are_attempted(self):
+        timed_out="https://timeout.example/jobs/1"
+        accepted="https://static.example/jobs/2"
+        fetcher=BoundedFetcher()
+        fetcher._resolve=mock.Mock(side_effect=lambda url,deadline:(url,[]))
+        fetcher._open_validated=mock.Mock(side_effect=[
+            (ConnStub(),ReadTimeoutHTTPStub(200,b"",{"Content-Type":"text/html"})),
+            (ConnStub(),HTTPStub(200,fixture("generic_html.html"),{"Content-Type":"text/html"})),
+        ])
+        bundle=acquire_urls([timed_out,accepted],fetcher.fetch)
+        self.assertFalse(bundle["complete"])
+        self.assertFalse(bundle["quality_complete"])
+        self.assertEqual(bundle["failures"][0]["failure_kind"],"network_error")
+        self.assertIn("synthetic body-read timeout",bundle["failures"][0]["reason"])
+        self.assertEqual([record["supplied_url"] for record in bundle["records"]],[accepted])
+        self.assertEqual(fetcher._open_validated.call_count,2)
+
+    def test_json_depth_limits_apply_to_jsonld_and_official_api_and_batch_continues(self):
+        nested_html="https://json.example/jobs/1"
+        greenhouse="https://boards.greenhouse.io/example/jobs/12345"
+        greenhouse_api="https://boards-api.greenhouse.io/v1/boards/example/jobs/12345"
+        accepted="https://static.example/jobs/2"
+        deep_payload="{" + '"@type":"JobPosting","nested":' + "["*70 + "0" + "]"*70 + "}"
+        deep_html=("<script type=\"application/ld+json\">"+deep_payload+"</script>").encode()
+        calls=MappingFetcher({
+            nested_html: response(nested_html,deep_html),
+            greenhouse_api: response(greenhouse_api,("["*70+"0"+"]"*70).encode(),content_type="application/json"),
+            accepted: response(accepted,fixture("generic_html.html")),
+        })
+        bundle=acquire_urls([nested_html,greenhouse,accepted],calls)
+        self.assertFalse(bundle["complete"])
+        self.assertEqual([failure["failure_kind"] for failure in bundle["failures"]],
+                         ["json_resource_limit","json_resource_limit"])
+        self.assertEqual([record["supplied_url"] for record in bundle["records"]],[accepted])
+        self.assertEqual(calls.calls,[nested_html,greenhouse_api,accepted])
+        self.assertTrue(all("nesting exceeds" in failure["reason"] for failure in bundle["failures"]))
+
+    def test_per_posting_deadline_covers_api_and_page_fallback_then_resets(self):
+        clock=FakeClock()
+        fetcher=BoundedFetcher(timeout=10,max_bytes=100_000,total_timeout=1.0,monotonic=clock)
+        first="https://boards.greenhouse.io/example/jobs/12345"
+        endpoint="https://boards-api.greenhouse.io/v1/boards/example/jobs/12345"
+        second="https://static.example/jobs/2"
+        body=fixture("generic_html.html")
+        fetcher._resolve=mock.Mock(side_effect=lambda url,deadline:(url,[]))
+        fetcher._open_validated=mock.Mock(side_effect=[
+            (ConnStub(),AdvancingHTTPStub(clock,200,b"{",{"Content-Type":"application/json"},step=0.35)),
+            (ConnStub(),AdvancingHTTPStub(clock,200,body,{"Content-Type":"text/html"},step=0.35)),
+            (ConnStub(),HTTPStub(200,body,{"Content-Type":"text/html"})),
+        ])
+        bundle=acquire_urls([first,second],fetcher.fetch)
+        self.assertFalse(bundle["complete"])
+        self.assertEqual([record["supplied_url"] for record in bundle["records"]],[second])
+        self.assertEqual(bundle["failures"][0]["supplied_url"],first)
+        self.assertEqual(bundle["failures"][0]["failure_kind"],"acquisition_deadline_exceeded")
+        self.assertGreaterEqual(clock.now,1.0)
+        self.assertEqual(fetcher._resolve.call_args_list[0].args[0],endpoint)
+        self.assertEqual(fetcher._resolve.call_args_list[1].args[0],first)
+        self.assertEqual(fetcher._resolve.call_args_list[2].args[0],second)
+        self.assertIsNone(fetcher._request_deadline)
+
+    def test_dns_deadline_returns_while_one_bounded_daemon_lookup_finishes(self):
+        entered=threading.Event();release=threading.Event();finished=threading.Event()
+        timed_out_once=False
+        def resolver_wait(event,remaining):
+            nonlocal timed_out_once
+            if not timed_out_once:
+                timed_out_once=True
+                self.assertGreater(remaining,0)
+                self.assertTrue(entered.wait(2),"synthetic DNS worker did not start")
+                return False
+            return event.wait(remaining)
+        def fake_getaddrinfo(host,port,**kwargs):
+            if host=="slow.example":
+                entered.set()
+                release.wait()
+                finished.set()
+            return [(2,1,6,"",("93.184.216.34",port))]
+        fetcher=BoundedFetcher(total_timeout=1.0,resolver_wait=resolver_wait,monotonic=FakeClock())
+        try:
+            with mock.patch("source_acquisition.socket.getaddrinfo",side_effect=fake_getaddrinfo):
+                with self.assertRaises(AcquisitionError) as timed:
+                    fetcher._resolve("https://slow.example/jobs/1",1.0)
+                self.assertEqual(timed.exception.kind,"acquisition_deadline_exceeded")
+                # One outstanding libc call does not consume the second slot;
+                # a later selected URL can still resolve and be attempted.
+                canonical,addresses=fetcher._resolve("https://good.example/jobs/2",1.0)
+                self.assertEqual(canonical,"https://good.example/jobs/2")
+                self.assertEqual(addresses[0][4][0],"93.184.216.34")
+        finally:
+            release.set()
+        self.assertTrue(finished.wait(2),"timed-out synthetic DNS worker did not exit")
+
+    def test_deadline_watchdog_interrupts_a_blocked_body_read(self):
+        clock=FakeClock(); sock=BlockingSocketStub()
+        def watchdog_wait(cancel,remaining):
+            sock.read_started.wait(2)
+            clock.advance(remaining)
+            return False
+        fetcher=BoundedFetcher(total_timeout=5.0,monotonic=clock,watchdog_wait=watchdog_wait)
+        fetcher.start_request()
+        try:
+            fetcher._track_active_socket(sock)
+            with self.assertRaises(AcquisitionError) as deadline:
+                fetcher._read_bounded(BlockingReadResponse(sock),"identity",fetcher._request_deadline,"https://example.test/job")
+            self.assertEqual(deadline.exception.kind,"acquisition_deadline_exceeded")
+            self.assertEqual(sock.timeout,5.0)
+            self.assertTrue(sock.interrupted.is_set())
+        finally:
+            fetcher.end_request()
+
+    def test_deadline_watchdog_interrupts_blocked_http_headers(self):
+        clock=FakeClock(); sock=BlockingSocketStub()
+        def watchdog_wait(cancel,remaining):
+            sock.read_started.wait(2)
+            clock.advance(remaining)
+            return False
+        def blocked_getresponse():
+            sock.read_started.set()
+            if not sock.interrupted.wait(2):
+                raise TimeoutError("watchdog did not interrupt synthetic header read")
+            raise OSError("synthetic header socket shutdown")
+        fetcher=BoundedFetcher(total_timeout=5.0,monotonic=clock,watchdog_wait=watchdog_wait)
+        fetcher._resolve=mock.Mock(return_value=("http://public.example/job",[(2,1,6,"",("93.184.216.34",80))]))
+        with mock.patch("source_acquisition.socket.socket",return_value=sock), \
+             mock.patch("source_acquisition.http.client.HTTPConnection.request"), \
+             mock.patch("source_acquisition.http.client.HTTPConnection.getresponse",side_effect=blocked_getresponse):
+            with self.assertRaises(AcquisitionError) as deadline:
+                fetcher.fetch("http://public.example/job")
+        self.assertEqual(deadline.exception.kind,"acquisition_deadline_exceeded")
+        self.assertTrue(sock.interrupted.is_set())
+        self.assertIsNone(fetcher._request_deadline)
 
     def test_greenhouse_official_api(self):
         page = "https://boards.greenhouse.io/example/jobs/12345"

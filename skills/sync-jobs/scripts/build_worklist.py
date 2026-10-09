@@ -20,8 +20,11 @@ rather than crashing or guessing from the title.
 
 Usage:
     build_worklist.py --tracker /path/to/jobs.xlsx \
-                      --out /tmp/triage_worklist_YYYY-MM-DD.json
-    build_worklist.py            # defaults: live tracker -> /tmp worklist
+                      --out /path/to/new-worklist.json
+    build_worklist.py            # defaults to a unique private output directory
+
+An explicit --out destination must not already exist. The generated worklist
+is published atomically with owner-only file permissions.
 
 Output JSON shape:
     {
@@ -55,6 +58,7 @@ import openpyxl
 import hashlib
 from pathlib import Path
 import posting_eligibility
+from private_files import private_run_directory, publish_private_file
 
 PROJECT_ROOT = os.environ.get("SYNC_JOBS_ROOT", "")
 DEFAULT_TRACKER = os.path.join(PROJECT_ROOT, "jobs.xlsx")
@@ -110,12 +114,11 @@ def eligibility_evidence(tracker_id, jd_abs, source_url):
 
 
 def main(argv=None):
-    today = _dt.date.today().isoformat()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tracker", default=DEFAULT_TRACKER,
                     help="path to the selected tracker")
-    ap.add_argument("--out", default=f"/tmp/triage_worklist_{today}.json",
-                    help="output worklist JSON path")
+    ap.add_argument("--out", default=None,
+                    help="new output worklist JSON path; existing targets are refused")
     ap.add_argument("--include-statuses", default="",
                     help="comma-separated Estatus values to ALSO select regardless "
                          "of Next Action (e.g. 'In-progress'). Advanced states are "
@@ -204,13 +207,16 @@ def main(argv=None):
         "count": len(rows),
         "rows": rows,
     }
-    with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
+    if args.out:
+        output = Path(args.out)
+    else:
+        output = private_run_directory("triage-worklist-") / "worklist.json"
+    publish_private_file(output, json.dumps(payload, indent=2, ensure_ascii=False))
 
     n_missing = sum(1 for x in rows if x["missing_jd"])
     n_assess = sum(1 for x in rows if x["assess_only"])
     print(f"build_worklist: {len(rows)} rows need triage "
-          f"({n_missing} MISSING-JD, {n_assess} assess-only) -> {args.out}")
+          f"({n_missing} MISSING-JD, {n_assess} assess-only) -> {output}")
     return 0
 
 

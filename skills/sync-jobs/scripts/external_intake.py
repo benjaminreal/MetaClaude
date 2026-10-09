@@ -23,6 +23,7 @@ from excel_literal import write_literal_text
 from record_fields import normalize_description
 from source_acquisition import canonical_posting_url, recognize, reject_secret_url, source_record_hash, validate_bundle as validate_source_bundle
 from sync_ingest import country_from_location, header_index, posted_yyyymm, sanitize
+from private_files import copy_private_file, private_run_directory, privateize_tree
 
 TRACKING_KEYS={"from","refid","source","eid","locale"}
 
@@ -263,12 +264,10 @@ def main(argv=None):
     if not pending:
         print(json.dumps({"status":"ALREADY_PRESENT","written_count":0,"already_present_count":len(already),"source_ids":[r["source_id"] for r in already]},ensure_ascii=False,indent=2))
         return 0
-    stamp=dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    stage=Path(args.backup_dir)/f"sync-jobs-external-{stamp}"
-    stage.mkdir(parents=True,exist_ok=False)
+    stage=private_run_directory("sync-jobs-external-", args.backup_dir)
     target=stage/tracker.name
-    shutil.copy2(tracker,target)
-    backup=stage/f"{tracker.stem}.backup{tracker.suffix}";shutil.copy2(tracker,backup)
+    copy_private_file(tracker,target)
+    backup=stage/f"{tracker.stem}.backup{tracker.suffix}";copy_private_file(tracker,backup)
     stage_postings=stage/"postings"
     stage_meta=stage/"meta"
     stage_postings.mkdir(parents=True,exist_ok=True)
@@ -311,16 +310,17 @@ def main(argv=None):
         os.replace(tmp,target)
     finally:
         if os.path.exists(tmp):os.unlink(tmp)
+    privateize_tree(stage)
     if not args.dry_run:
         publications=[]
         try:
             for source,destination in [(p,postings/p.name) for p in stage_postings.glob("*.md")]:
-                if destination.exists():raise ValueError(f"commit destination already exists: {destination}")
-                destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,destination);publications.append(destination)
+                if os.path.lexists(destination):raise ValueError(f"commit destination already exists: {destination}")
+                destination.parent.mkdir(parents=True,exist_ok=True);copy_private_file(source,destination);publications.append(destination)
             for source in stage_meta.rglob("*.json"):
                 destination=meta/source.relative_to(stage_meta)
-                if destination.exists():raise ValueError(f"commit destination already exists: {destination}")
-                destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,destination);publications.append(destination)
+                if os.path.lexists(destination):raise ValueError(f"commit destination already exists: {destination}")
+                destination.parent.mkdir(parents=True,exist_ok=True);copy_private_file(source,destination);publications.append(destination)
             if hashlib.sha256(tracker.read_bytes()).hexdigest()!=initial:raise ValueError("tracker changed before commit publication")
             # ``backup_dir`` may live on another filesystem (the default is
             # /private/tmp).  Copy the verified staged workbook to a sibling
@@ -328,8 +328,10 @@ def main(argv=None):
             publish_fd,publish_tmp=tempfile.mkstemp(prefix=".external-intake-publish-",suffix=".xlsx",dir=tracker.parent)
             os.close(publish_fd)
             try:
-                shutil.copy2(target,publish_tmp)
+                shutil.copyfile(target,publish_tmp)
+                os.chmod(publish_tmp,0o600)
                 if hashlib.sha256(tracker.read_bytes()).hexdigest()!=initial:raise ValueError("tracker changed during commit publication")
+                os.chmod(publish_tmp,tracker.stat().st_mode & 0o777)
                 os.replace(publish_tmp,tracker)
             finally:
                 if os.path.exists(publish_tmp):os.unlink(publish_tmp)
@@ -339,8 +341,8 @@ def main(argv=None):
             raise
     receipt_tracker=tracker if not args.dry_run else target
     receipt={"schema":"ExternalSourceIntakeReceiptV1","mode":"DRY_RUN" if args.dry_run else "COMMIT","created_at":dt.datetime.now(dt.timezone.utc).isoformat(),"tracker":str(receipt_tracker),"tracker_before_sha256":initial,"tracker_after_sha256":hashlib.sha256(receipt_tracker.read_bytes()).hexdigest(),"backup":str(backup),"written":written,"already_present":[r["source_id"] for r in already],"table_ref":table_ref}
-    receipt_path=stage/"receipt.json";receipt_path.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n")
+    receipt_path=stage/"receipt.json";receipt_path.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n");os.chmod(receipt_path,0o600)
     print(json.dumps({"status":receipt["mode"],"written_count":len(written),"already_present_count":len(already),"stage":str(stage),"receipt":str(receipt_path),"rows":written},ensure_ascii=False,indent=2))
     return 0
 
-if __name__=="__main__":raise SystemExit(main())
+if __name__=="__main__":raise SystemExit("Use scripts/sync_jobs.py with an explicit --project-root and --profile")

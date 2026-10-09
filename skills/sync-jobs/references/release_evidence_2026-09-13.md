@@ -4,6 +4,10 @@ This is dated evidence for the public engine branch. It is not evidence that
 the skill was installed, promoted, used against an authenticated account, or
 allowed to write a live tracker.
 
+For the later code remediation and current synthetic validation, see
+[October remediation evidence](release_evidence_2026-10-08.md). The canaries
+below remain September observations.
+
 ## Deterministic evidence
 
 - The pre-feature v2.3.0 engine baseline passed 80 tests.
@@ -60,7 +64,8 @@ limited to tracker operations. See
 - Qualify each authorized browser surface that will actually be used.
 - Run explicitly authorized LinkedIn detail and Saved/In Progress checks.
 - Complete one live owner-selected end-to-end ingestion dry run.
-- Test the pinned tracker dependency in a clean isolated environment.
+- The pinned tracker dependency was subsequently tested in a clean isolated
+  environment; see the October evidence linked above.
 - Forward-test realistic prompts with a private profile only in an authorized
   non-public workspace.
 - Repeat public canaries after review; deterministic transport tests do not

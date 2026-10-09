@@ -1,28 +1,29 @@
 # Workflow and stage contracts
 
-Set `SKILL` to the installed skill directory and `ROOT` to the chosen project directory. Use a unique run directory under /tmp for intermediate files and previews. These commands do not require the old project scripts.
+Set `SKILL` to the installed skill directory and `ROOT` to the chosen project directory. Use a unique private run directory for intermediate files and previews. Stage the saved-list and acquisition inputs there before running these commands. These commands do not require the old project scripts.
 
 ```bash
 PROFILE_ID="<profile-id>"
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" diff --saved-json /tmp/run/saved.json /tmp/run/in_progress.json --out /tmp/run/new.json
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" ingest --jobs-json /tmp/run/acquisition.json --saved-json /tmp/run/saved.json /tmp/run/in_progress.json
+SYNC_RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sync-jobs-run.XXXXXX")"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" diff --saved-json "$SYNC_RUN_DIR/saved.json" "$SYNC_RUN_DIR/in_progress.json" --out "$SYNC_RUN_DIR/new.json"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" ingest --jobs-json "$SYNC_RUN_DIR/acquisition.json" --saved-json "$SYNC_RUN_DIR/saved.json" "$SYNC_RUN_DIR/in_progress.json"
 # After inspecting the rehearsal, commit an authorized sync:
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" --commit ingest --jobs-json /tmp/run/acquisition.json --saved-json /tmp/run/saved.json /tmp/run/in_progress.json
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" --commit ingest --jobs-json "$SYNC_RUN_DIR/acquisition.json" --saved-json "$SYNC_RUN_DIR/saved.json" "$SYNC_RUN_DIR/in_progress.json"
 # Always available, including zero-new runs; does not write the tracker:
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" reconcile --saved-json /tmp/run/saved.json /tmp/run/in_progress.json --out-dir /tmp/run/reconciliation
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" worklist --out /tmp/run/worklist.json
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" reconcile --saved-json "$SYNC_RUN_DIR/saved.json" "$SYNC_RUN_DIR/in_progress.json" --out-dir "$SYNC_RUN_DIR/reconciliation"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" worklist --out "$SYNC_RUN_DIR/worklist.json"
 # Select this batch's Tracker IDs, read the JDs, then fill judgment blocks.
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" score --worklist /tmp/run/worklist.json --out /tmp/run/results.json --preview /tmp/run/preview.txt
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" score --worklist "$SYNC_RUN_DIR/worklist.json" --out "$SYNC_RUN_DIR/results.json" --preview "$SYNC_RUN_DIR/preview.txt"
 # Check the report before committing: it enforces discarded reasons and posting links.
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" report --worklist /tmp/run/worklist.json --results /tmp/run/results.json --out /tmp/run/report.md
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" write --results /tmp/run/results.json --worklist /tmp/run/worklist.json
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" report --worklist "$SYNC_RUN_DIR/worklist.json" --results "$SYNC_RUN_DIR/results.json" --out "$SYNC_RUN_DIR/report.md"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" write --results "$SYNC_RUN_DIR/results.json" --worklist "$SYNC_RUN_DIR/worklist.json"
 # Add --commit before write only after checking the dry-run.
 
 # Owner-selected direct employer or organization URLs use a separate source-neutral ingest.
 python3 "$SKILL/scripts/sync_jobs.py" acquire-url \
-  --url "https://employer.example/jobs/123" --out /tmp/run/source_acquisition.json
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" external-ingest --records-json /tmp/run/source_acquisition.json
-python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" --commit external-ingest --records-json /tmp/run/source_acquisition.json
+  --url "https://employer.example/jobs/123" --out "$SYNC_RUN_DIR/source_acquisition.json"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" external-ingest --records-json "$SYNC_RUN_DIR/source_acquisition.json"
+python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE_ID" --commit external-ingest --records-json "$SYNC_RUN_DIR/source_acquisition.json"
 ```
 
 | Stage | Input | Output |
@@ -38,6 +39,22 @@ python3 "$SKILL/scripts/sync_jobs.py" --project-root "$ROOT" --profile "$PROFILE
 | Score | Judgments and selected profile policy | Header-keyed verdicts and decision reasons |
 | Report check | Worklist and verdicts | Review table, including links and plain-English reasons for discarded roles |
 | Write | Checked verdicts | Backup, limited tracker changes, append-only audit comments |
+
+The score result is bound to the explicitly selected profile ID, version and
+policy hash. It also records the exact worklist/result scope. The write command
+re-derives each result from that worklist and selected policy before writing.
+Both legacy triage columns and the newer generic profile columns are supported;
+only requested columns need to exist in the selected tracker. See
+[profile compatibility and migration](profile_compatibility.md) before carrying
+an installation-local profile across an engine update.
+
+Unless `--report-name` is supplied, scoring creates a unique project-relative
+report-batch path. The final report uses that path when `--out` is omitted. The
+pre-write report check above uses a separate staging path. Report files are
+private mode 0600 and create-only: choose a new staging or published path for
+each report. If you choose a custom final `--out`, use the same value as
+`--report-name` during scoring so the tracker pointer names the report that was
+published.
 
 Input saved-list shape: `{count,total,error,jobs:[{id,company,role,location,status,url}]}`. Capture full descriptions with `acquire-save` using [capture quality](acquisition_quality.md), then pass its `SelectedPostingAcquisitionV1` output directly to `ingest`. Backfill missing company/title from the corresponding index record before capture validation, not by inference. An incomplete or failed index is not a reconciliation input.
 

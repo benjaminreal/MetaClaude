@@ -18,6 +18,12 @@ Complete text requires independently observed ending evidence, source identity a
 
 Preserve raw widget text, inline labels and URLs even when recognized UI content is excluded from comparison. Only whitespace and narrowly evidenced interface boundaries may normalize away. Employer benefits, salary, punctuation, case and added/removed sentences remain meaningful even when a separately identified interface widget is excluded.
 
+The first-difference preview reports the first unequal prefix position with at
+most 121 characters per side. It uses a linear scan instead of an expensive
+edit alignment: `insert` or `delete` means one body ends at that boundary;
+otherwise the preview uses `replace`. Full-body hashes and the comparison
+classification remain authoritative for equality and substantive differences.
+
 ## Browser procedure
 
 Use only documented capabilities actually available on an authorized selected

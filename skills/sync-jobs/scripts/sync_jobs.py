@@ -13,6 +13,51 @@ import tempfile
 
 SKILL = Path(__file__).resolve().parents[1]
 
+TRIAGE_WRITE_FIELDS = {
+    # Legacy profile output.
+    'Track', 'Estatus', 'Fit Score', 'Priority', 'Sponsor Status',
+    'Next Action', 'Next Action Date', 'Triage Summary', 'Decision Driver',
+    'Primary Risk / Blocker', 'Key Uplifts', 'Triage Date', 'Triage Batch',
+    'Comentarios',
+    # Newer generic profile output. These are result columns, not policy rules.
+    'Lane', 'Market Tier', 'Eligibility', 'Priority Score', 'Match',
+}
+
+
+def _has_report_name_option(options):
+    return any(arg == '--report-name' or arg.startswith('--report-name=')
+               for arg in options)
+
+
+def _extract_option(options, name):
+    """Move one global option ahead of a downstream subcommand."""
+    leading = []
+    remaining = []
+    index = 0
+    while index < len(options):
+        token = options[index]
+        if token == name:
+            leading.append(token)
+            if index + 1 < len(options):
+                leading.append(options[index + 1])
+                index += 2
+                continue
+        elif token.startswith(name + '='):
+            leading.append(token)
+        else:
+            remaining.append(token)
+        index += 1
+    return leading, remaining
+
+
+def _unique_report_name(profile):
+    workspace = profile.get('default_workspace', {})
+    reports = Path(workspace.get('reports', 'JobPostings/_meta'))
+    if reports.is_absolute() or '..' in reports.parts:
+        raise ValueError('Profile report directory must be project-relative')
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')
+    return (reports / f'triage_{stamp}.md').as_posix()
+
 def load_profile(name):
     directory = (SKILL / 'profiles' / name).resolve()
     if not directory.is_relative_to((SKILL / 'profiles').resolve()):
@@ -89,6 +134,9 @@ def main(argv=None):
         module.POSTINGS_DIR = str(root / 'JobPostings/postings')
         module.JOBPOSTINGS_TREE = str(root / 'JobPostings')
         module.META_DIR = str(root / 'JobPostings/_meta')
+        global_options, command_options = ([], rest)
+        if args.command == 'ingest':
+            global_options, command_options = _extract_option(rest, '--backup-dir')
         if args.command == 'reconcile':
             p = argparse.ArgumentParser();p.add_argument('--saved-json', nargs='+', required=True)
             p.add_argument('--out-dir', required=True)
@@ -100,7 +148,7 @@ def main(argv=None):
             return 0
         extra=[]
         if args.command=='ingest' and not args.commit and '--dry-run' not in rest:extra=['--dry-run']
-        return module.main(['--tracker',str(tracker),args.command,*rest,*extra])
+        return module.main(['--tracker',str(tracker),*global_options,args.command,*command_options,*extra])
     if args.command=='worklist':
         module=importlib.import_module('build_worklist');module.PROJECT_ROOT=str(root)
         template_path=(directory/profile.get('judgment_template','judgment_template.json')).resolve()
@@ -111,9 +159,15 @@ def main(argv=None):
     if args.command=='score':
         spec=importlib.util.spec_from_file_location('selected_profile_policy',policy_path)
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        rc=module.main(rest)
+        score_options=list(rest)
+        if not _has_report_name_option(score_options):
+            try:
+                score_options.extend(['--report-name', _unique_report_name(profile)])
+            except ValueError as exc:
+                ap.error(str(exc))
+        rc=module.main(score_options)
         parsed=argparse.ArgumentParser();parsed.add_argument('--out',required=True)
-        output,_=parsed.parse_known_args(rest)
+        output,_=parsed.parse_known_args(score_options)
         path=Path(output.out);payload=json.loads(path.read_text())
         payload['profile']={'id':profile['id'],'version':profile['version'],'policy_sha256':hashlib.sha256(policy_path.read_bytes()).hexdigest()}
         path.write_text(json.dumps(payload,indent=2,ensure_ascii=False))
@@ -135,9 +189,8 @@ def main(argv=None):
             expected_result=policy.derive(rows[tid],scored_date,payload['report_batch'])
             if result!=expected_result:
                 ap.error('Worklist judgments differ from scored results; score again before writing')
-        allowed={'Track','Estatus','Fit Score','Priority','Sponsor Status','Next Action','Next Action Date','Triage Summary','Decision Driver','Primary Risk / Blocker','Key Uplifts','Triage Date','Triage Batch','Comentarios'}
         for result in payload.get('results',{}).values():
-            if set(result.get('cells',{}))-allowed or result.get('append'):
+            if set(result.get('cells',{}))-TRIAGE_WRITE_FIELDS or result.get('append'):
                 ap.error('Result contains fields outside sync/triage write scope')
         report=importlib.import_module('gen_report')
         with tempfile.TemporaryDirectory(prefix='sync-jobs-review-') as staging:
@@ -147,6 +200,19 @@ def main(argv=None):
         extra=[] if args.commit or '--dry-run' in rest else ['--dry-run']
         return module.main(['--tracker',str(tracker),*rest,*extra])
     if args.command=='report':
+        checks=argparse.ArgumentParser()
+        checks.add_argument('--worklist',required=True)
+        checks.add_argument('--results',required=True)
+        checked,_=checks.parse_known_args(rest)
+        payload=json.loads(Path(checked.results).read_text())
+        expected={'id':profile['id'],'version':profile['version'],'policy_sha256':hashlib.sha256(policy_path.read_bytes()).hexdigest()}
+        if payload.get('profile')!=expected:
+            ap.error('Results do not match the selected profile and policy version')
+        work=json.loads(Path(checked.worklist).read_text())
+        work_rows=work.get('rows',[])
+        row_ids=[row.get('tracker_id') for row in work_rows]
+        if len(set(row_ids))!=len(row_ids) or set(row_ids)!=set(payload.get('results',{})):
+            ap.error('Worklist/result IDs differ or contain duplicates')
         module=importlib.import_module('gen_report');module.PROJECT_ROOT=str(root)
         return module.main(['--project-root',str(root),*rest])
 

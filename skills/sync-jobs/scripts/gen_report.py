@@ -14,16 +14,20 @@ output path / Triage Batch pointer use the FULL project-relative convention.
 Usage:
     gen_report.py --worklist /tmp/triage_worklist_YYYY-MM-DD.json \
                   --results  /tmp/triage_results_YYYY-MM-DD.json \
-                  [--out JobPostings/_meta/triage_YYYY-MM-DD.md] \
+                  [--out <unique-report-path>] \
                   [--project-root <abs path>]
 """
 import argparse
 import datetime as _dt
 import json
 import os
+import sys
 
 PROJECT_ROOT = os.environ.get("SYNC_JOBS_ROOT", "")
 VERDICT_ORDER = ["Pursue", "Maybe", "Discarded", "Saved"]
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from private_files import publish_private_file  # noqa: E402
 
 
 def load(path):
@@ -36,6 +40,21 @@ def md_cell(value):
     return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip()
 
 
+def value_text(value):
+    """Keep meaningful zero/false values visible and distinguish blanks."""
+    if value is None:
+        return "NOT RECORDED"
+    if isinstance(value, str) and not value.strip():
+        return "(blank)"
+    return str(value)
+
+
+def cell_field(cells, key, label):
+    if key not in cells:
+        return None
+    return f"**{label}:** {md_cell(value_text(cells[key]))}"
+
+
 def main(argv=None):
     today = _dt.date.today().isoformat()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -43,18 +62,20 @@ def main(argv=None):
     ap.add_argument("--results", required=True)
     ap.add_argument("--project-root", default=PROJECT_ROOT)
     ap.add_argument("--out", default=None,
-                    help="output md path (default: <root>/JobPostings/_meta/triage_<today>.md)")
+                    help="new output Markdown path (default: results report_batch path)")
     args = ap.parse_args(argv)
 
     root = os.path.abspath(args.project_root)
-    out = args.out or os.path.join(root, "JobPostings", "_meta", f"triage_{today}.md")
-    if not os.path.isabs(out):
-        out = os.path.join(root, out)
-
     wl = load(args.worklist)
     rs = load(args.results)
     results = rs.get("results", {})
-    by_id = {r["tracker_id"]: r for r in wl.get("rows", [])}
+    work_rows = wl.get("rows", [])
+    if not isinstance(results, dict) or not isinstance(work_rows, list):
+        raise SystemExit("ERROR: worklist rows and result records must be objects")
+    work_ids = [row.get("tracker_id") for row in work_rows]
+    if len(set(work_ids)) != len(work_ids) or set(work_ids) != set(results):
+        raise SystemExit("ERROR: worklist/result IDs differ or contain duplicates")
+    by_id = {row["tracker_id"]: row for row in work_rows}
 
     # A Discarded verdict creates an owner-review obligation. The detailed
     # framework trace remains in the per-role section, but the review table must
@@ -62,7 +83,8 @@ def main(argv=None):
     # do not emit a cleanup-ready report with either field missing.
     discarded_review = []
     for tid, res in results.items():
-        if res.get("verdict") != "Discarded":
+        if (res.get("verdict") != "Discarded" or res.get("assess_only")
+                or res.get("missing_jd") or res.get("held") is True):
             continue
         row = by_id.get(tid, {})
         judgment = row.get("judgment", {}) or {}
@@ -83,20 +105,35 @@ def main(argv=None):
     # ----- aggregate -----
     verdict_counts = {v: 0 for v in VERDICT_ORDER}
     track_counts = {}
+    lane_counts = {}
     for tid, res in results.items():
         verdict_counts[res["verdict"]] = verdict_counts.get(res["verdict"], 0) + 1
-        tr = (by_id.get(tid, {}).get("judgment", {}) or {}).get("track") \
-            or res.get("cells", {}).get("Track") or "—"
+        row = by_id[tid]
+        cells = res.get("cells", {}) or {}
+        tr = (row.get("judgment", {}) or {}).get("track")
+        if tr is None:
+            tr = cells.get("Track", "—")
         track_counts[tr] = track_counts.get(tr, 0) + 1
+        if "Lane" in cells:
+            lane = value_text(cells["Lane"])
+            lane_counts[lane] = lane_counts.get(lane, 0) + 1
 
     L = []
     L.append(f"# Triage — New Saved Postings — {today}")
     L.append("")
-    L.append("**Framework:** the explicitly selected profile and its hash-bound "
-             "policy. Candidate-specific rules remain in the private profile overlay.")
+    profile = rs.get("profile") or {}
+    if profile:
+        L.append("**Selected profile:** "
+                 f"{md_cell(profile.get('id') or 'NOT RECORDED')} "
+                 f"version {md_cell(profile.get('version') or 'NOT RECORDED')}; "
+                 f"policy SHA-256 `{md_cell(profile.get('policy_sha256') or 'NOT RECORDED')}`.")
+    else:
+        L.append("**Selected profile:** legacy result without profile/hash metadata.")
+    L.append("**Framework:** the selected profile policy supplied the recorded verdict "
+             "and tracker fields. Profile policy remains installation-local.")
     L.append(f"**Source worklist:** `{os.path.basename(args.worklist)}` "
              f"(selector: {wl.get('selector')}).")
-    L.append(f"**Rows triaged:** {len(results)}.")
+    L.append(f"**Rows in batch:** {len(results)}.")
     L.append("**Write mode:** Selected tracker, `Jobs` sheet, keyed by Tracker ID.")
     L.append("")
     L.append("## Batch summary")
@@ -107,7 +144,10 @@ def main(argv=None):
         if verdict_counts.get(v):
             L.append(f"| **{v}** | {verdict_counts[v]} |")
     L.append("")
-    L.append("**Track distribution:** " +
+    if lane_counts:
+        L.append("**Lane distribution:** " +
+                 (", ".join(f"{k}: {v}" for k, v in sorted(lane_counts.items())) or "—") + ".")
+    L.append("**Legacy track distribution:** " +
              (", ".join(f"{k}: {v}" for k, v in sorted(track_counts.items())) or "—") + ".")
     L.append("")
 
@@ -150,16 +190,52 @@ def main(argv=None):
             L.append(f"#### {empresa} — {puesto}  ·  `{tid}`")
             L.append(f"- **File:** `{row.get('jd_file') or '(missing JD)'}`")
             L.append(f"- **Location / Pais:** {row.get('pais') or '—'}")
-            L.append(f"- **Track:** {j.get('track') or cells.get('Track') or '—'}")
-            score = j.get("raw_fit_score")
-            L.append(f"- **Best-fit score:** {score if score is not None else 'N/A'}"
-                     f"  ·  **Band:** {res.get('band')}")
+            v5_fields = [
+                cell_field(cells, "Lane", "Lane"),
+                cell_field(cells, "Market Tier", "Market tier"),
+                cell_field(cells, "Eligibility", "Eligibility"),
+                cell_field(cells, "Priority Score", "Priority score"),
+                cell_field(cells, "Match", "Trial match"),
+            ]
+            v5_fields = [field for field in v5_fields if field is not None]
+            if v5_fields:
+                L.append("- " + " · ".join(v5_fields))
+
+            legacy_fields = []
+            track = j.get("track")
+            if track is None and "Track" in cells:
+                track = cells["Track"]
+            if track is not None:
+                legacy_fields.append(f"**Legacy track:** {md_cell(value_text(track))}")
+            fit_score = j.get("raw_fit_score")
+            if fit_score is None and "Fit Score" in cells:
+                fit_score = cells["Fit Score"]
+            if fit_score is not None or "Fit Score" in cells:
+                label = "Legacy fit score (reference)" if v5_fields else "Fit score"
+                legacy_fields.append(f"**{label}:** {md_cell(value_text(fit_score))}")
+            if "Priority" in cells:
+                label = "Legacy priority (reference)" if v5_fields else "Priority"
+                legacy_fields.append(f"**{label}:** {md_cell(value_text(cells['Priority']))}")
+            legacy = res.get("legacy") or {}
+            if "verdict" in legacy:
+                legacy_fields.append(f"**Legacy verdict (reference):** "
+                                     f"{md_cell(value_text(legacy['verdict']))}")
+            if legacy_fields:
+                L.append("- " + " · ".join(legacy_fields))
+            if res.get("band") is not None:
+                L.append(f"- **Band:** {md_cell(value_text(res['band']))}")
+            if res.get("assess_only"):
+                L.append("- **Lifecycle:** assess-only; the existing tracker lifecycle is preserved.")
+            if res.get("missing_jd"):
+                L.append("- **Triage state:** held because the job description or required evidence is missing.")
+            if res.get("held") is True:
+                L.append("- **Triage state:** held by the selected profile.")
             if j.get("uplifts"):
                 L.append(f"- **Why-pursue uplifts ({j.get('uplift_count')}):** "
                          + "; ".join(str(u) for u in j['uplifts']))
-            sp = cells.get("Sponsor Status")
+            sp = cell_field(cells, "Sponsor Status", "Sponsor Status")
             if sp:
-                L.append(f"- **Sponsor Status:** {sp}")
+                L.append(f"- {sp}")
             if j.get("triage_summary"):
                 L.append(f"- **Triage Summary:** {j['triage_summary']}")
             if j.get("decision_driver"):
@@ -172,19 +248,26 @@ def main(argv=None):
                     L.append(f"    - {rsn}")
             if res.get("flags"):
                 L.append("- **Flags:** " + "; ".join(res["flags"]))
-            L.append(f"- **Next Action:** {cells.get('Next Action') or '—'}")
+            next_action = cells.get("Next Action", "—")
+            L.append(f"- **Next Action:** {md_cell(value_text(next_action))}")
             L.append(f"- **Verdict:** **{res['verdict'].upper()}** · "
-                     f"Estatus **{cells.get('Estatus', row.get('estatus_existing') or 'Saved')}**")
+                     f"Estatus **{md_cell(value_text(cells.get('Estatus', row.get('estatus_existing') or 'Saved')))}**")
             L.append("")
 
     # ----- self-check -----
     L.append("---")
     L.append("")
     L.append("### Self-check")
-    triaged = sum(1 for r in results.values() if not r.get("missing_jd"))
-    held = sum(1 for r in results.values() if r.get("missing_jd"))
+    held_ids = [tid for tid, result in results.items()
+                if result.get("missing_jd") or result.get("assess_only")
+                or result.get("held") is True]
+    held = len(held_ids)
+    triaged = len(results) - held
     L.append(f"- Rows in worklist: {len(results)}; completed triage: {triaged}; "
-             f"held for missing JD/evidence: {held}.")
+             f"held or assess-only: {held}.")
+    if held_ids:
+        L.append("- Held/assess-only rows retained in this report: "
+                 + ", ".join(f"`{md_cell(tid)}`" for tid in sorted(held_ids)) + ".")
     L.append("- Verdict consistency is enforced by recomputing the selected "
              "profile policy before any tracker write.")
     allflags = [f"{t}: {fl}" for t, r in results.items() for fl in r.get("flags", [])]
@@ -199,9 +282,22 @@ def main(argv=None):
     L.append(f"- Triage Batch pointer written to rows: `{rs.get('report_batch')}`.")
     L.append("")
 
+    if args.out:
+        out = args.out
+    elif rs.get("report_batch"):
+        out = rs["report_batch"]
+    else:
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
+        out = os.path.join("JobPostings", "_meta", f"triage_{stamp}.md")
+    if not os.path.isabs(out):
+        out = os.path.join(root, out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(L))
+    try:
+        publish_private_file(out, "\n".join(L))
+    except FileExistsError as exc:
+        raise SystemExit(
+            f"ERROR: report output already exists; choose a new --out path or score a new batch. {exc}"
+        )
     rel = os.path.relpath(out, root)
     print(f"gen_report: wrote {out}")
     print(f"  (project-relative: {rel})")

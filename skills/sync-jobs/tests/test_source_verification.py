@@ -307,6 +307,19 @@ class SourceVerificationCLI(unittest.TestCase):
         self.assertEqual(compare_bodies("Employer body\nApply", "Employer body")["classification"], "substantive_difference")
         self.assertEqual(compare_bodies("A", "A\nHealth insurance is included")["classification"], "substantive_difference")
 
+    def test_large_difference_details_are_bounded_and_offsets_are_truthful(self):
+        result=compare_bodies("A"*4096,"B"*4096)
+        self.assertEqual(result["classification"],"substantive_difference")
+        difference=result["first_difference"]
+        self.assertEqual(difference["operation"],"replace")
+        self.assertEqual((difference["archive_offset"],difference["live_offset"]),(0,0))
+        self.assertEqual(len(difference["archive_excerpt"]),61)
+        self.assertEqual(len(difference["live_excerpt"]),61)
+        insertion=compare_bodies("same prefix","same prefix plus text")["first_difference"]
+        self.assertEqual(insertion["operation"],"insert")
+        self.assertEqual((insertion["archive_offset"],insertion["live_offset"]),(11,11))
+        self.assertNotEqual(result["archive_comparison_sha256"],result["live_comparison_sha256"])
+
 
 if __name__ == "__main__":
     unittest.main()

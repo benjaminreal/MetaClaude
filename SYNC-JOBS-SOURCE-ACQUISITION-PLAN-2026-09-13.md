@@ -5,6 +5,12 @@ Target repository: MetaClaude
 Target branch: `feat/sync-jobs-source-acquisition`
 Target skill: `skills/sync-jobs`
 
+This is the historical implementation plan. The current operating contract is
+in `skills/sync-jobs/SKILL.md` and its linked references. The October remediation
+adds safe file handling, bounded source processing, and compatibility with
+newer private-profile result formats. Public-engine promotion and installation
+remain separate from development validation.
+
 ## Objective
 
 Make `sync-jobs` able to acquire, validate, archive, sync, and optionally triage owner-selected job postings from LinkedIn, direct employer pages, applicant-tracking systems, Indeed, and unfamiliar third-party job boards without forcing non-LinkedIn vacancies into LinkedIn identity fields.
@@ -101,7 +107,9 @@ Default order for an owner-selected posting URL:
 4. Public HTML main-content extraction.
 5. An authorized user-visible browser surface selected for the current environment.
 6. Another authorized browser surface when the first cannot produce complete evidence.
-7. Owner-supplied HTML, PDF, or text artifact.
+7. Owner-supplied HTML or UTF-8 text/Markdown artifact. PDF extraction is not
+   implemented by the retained-artifact route; convert and verify text in a
+   separately authorized workflow before submitting supported evidence.
 8. Structured unresolved failure.
 
 Exceptions and boundaries:

@@ -27,7 +27,7 @@ The ingest path reuses write_tracker.py's safety contract verbatim:
 
 Usage:
     sync_ingest.py diff   --saved-json saved_SAVED.json saved_INPROGRESS.json \
-                          --out /tmp/sync_new_YYYY-MM-DD.json
+                          [--out /path/to/new-output.json]
     sync_ingest.py ingest --jobs-json /tmp/jobs_full_YYYY-MM-DD.json \
                           [--saved-json saved_*.json]   # enables reconciliation
                           [--dry-run]
@@ -46,7 +46,7 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
+import stat
 import sys
 
 import hashlib
@@ -60,6 +60,8 @@ from record_fields import description_value, normalize_description
 from acquisition_capture import RECORD_FIELDS, validate_record
 from acquisition_quality import validate_quality
 from sync_integrity import saved_records, surfaces, archived_record
+from private_files import (copy_private_file, private_run_directory,
+                           privateize_tree, publish_private_file)
 
 # --- paths (portable: resolved from this file, never hard-coded per machine) ---
 PROJECT_ROOT = os.environ.get("SYNC_JOBS_ROOT", "")
@@ -308,15 +310,16 @@ def cmd_diff(args):
         "new_ids": new_ids,
         "new_jobs": [board[j] for j in new_ids],
     }
-    with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
+    output = (Path(args.out) if args.out else
+              private_run_directory("sync-diff-") / "new_jobs.json")
+    publish_private_file(output, json.dumps(payload, indent=2, ensure_ascii=False))
 
     print(f"sync_ingest diff: board={len(board)}  canon={len(canon)}  "
           f"NEW={len(new_ids)}")
     for j in new_ids:
         b = board[j]
         print(f"  + {j} · {b['company']} · {b['role']}  [{b['status']}]")
-    print(f"  -> {args.out}")
+    print(f"  -> {output}")
     if recovery_ids:
         print("RECOVERY REQUIRED: tracker/archive mismatches:", recovery_ids)
     if not new_ids and not recovery_ids:
@@ -361,14 +364,22 @@ def write_md(rec, jid, posted, staging_dir):
     fname = f"{company}_{title}_{posted}.md"
     path = os.path.join(staging_dir, fname)
     # collision with a DIFFERENT posting -> disambiguate by id
-    if os.path.exists(path):
-        with open(path, encoding="utf-8", errors="ignore") as fh:
-            if f"/jobs/view/{jid}/" not in fh.read():
-                fname = f"{company}_{title}_{posted}_{jid}.md"
-                path = os.path.join(staging_dir, fname)
+    if os.path.lexists(path):
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError(f"archive path is not a regular file: {path}")
+            with os.fdopen(fd, "rb", closefd=False) as fh:
+                current = fh.read().decode("utf-8", errors="ignore")
+        finally:
+            os.close(fd)
+        if f"/jobs/view/{jid}/" in current:
+            raise FileExistsError(f"archive destination already exists: {path}")
+        fname = f"{company}_{title}_{posted}_{jid}.md"
+        path = os.path.join(staging_dir, fname)
     body = render_md(rec, jid, posted)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(body)
+    publish_private_file(path, body)
     return fname, path
 
 
@@ -378,10 +389,13 @@ def cmd_ingest(args):
     if args.saved_json:
         saved_records(args.saved_json)  # validate BEFORE any writes
     initial_sha = hashlib.sha256(Path(args.tracker).read_bytes()).hexdigest()
+    initial_mode = Path(args.tracker).stat().st_mode & 0o777
     jobs = [normalize_description(rec) if isinstance(rec, dict) else rec for rec in load_jobs(args.jobs_json)]
     if not jobs:
         rows,archives=surfaces(args.tracker,PROJECT_ROOT,POSTINGS_DIR)
         if set(rows)^set(archives):raise ValueError('Tracker/archive inconsistencies remain; supply recovery records')
+        if args.dry_run:
+            args.run_dir = private_run_directory("sync-ingest-", args.backup_dir)
         _reconcile_and_report(args, [], today, stamp)
         return 0
 
@@ -432,6 +446,8 @@ def cmd_ingest(args):
         if not pending:raise ValueError('No batch work performed; tracker/archive inconsistencies remain')
     if not pending:
         print("sync_ingest ingest: nothing new to write. Archive and tracker agree.")
+        if args.dry_run:
+            args.run_dir = private_run_directory("sync-ingest-", args.backup_dir)
         _reconcile_and_report(args, [], today, stamp)
         return 0
 
@@ -458,14 +474,17 @@ def cmd_ingest(args):
                 if bound.get('tracker_id')!=row['Tracker ID'] or bound.get('posting',{}).get('sha256')!=digest:
                     raise ValueError(f'Recovery source for {jid} differs from the preserved eligibility binding; manual reconciliation required before writes')
 
+    run_dir = private_run_directory("sync-ingest-", args.backup_dir)
+    args.run_dir = run_dir
+
     # ---- staging dirs (dry-run keeps the live tree + tracker untouched) ----
     if args.dry_run:
-        staging_md = os.path.join(args.backup_dir, f"sync_md_dryrun_{stamp}")
-        os.makedirs(staging_md, exist_ok=True)
+        staging_md = str(run_dir / "postings")
+        os.mkdir(staging_md, 0o700)
         # work on a /tmp copy of the tracker
         tracker_stem = Path(args.tracker).stem
-        target = os.path.join(args.backup_dir, f"{tracker_stem}.dryrun_{stamp}.xlsx")
-        shutil.copy2(args.tracker, target)
+        target = str(run_dir / f"{tracker_stem}.dryrun.xlsx")
+        copy_private_file(args.tracker, target)
         print(f"sync_ingest: DRY-RUN — .md -> {staging_md}/ , Excel -> {target}")
     else:
         staging_md = POSTINGS_DIR
@@ -474,8 +493,8 @@ def cmd_ingest(args):
 
     # ---- 1. BACKUP FIRST (always, before any tracker mutation) ----
     tracker_stem = Path(args.tracker).stem
-    backup = os.path.join(args.backup_dir, f"{tracker_stem}.backup_{stamp}.xlsx")
-    shutil.copy2(args.tracker, backup)
+    backup = str(run_dir / f"{tracker_stem}.backup.xlsx")
+    copy_private_file(args.tracker, backup)
     print(f"sync_ingest: backup -> {backup}")
 
     # ---- 2. Load tracker with formulas intact ----
@@ -497,7 +516,7 @@ def cmd_ingest(args):
     meta_dir = os.path.join(staging_md, "_meta") if args.dry_run else META_DIR
     os.makedirs(meta_dir, exist_ok=True)
     run_log = os.path.join(meta_dir, f"_sync_run_{today}.md")
-    processed = os.path.join(args.backup_dir, f"processed_ids_{today}.txt")
+    processed = str(run_dir / "processed_ids.txt")
     written = []
 
     appended = 0
@@ -601,8 +620,13 @@ def cmd_ingest(args):
                         str(comp_path), eligibility_result["status"], str(eligibility_path)))
 
         # crash-safe checkpoint after each fully-written posting
-        with open(processed, "a", encoding="utf-8") as fh:
-            fh.write(jid + "\n")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+        processed_fd = os.open(processed, flags, 0o600)
+        try:
+            os.fchmod(processed_fd, 0o600)
+            os.write(processed_fd, (jid + "\n").encode("utf-8"))
+        finally:
+            os.close(processed_fd)
 
     # ---- 6. extend the JobsTable ref to cover the new rows ----
     if pre_ref:
@@ -628,6 +652,8 @@ def cmd_ingest(args):
             if tuple(None if x=='' else x for x in a)!=tuple(None if x=='' else x for x in b):raise ValueError('Ingest cell readback failed')
         check.close()
         if hashlib.sha256(Path(args.tracker).read_bytes()).hexdigest()!=initial_sha:raise ValueError('Tracker changed concurrently; new archive files require recovery, workbook not committed')
+        if not args.dry_run:
+            os.chmod(staged, initial_mode)
         os.replace(staged,target)
     finally:
         if os.path.exists(staged):os.unlink(staged)
@@ -644,6 +670,7 @@ def cmd_ingest(args):
                 f"  - {tid} · {jid} · {co} · {role}  [{est}]  -> {md}; "
                 f"compensation={comp_status} -> {comp_path}; eligibility={eligibility_status} -> {eligibility_path}\n"
             )
+    os.chmod(run_log, 0o600)
 
     print(f"sync_ingest ingest: appended {appended} row(s), restored {len(written)-appended} existing-row archive/link(s)  "
           f"(JobsTable {pre_ref} -> {new_ref})")
@@ -690,7 +717,7 @@ def _reconcile_and_report(args, written, today, stamp):
             if str(est or "").strip().lower() == "saved" and jid not in board:
                 fyi.append((emp, pue, jid))
 
-    meta_dir = args.backup_dir if args.dry_run else META_DIR
+    meta_dir = getattr(args, "run_dir", args.backup_dir) if args.dry_run else META_DIR
     os.makedirs(meta_dir, exist_ok=True)
     report = os.path.join(meta_dir, f"_sync_run_{today}.md")
     lines = [f"\n### Final report {stamp}",
@@ -707,6 +734,9 @@ def _reconcile_and_report(args, written, today, stamp):
         lines.append("- (reconciliation skipped — pass --saved-json to enable)")
     with open(report, "a", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
+    os.chmod(report, 0o600)
+    if hasattr(args, "run_dir"):
+        privateize_tree(args.run_dir)
 
     print(f"\nRECONCILIATION (report only — board never mutated):")
     if args.saved_json:
@@ -718,7 +748,6 @@ def _reconcile_and_report(args, written, today, stamp):
 
 # --------------------------------------------------------------------------- #
 def main(argv=None):
-    today = _dt.date.today().isoformat()
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tracker", default=DEFAULT_TRACKER,
@@ -730,7 +759,8 @@ def main(argv=None):
     d = sub.add_parser("diff", help="read-only: saved-IDs JSON -> new-ID set")
     d.add_argument("--saved-json", nargs="+", required=True,
                    help="one or more saved-list JSON files (SAVED, IN_PROGRESS)")
-    d.add_argument("--out", default=f"/tmp/sync_new_{today}.json")
+    d.add_argument("--out", default=None,
+                   help="new output JSON path; existing targets are refused")
     d.set_defaults(func=cmd_diff)
 
     g = sub.add_parser("ingest", help="writes: per-job JSON -> .md + Excel rows")

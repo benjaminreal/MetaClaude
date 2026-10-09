@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import difflib
 import hashlib
 import json
 import os
@@ -652,10 +651,15 @@ def _without_recognized_ui_tail(text: str) -> tuple[str, list[str]]:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")
     removed: list[str] = []
-    # An explicit boundary permits an archive-only LinkedIn footer.  Keep the
+    # Precompute whether each suffix contains only recognized UI. This keeps
+    # repeated candidate boundaries linear in the number of lines.
+    suffix_is_ui = [True] * (len(lines) + 1)
+    for index in range(len(lines) - 1, -1, -1):
+        suffix_is_ui[index] = _is_ui_line(lines[index]) and suffix_is_ui[index + 1]
+    # An explicit boundary permits an archive-only LinkedIn footer. Keep the
     # boundary itself out of comparison only if every following line is UI.
     for index, line in enumerate(lines):
-        if line.strip() in {"---", "[LinkedIn UI]", "LinkedIn UI:"} and all(_is_ui_line(item) for item in lines[index + 1 :]):
+        if line.strip() in {"---", "[LinkedIn UI]", "LinkedIn UI:"} and suffix_is_ui[index + 1]:
             removed = lines[index:]
             return "\n".join(lines[:index]).rstrip(), removed
     # Without an explicit boundary, even a familiar word such as ``Apply``
@@ -665,19 +669,36 @@ def _without_recognized_ui_tail(text: str) -> tuple[str, list[str]]:
 
 
 def first_difference(archive: str, live: str) -> dict[str, Any] | None:
+    """Return a bounded description of the first differing prefix position.
+
+    Offsets point to the common-prefix boundary. ``operation`` describes the
+    local prefix edit: insert/delete when one body ends there, otherwise
+    replace. Excerpts retain at most 121 characters per side around that
+    boundary. The result is linear in body length and never equates unequal
+    text.
+    """
     if archive == live:
         return None
-    matcher = difflib.SequenceMatcher(a=archive, b=live, autojunk=False)
-    for tag, a_start, a_end, b_start, b_end in matcher.get_opcodes():
-        if tag != "equal":
-            return {
-                "operation": tag,
-                "archive_offset": a_start,
-                "live_offset": b_start,
-                "archive_excerpt": archive[max(0, a_start - 60) : min(len(archive), a_end + 60)],
-                "live_excerpt": live[max(0, b_start - 60) : min(len(live), b_end + 60)],
-            }
-    return None
+    offset = 0
+    limit = min(len(archive), len(live))
+    while offset < limit and archive[offset] == live[offset]:
+        offset += 1
+    if offset == len(archive) and offset < len(live):
+        operation = "insert"
+    elif offset == len(live) and offset < len(archive):
+        operation = "delete"
+    else:
+        operation = "replace"
+    excerpt_start = max(0, offset - 60)
+    archive_excerpt_end = min(len(archive), offset + 61)
+    live_excerpt_end = min(len(live), offset + 61)
+    return {
+        "operation": operation,
+        "archive_offset": offset,
+        "live_offset": offset,
+        "archive_excerpt": archive[excerpt_start:archive_excerpt_end],
+        "live_excerpt": live[excerpt_start:live_excerpt_end],
+    }
 
 
 def compare_bodies(archive_body: str, live_body: str) -> dict[str, Any]:

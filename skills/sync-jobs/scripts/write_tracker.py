@@ -4,7 +4,7 @@
 STEP 4 of the chain. Takes the results JSON from score_triage.py and writes the
 triage cells into the live tracker. Safety contract (all enforced here):
 
-  1. BACKUP FIRST — copy the tracker to a timestamped /tmp backup before any
+  1. BACKUP FIRST — copy the tracker to a private per-run backup before any
      mutation. Nothing is written until the backup exists.
   2. Load with FORMULAS INTACT (NOT data_only) so we never replace a formula
      with its cached value when saving.
@@ -40,15 +40,14 @@ results file cannot drive it through two mechanisms at once. Results files
 written before this change are unaffected.
 
 Usage:
-    write_tracker.py --results /tmp/triage_results_YYYY-MM-DD.json \
+    write_tracker.py --results /path/to/triage_results.json \
                      --tracker /path/to/jobs.xlsx
-    write_tracker.py --results ... --tracker ... --dry-run   # writes a /tmp copy
+    write_tracker.py --results ... --tracker ... --dry-run   # writes to private staging
 """
 import argparse
 import datetime as _dt
 import json
 import os
-import shutil
 import sys
 import unicodedata
 
@@ -56,6 +55,7 @@ from pathlib import Path
 import hashlib
 import tempfile
 import openpyxl
+from private_files import copy_private_file, private_run_directory, privateize_tree
 
 SHEET = "Jobs"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -141,7 +141,7 @@ def main(argv=None):
     ap.add_argument("--tracker", required=True, help="path to the selected tracker")
     ap.add_argument("--dry-run", action="store_true",
                     help="write to a /tmp copy instead of the live tracker (NOT default)")
-    ap.add_argument("--backup-dir", default="/tmp", help="directory for the safety backup")
+    ap.add_argument("--backup-dir", default="/tmp", help="parent directory for a private per-run backup folder")
     args = ap.parse_args(argv)
 
     with open(args.results, encoding="utf-8") as fh:
@@ -153,21 +153,22 @@ def main(argv=None):
         sys.exit(f"ERROR: tracker not found: {args.tracker}")
 
     initial_sha = hashlib.sha256(Path(args.tracker).read_bytes()).hexdigest()
+    initial_mode = Path(args.tracker).stat().st_mode & 0o777
     batch = data.get("report_batch", "")
     comment_prefix = data.get("comment_prefix", "Triage v2")
     today = _dt.date.today().isoformat()
 
     # ----- 1. BACKUP FIRST (before any mutation) -----
-    stamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
+    run_dir = private_run_directory("triage-write-", args.backup_dir)
     tracker_stem = Path(args.tracker).stem
-    backup = os.path.join(args.backup_dir, f"{tracker_stem}.backup_{stamp}.xlsx")
-    shutil.copy2(args.tracker, backup)
+    backup = str(run_dir / f"{tracker_stem}.backup.xlsx")
+    copy_private_file(args.tracker, backup)
     print(f"write_tracker: backup -> {backup}")
 
     # Where do we actually save?  Live by default; /tmp copy on --dry-run.
     if args.dry_run:
-        target = os.path.join(args.backup_dir, f"{tracker_stem}.dryrun_{stamp}.xlsx")
-        shutil.copy2(args.tracker, target)
+        target = str(run_dir / f"{tracker_stem}.dryrun.xlsx")
+        copy_private_file(args.tracker, target)
         print(f"write_tracker: DRY-RUN — writing to {target} (live tracker untouched)")
     else:
         target = args.tracker
@@ -314,11 +315,14 @@ def main(argv=None):
         check.close()
         if hashlib.sha256(Path(args.tracker).read_bytes()).hexdigest()!=initial_sha:
             raise ValueError('Tracker changed during write; staged batch not committed')
+        if not args.dry_run:
+            os.chmod(staged, initial_mode)
         os.replace(staged,target)
     finally:
         if os.path.exists(staged):os.unlink(staged)
 
     # ----- Per-cell change summary -----
+    privateize_tree(run_dir)
     print(f"write_tracker: {len(changes)} cell change(s), {noop} no-op(s), "
           f"{len(skipped_formula)} formula-skip(s).")
     for tid, header, old, new in changes:
