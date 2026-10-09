@@ -21,8 +21,14 @@ def saved_records(paths):
         count=data.get('count');total=data.get('total')
         if type(count)!=int or type(total)!=int or count!=len(jobs) or total<count:
             raise ValueError(f'{path}: invalid counts')
-        if total!=count:
-            raise ValueError(f'{path}: incomplete index (reported={total}, retrieved={count})')
+        gap=total-count
+        # LinkedIn's SAVED total is advisory and can exceed the unique jobs
+        # returned. Accept that surplus only after successful observed pagination
+        # exhaustion; an arbitrary short fetch is not evidence of completeness.
+        if gap>0 and data.get('card')=='SAVED' and data.get('pagination_complete') is True and data.get('termination') in {'total_reached','empty_page'}:
+            print(f'INDEX NOTICE: {path}: LinkedIn SAVED reported-total surplus +{gap} accepted after completed pagination (reported={total}, unique_retrieved={count})')
+        elif gap!=0:
+            raise ValueError(f'{path}: incomplete index (reported={total}, retrieved={count}); a reported-total surplus requires completed SAVED pagination')
         if data.get('pagination_complete') is False or data.get('termination') in {'error','guard_limit','unknown'}:
             raise ValueError(f'{path}: pagination did not complete')
         records.extend(jobs)

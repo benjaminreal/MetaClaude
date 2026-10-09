@@ -64,6 +64,10 @@ from _cell_append import (SEP_LINE, SEP_PARAGRAPH, AppendError,  # noqa: E402
 from excel_literal import normalize_literal_text, write_literal_text  # noqa: E402
 
 COMMENTS_HEADER = "Comentarios"
+# Rows in these Estatus values never change Estatus or Next Action through this
+# writer, whatever the selected profile returns (engine-level guard).
+LIFECYCLE_LOCKED = frozenset({"duplicate"})
+LIFECYCLE_HEADERS = frozenset({"Estatus", "Next Action"})
 
 # BossHunt state is owned by the dedicated, selector-bound successor pipeline.
 # This generic Jobs-sheet writer must never project that state.  Normalize case,
@@ -211,6 +215,16 @@ def main(argv=None):
             cell=ws.cell(id_to_row[tid],hdr[header]+1)
             if is_formula(cell.value) and cell.value!=value:
                 sys.exit(f"ERROR: intended write targets protected formula {tid}/{header}; batch aborted")
+        # A Duplicate row keeps its lifecycle whatever the profile decides:
+        # a re-triage must never revive it.
+        if "Estatus" in hdr:
+            current=ws.cell(id_to_row[tid],hdr["Estatus"]+1).value
+            if str(current or "").strip().casefold() in LIFECYCLE_LOCKED:
+                for header in LIFECYCLE_HEADERS & set(res.get('cells',{})):
+                    if res['cells'][header]!=ws.cell(id_to_row[tid],hdr[header]+1).value:
+                        sys.exit(f"ERROR: intended write changes {header} on {current} row {tid}; batch aborted")
+                for header in LIFECYCLE_HEADERS & set(res.get('append',{}) or {}):
+                    sys.exit(f"ERROR: intended append changes {header} on {current} row {tid}; batch aborted")
 
     changes = []        # (tid, header, old, new)
     skipped_formula = []  # (tid, header)

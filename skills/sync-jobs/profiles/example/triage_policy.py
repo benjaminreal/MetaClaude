@@ -26,7 +26,7 @@ def derive(entry, today, batch_path):
     tracker_id = entry["tracker_id"]
     judgment = entry.get("judgment") or {}
     existing_status = str(entry.get("estatus_existing") or "").strip()
-    assess_only = bool(entry.get("assess_only")) or existing_status.casefold() in ADVANCED
+    assess_only = bool(entry.get("assess_only")) or existing_status.casefold() in ADVANCED | {"duplicate"}
     flags = []
 
     if entry.get("missing_jd"):

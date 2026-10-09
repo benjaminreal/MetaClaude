@@ -14,14 +14,16 @@ class Repairs(unittest.TestCase):
  setUp=fixture.Workflow.setUp
  tearDown=fixture.Workflow.tearDown
  runstage=fixture.Workflow.runstage
- def test_saved_count_mismatch_is_rejected(self):
+ def test_saved_reported_total_surplus_requires_completion(self):
   data=json.loads(self.saved.read_text());data.update(total=3,card='SAVED',pagination_complete=True,termination='empty_page');self.saved.write_text(json.dumps(data))
-  before=digest(self.tracker)
+  self.runstage('diff','--saved-json',self.saved,'--out',self.root/'diff.json')
+  data['total']=4;self.saved.write_text(json.dumps(data));self.runstage('diff','--saved-json',self.saved,'--out',self.root/'gap2.json')
+  data['pagination_complete']=False;self.saved.write_text(json.dumps(data));before=digest(self.tracker)
   for cmd,extras in [('diff',['--out',self.root/'bad.json']),('reconcile',['--out-dir',self.root/'report']),('ingest',['--jobs-json',self.jobs])]:
    self.runstage(cmd,'--saved-json',self.saved,*extras,commit=cmd=='ingest',ok=False)
   self.assertEqual(digest(self.tracker),before)
-  data.update(error='HTTP 500');self.saved.write_text(json.dumps(data));self.runstage('diff','--saved-json',self.saved,'--out',self.root/'error.json',ok=False)
-  data.update(error=None,total=4);self.saved.write_text(json.dumps(data));self.runstage('diff','--saved-json',self.saved,'--out',self.root/'gap.json',ok=False)
+  data.update(pagination_complete=True,error='HTTP 500');self.saved.write_text(json.dumps(data));self.runstage('diff','--saved-json',self.saved,'--out',self.root/'error.json',ok=False)
+  data.update(error=None,card='IN_PROGRESS');self.saved.write_text(json.dumps(data));self.runstage('diff','--saved-json',self.saved,'--out',self.root/'in-progress-gap.json',ok=False)
  def test_archive_only_recovery_preserves_bytes(self):
   p=self.root/'JobPostings/postings/orphan.md';p.write_text('# Original archived role\nCompany: Archive Company\nLocation: Example location\nPosted: 2030-01\nSource: https://www.linkedin.com/jobs/view/200/\n\n## About the Job\nThe original full job description.\n');before=digest(p);tracker_before=digest(self.tracker)
   self.runstage('ingest','--jobs-json',self.jobs);self.assertEqual(digest(self.tracker),tracker_before);self.assertEqual(digest(p),before)
@@ -59,6 +61,16 @@ class Repairs(unittest.TestCase):
   before=digest(self.tracker)
   with self.assertRaises(SystemExit):main(['--tracker',str(self.tracker),'--results',str(out),'--backup-dir',str(self.root)])
   self.assertEqual(digest(self.tracker),before)
+ def test_writer_never_changes_duplicate_lifecycle(self):
+  from write_tracker import main
+  wb=openpyxl.load_workbook(self.tracker);wb['Jobs'].cell(2,6).value='Duplicate';wb.save(self.tracker);wb.close()
+  for name,res in [('estatus',{'cells':{'Estatus':'Maybe'}}),('next',{'cells':{'Next Action':'Review'}}),('append',{'append':{'Next Action':'Review'}})]:
+   out=self.root/f'dup_{name}.json';out.write_text(json.dumps({'results':{'J-000001':res}}));before=digest(self.tracker)
+   with self.assertRaises(SystemExit):main(['--tracker',str(self.tracker),'--results',str(out),'--backup-dir',str(self.root)])
+   self.assertEqual(digest(self.tracker),before)
+  out=self.root/'dup_ok.json';out.write_text(json.dumps({'results':{'J-000001':{'cells':{'Estatus':'Duplicate','Triage Summary':'Refreshed'}}}}))
+  main(['--tracker',str(self.tracker),'--results',str(out),'--backup-dir',str(self.root)])
+  wb=openpyxl.load_workbook(self.tracker);ws=wb['Jobs'];self.assertEqual((ws.cell(2,6).value,ws.cell(2,7).value,ws.cell(2,17).value),('Duplicate','Watch reply','Refreshed'));wb.close()
  def test_documented_duplicate_keeps_history(self):
   from sync_integrity import surfaces
   wb=openpyxl.load_workbook(self.tracker);ws=wb['Jobs'];values=[c.value for c in ws[2]];values[0]='J-000002';values[5]='Duplicate';values[9]='DUPLICATE of J-000001 (kept, Applied)';ws.append(values);wb.save(self.tracker);wb.close()

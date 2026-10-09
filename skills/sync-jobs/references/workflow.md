@@ -68,10 +68,12 @@ Ingest recomputes the capture and quality contracts for every description it wou
 The tracker and archive are checked separately. Diff reports recovery IDs; archive-only records can supply metadata for a missing row without rewriting their bytes. Tracker-only records retain their Tracker ID, status and other cells when the missing JD is restored. A blank JD link may be repaired. Ambiguous sources or conflict with a preserved compensation-source binding stop the batch before writes. Recovery of records outside the input batch is reported explicitly, not silently treated as complete. Empty-input runs cannot claim consistency when mismatches remain.
 
 Saved indexes require count, total, error and jobs. Count mismatches or
-incomplete pagination block diff, ingest and reconciliation. Ingest checks the
+incomplete pagination block diff, ingest and reconciliation, except a logged
+SAVED reported-total surplus after completed pagination (see the
+[LinkedIn adapter](linkedin_adapter.md)). Ingest checks the
 index before any writes.
 
-Triage preflights every result ID and requested header before changing cells, rejects missing/duplicate IDs, saves to a temporary workbook, verifies the saved cells and checks the original workbook has not changed before replacing it. Formula targets are protected; an intended replacement of a formula blocks the write instead of reporting partial success.
+Triage preflights every result ID and requested header before changing cells, rejects missing/duplicate IDs, saves to a temporary workbook, verifies the saved cells and checks the original workbook has not changed before replacing it. Formula targets are protected; an intended replacement of a formula blocks the write instead of reporting partial success. Rows whose Estatus is Duplicate are lifecycle-locked: the worklist marks them assess-only, and the writer aborts the batch if any result would change or append to their Estatus or Next Action, whatever the profile returns.
 # Eligibility evidence
 
 New or recovered-description ingest writes a hash-bound eligibility sidecar alongside compensation. Worklists reference it without filling `Sponsor Status`; missing historical evidence stays non-blocking. See [eligibility evidence](eligibility_evidence.md). Authorized description refresh uses an explicit three-file V2 transaction, while legacy V1 authorization remains two-file only.

@@ -16,7 +16,12 @@ requests.
 Visit each explicitly requested card and paginate or scroll with visible UI
 controls until the surface provides an independently verifiable terminal
 state. Require exact `count == total`, complete pagination and unique numeric
-job IDs before making a complete-index claim. A guard limit, count mismatch,
+job IDs before making a complete-index claim. One exception: LinkedIn's SAVED
+total is advisory and may exceed the unique jobs shown. Accept that positive
+surplus only with `error` null, `card` SAVED, `pagination_complete` true and
+`termination` `total_reached` or `empty_page`, and log the exact gap. It never
+covers IN_PROGRESS, a retrieved count above the total, or incomplete
+pagination. A guard limit, any other count mismatch,
 empty result inconsistent with the visible board, missing metadata or a
 virtualized list whose unseen entries cannot be enumerated is incomplete and
 blocks sync. Save normalized records through `acquire-save`; do not save

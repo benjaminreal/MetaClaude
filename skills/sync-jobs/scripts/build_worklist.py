@@ -70,6 +70,8 @@ JUDGMENT_TEMPLATE = {}
 # --include-statuses, it is triaged ASSESS-ONLY: scores/summary refresh, but
 # Estatus and Next Action are preserved. score_triage enforces this.
 ADVANCED = {"applied", "in-progress", "interview", "offer"}
+# Duplicate rows are not advanced, but are never revived either: assess-only.
+LIFECYCLE_LOCKED = {"duplicate"}
 
 
 def header_index(ws):
@@ -165,7 +167,7 @@ def main(argv=None):
         is_extra = estatus in include_statuses
         if not (is_queue or is_extra):
             continue
-        assess_only = estatus.lower() in ADVANCED
+        assess_only = estatus.lower() in ADVANCED | LIFECYCLE_LOCKED
 
         jd_rel = r[iJD] if r[iJD] not in (None, "") else None
         jd_abs = None
