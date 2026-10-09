@@ -1,0 +1,119 @@
+{
+  "baseline_revision": "e954663",
+  "skills": {
+    "newbeginning": {
+      "current": {
+        "instruction_bytes_loaded": 22192,
+        "body_characters": 22008,
+        "body_words": 3376,
+        "body_lines": 297
+      },
+      "slim": {
+        "instruction_bytes_loaded": 10739,
+        "body_characters": 10713,
+        "body_words": 1549,
+        "body_lines": 227
+      },
+      "instruction_byte_reduction": 0.5160868781542898,
+      "current_legacy_invariants": {
+        "brief_cap": true,
+        "task_provenance": true,
+        "write_boundary": false,
+        "bootstrap": true,
+        "reconstruction": true,
+        "latest_next": true,
+        "openbrain_approval": true,
+        "stop_after_brief": true
+      },
+      "slim_legacy_invariants": {
+        "brief_cap": true,
+        "task_provenance": true,
+        "write_boundary": true,
+        "bootstrap": true,
+        "reconstruction": true,
+        "latest_next": true,
+        "openbrain_approval": true,
+        "stop_after_brief": true
+      },
+      "slim_vnext_invariants": {
+        "brief_cap": true,
+        "current_or_degraded_tasks": true,
+        "write_boundary": true,
+        "bootstrap_recovery": true,
+        "reconstruction_recovery": true,
+        "conflict_stop": true,
+        "bounded_projection": true,
+        "instruction_resolution": true,
+        "stop_after_brief": true,
+        "pending_candidate_quality": true
+      },
+      "regressions": [],
+      "missing_slim_legacy_invariants": [],
+      "missing_slim_vnext_invariants": [],
+      "non_inferior": true
+    },
+    "closingtime": {
+      "current": {
+        "instruction_bytes_loaded": 30770,
+        "body_characters": 30552,
+        "body_words": 4583,
+        "body_lines": 417
+      },
+      "slim": {
+        "instruction_bytes_loaded": 13646,
+        "body_characters": 13610,
+        "body_words": 1924,
+        "body_lines": 314
+      },
+      "instruction_byte_reduction": 0.5565160870978225,
+      "current_legacy_invariants": {
+        "draft_before_write": true,
+        "approval_before_mutation": true,
+        "task_source": true,
+        "task_verification": true,
+        "pending_before_review": true,
+        "openbrain_approval": true,
+        "entry_template": true,
+        "index_limits": true,
+        "skip_paths": false,
+        "interrupted_next": true,
+        "closing_ritual": true,
+        "candidate_language": true
+      },
+      "slim_legacy_invariants": {
+        "draft_before_write": true,
+        "approval_before_mutation": true,
+        "task_source": true,
+        "task_verification": true,
+        "pending_before_review": true,
+        "openbrain_approval": true,
+        "entry_template": true,
+        "index_limits": true,
+        "skip_paths": true,
+        "interrupted_next": true,
+        "closing_ritual": true,
+        "candidate_language": true
+      },
+      "slim_vnext_invariants": {
+        "draft_before_write": true,
+        "itemized_approval": true,
+        "receipt_validation": true,
+        "collision_safe_append": true,
+        "journal_and_audit": true,
+        "mutation_readback": true,
+        "pending_before_review": true,
+        "explicit_skips": true,
+        "interruption_truth": true,
+        "receipt_ritual": true,
+        "instruction_resolution": true,
+        "candidate_quality": true
+      },
+      "regressions": [],
+      "missing_slim_legacy_invariants": [],
+      "missing_slim_vnext_invariants": [],
+      "non_inferior": true
+    }
+  },
+  "non_inferior": true,
+  "limitation": "Static instruction-presence predicates, not fresh model behavioral evidence."
+}

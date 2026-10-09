@@ -1,7 +1,8 @@
 ---
 name: newbeginning
-description: "Session-opening brief for multi-session projects. Reads existing project notes (or bootstraps them on a fresh project), queries the Supabase Tasks DB for current tasks, and delivers a concise status brief: project state, last session's 'Next' items, top active tasks, blockers, and task flags. Hands off with options to pick up, adjust priorities, focus elsewhere, or review pending learnings. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — invoke that instead when wrapping up a session."
-version: 1.1.0
+description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
+metadata:
+  version: "2.0.3"
 ---
 
 # newbeginning
@@ -9,256 +10,230 @@ version: 1.1.0
 > *"Every new beginning comes from some other beginning's end."*
 > — Semisonic, 1998
 
-Session-opening companion to `closingtime`. Loads the minimum context needed to resume work, briefs the user, and gets out of the way.
-
----
+Resume an ongoing project from bounded, evidence-backed continuity state. Brief
+the user, offer one hand-off question, then stop.
 
 ## 1. Purpose & Scope
 
-**Purpose:** Resume work on an ongoing multi-session project quickly — load just enough narrative context to remember where things stand, then query the Supabase `Tasks` database for current task state. Designed to pair with `closingtime`, which writes the project notes and task changes this skill reads.
+Use this skill to orient at session start or whenever the user asks where the
+project stands. Read narrative state from project notes and task state from a
+current Tasks DB receipt. The live `task_urgency` table is authoritative for
+task state. Never infer a live task claim from memory or the Markdown mirror.
 
-**Why not just ask the model?** Without structured notes, the model must scan the project from scratch — listing files, reading source code, checking git history — to reconstruct context. That costs thousands of tokens, fills the context window with noise, and produces guesses instead of a curated handoff. This skill reads ~400 words of pre-written notes and delivers a brief in ≤ 2.5K tokens total (reads + output), keeping the context window clean for actual work.
+Permitted writes are limited to:
 
-**Does:**
-- Brief the user on current project state from notes left by the previous session plus `task_urgency`: one-line summary, last session's "Next" items, top active tasks, blockers, flagged tasks, and review-due tasks
-- If Open Brain is in use and the prior `closingtime` left pending insights for review, surface them and save the ones the user approves. Open Brain by Nathe B. Jones is an optional learning-capture tool integrated via MCP (https://github.com/NatheBJ/open-brain)
+- an explicitly approved `RECOVERY_BOOTSTRAP` or `RECOVERY_RECONSTRUCT` index;
+- an explicitly approved post-brief Tasks DB task creation;
+- approved Open Brain captures during pending-learning review.
 
-**Does NOT:**
-- Replace `closingtime` — it doesn't log sessions, doesn't update narrative project state after the hand-off, doesn't extract learnings from this session. (Light task updates in the Supabase Tasks DB during the opening hand-off — e.g., reprioritizing a task at user request — are part of opening.)
-- Read the full session history — only the last two entries
-- Pick the next task or start working on it — briefs and stops; the user drives the next action
-- Require Open Brain — it's an optional integration; the brief works fine without it
+Do not log the session, rewrite routine narrative state, select a task for the
+user, or begin executing the hand-off. Those belong to `closingtime` or the
+user's next instruction.
 
-**Use closingtime instead when:** wrapping up a session, logging what happened, extracting learnings, or updating project state.
+### Runtime resources
 
-### Section Transfer Certification
-[Section 1 certified — 2026-07-05 — competent user can: know how to call up the skill, understand when to use it and when not]
+- Run deterministic local work through `scripts/runtime_cli.py`.
+- Read `references/runtime_contract.md` when building or diagnosing an evidence
+  envelope.
+- Read `references/task_operations.md` only when querying or changing tasks.
+- Read `references/candidate_quality_contract.md` only when pending-learning
+  review or wording revision is selected.
 
----
+Keep scratch envelopes and returned-row files outside the repository working
+tree. If the helper is unavailable, name that degraded state; do not claim its
+projection, validation, or conflict checks ran.
 
 ## 2. Pre-flight Checklist
 
-Before reading anything, confirm:
-
-1. **Workspace root identified.** Project notes live at workspace root. If invoked from a subdir or worktree, walk up to the actual project root (containing `project_index.md`, or git root). If neither exists, use the current directory and proceed to cold-start (Step 1).
-2. **Right project.** If the workspace holds multiple project subfolders, or the user juggles several from one shell, confirm which to brief before reading.
-3. **Brief depth.** Default: full brief — one-line summary, last session's `Next:`, top 3 DB-ranked tasks, blockers, and task flags. If the user asked for "just the tasks" or "30-second version," scope down.
-4. **Open Brain availability** *(if `pending_learnings.md` exists)*. Check the tool list for `capture_thought`. Yes → surface in Step 2. No → don't read; tell the user *"You have pending learnings from previous sessions, but I don't see Open Brain access to save them."*
-5. **Cold-start intent** *(if no project notes exist)*. Confirm before bootstrap (Step 1a). Workspace has prior content (defined in Step 1a) → scan + interview combined to fill gaps. Empty workspace → interview only. Skipping is valid; `closingtime` will capture at session end.
-6. **Closingtime sibling available.** Check available-skills for `closingtime`. Absent and detectable → append install pointer at brief end (Step 5). Undetectable → proceed silently.
-7. **Tasks DB availability.** Check whether the `supabase` MCP is available for the `Tasks` project. Yes → query `task_urgency` via `execute_sql`. No → warn: *"Tasks DB isn't available in this harness. I'll use project notes and any frozen markdown TODO mirror as read-only context, but task state may be stale because the DB is authoritative."*
-
-### Section Transfer Certification
-[Section 2 certified — 2026-07-05 — competent user can: understand what are the conditions the skill needs to run]
----
+1. **Resolve workspace and scope.** Walk to the project root containing the
+   continuity files or git root. At a portfolio root, confirm project versus
+   cross-project scope before reading project notes.
+2. **Resolve instructions (`INSTRUCTION_RESOLUTION`).** Check, in order:
+   - instruction files at the project root — use them;
+   - instruction files in ancestor directories — resolve and read them
+     explicitly; do not assume the harness walks ancestors;
+   - no instruction file — state `instructions_absent` and continue.
+   If resolved task-tracking instructions conflict, enter `conflicted` and stop.
+3. **Observe capabilities.** Local capabilities are booleans:
+   `shell_available`, `git_available`, `temporary_workspace_available`, and
+   `parallel_read_only_available`. `tasks_mcp` and `open_brain` are each one of:
+   `absent`, `present_unauthenticated`, `present_wrong_scope`, or `working`.
+   Only a successful read in this invocation establishes `working`.
+4. **Confirm brief depth.** Default to project state, latest `Next:`, top three
+   tasks, blockers/flags, and one hand-off question. Honor a shorter request.
+5. **Check sibling availability.** If `closingtime` is detectably absent, add one
+   install pointer after the brief. Do not turn this into setup work.
 
 ## 3. Core Workflow
 
-### Step 1: Locate files
+### `OBSERVATION_GATE` — snapshot and branch
 
-Look at workspace root for `project_index.md`, `project_session.md`, `pending_learnings.md`.
+Run `snapshot <workspace-root>`. Treat its projection, hashes, filename
+resolution, parse warnings, and sync-conflict list as local evidence. Detect one
+branch:
 
-**Filename resolution:** If the exact filename isn't found, check case variants (`Project_Index.md`, `Project_Session.md`, etc.) and common alternatives (`project.md`, `session_log.md`). Use whatever exists; don't create duplicates.
+| Branch | Observed state | Action |
+|---|---|---|
+| `N-normal` | index and session log present | Continue to evidence collection |
+| `N-index-only` | index only | Brief and name absent session history |
+| `RECOVERY_RECONSTRUCT` | session log only | Draft an index, approve, write, verify, recapture |
+| `RECOVERY_BOOTSTRAP` | neither file | Confirm location; scan content or interview; approve, write, verify, recapture |
+| `N-conflicted` | parse contradiction or sync conflict | Stop; surface exact conflict; require separate reconciliation approval |
 
-Branch:
-- **Both project files present** → Step 2.
-- **Only `project_session.md`** (history but no current state) → reconstruct a draft `project_index.md` from the last 5–10 session entries (Summary from recent "Done" + "Decisions"; Key Files from `git log` and file mentions). Confirm with user, write it. Tasks still come from the DB. Continue to Step 2.
-- **Only `project_index.md`** → continue to Step 2.
-- **Neither present** → Step 1a (cold-start), then jump to Step 5.
+#### `RECOVERY_RECONSTRUCT`
 
-### Step 1a: Cold-start bootstrap *(only when no notes exist)*
+Use the most recent five to ten entries plus observed git/file evidence to draft
+`project_index.md`. Preserve unknown people or purpose fields as unknown. Show
+the entire proposed file and obtain explicit approval before writing. Verify
+the saved content, then run a fresh snapshot before continuing.
 
-Pre-flight item 5 already confirmed user opt-in.
+#### `RECOVERY_BOOTSTRAP`
 
-**Workspace has prior content** (git repo with ≥1 commit, a `README`, or ≥3 source files):
-1. Scan: `git log --oneline -20`, head of `README.md`, top-level files (`ls`), language manifest (`package.json`, `pyproject.toml`, etc.) if present.
-2. Draft `project_index.md` — Project Name from repo or README, Summary from README intro, Key Files from observation, leave People blank.
-3. Ask the user to fill gaps and confirm: name, people, anything missing from the summary.
-4. Write the final file with user-confirmed content.
+If the workspace has a commit, README, or at least three source files, scan
+those bounded signals and draft the index; ask the user to confirm name, people,
+and purpose. If the workspace is empty, confirm it is the intended directory and
+interview only. Write a minimal English `project_index.md` after approval,
+verify it, and report that Session #1 will be logged by `closingtime`.
 
-**Workspace is empty** (none of the above):
-1. Confirm: *"This directory looks empty — is this the right place for the project?"* If no, ask the user to navigate elsewhere and re-invoke. If yes, continue.
-2. Ask: project name, people involved, one-line purpose.
-3. Write a minimal `project_index.md`.
+### Task evidence and envelope validation
 
-Cold-start files are written in English by default. If the user requests another language, follow their preference.
+If `tasks_mcp` is available, read `references/task_operations.md`, run the
+appropriate current slice, save returned rows in scratch, and create a current
+receipt. If it is non-working, create a named unavailable receipt and say:
 
-**After bootstrap:** tell the user *"Project notes set up. Session #1 will log when you run `closingtime` at the end."* Skip Steps 2–4. Go to Step 5.
+- `absent`: "Tasks DB isn't available in this harness."
+- `present_unauthenticated`: "The Tasks DB is present but not authorized —
+  authorize it, then re-run."
+- `present_wrong_scope`: "The Supabase server is authorized for a different
+  project — reconfigure the scope."
 
-### Step 2: Read project files
+In every non-working state, treat frozen markdown TODOs as read-only, possibly
+stale context. Never call them current or authoritative.
 
-- `project_index.md` → read in full (designed under 400 words plus any read-only task mirror; primary narrative context load). Use Summary, Key Decisions, Key Files, and Updated. Treat `## Active TODOs` as a DB mirror only.
-- `project_session.md` → read only the **last 2 entries**. Use `tail` or partial-read; don't load the whole file. Skip if absent.
-- Supabase `task_urgency` → query current tasks for the project unless the invocation is at a portfolio/root level or the user asks for cross-project scope.
+Assemble the scratch evidence envelope with no mutation scope for a routine
+opening. Run `validate`. A failed envelope cannot support the brief: fix the
+input once, otherwise name the failure and degrade or stop according to its
+code. A sync conflict always stops.
 
-Project query:
+### Opening projection and brief
 
-```sql
-select id, urgency, priority, project, title, flagged, due, review_on, status
-from task_urgency
-where status = 'open' and project = $1
-order by (coalesce(flagged, false) or coalesce(review_on <= current_date, false)) desc,
-         urgency desc,
-         priority asc nulls last,
-         created_at asc
-limit 8;
-```
+Use only the validated bounded projection:
 
-Portfolio or user-requested cross-project query:
+| Measure | Bound |
+|---|---:|
+| Project index | Full index within the helper projection |
+| Session log | Last two entries |
+| Project task slice | 8 rows |
+| Portfolio task slice | 20 rows |
+| `projection_bytes_emitted` | 16,384 bytes |
+| `brief_words` | 250 words |
 
-```sql
-select id, urgency, priority, project, title, flagged, due, review_on, status
-from task_urgency
-where status = 'open'
-order by urgency desc, priority asc nulls last, created_at asc
-limit 20;
-```
+The brief contains:
 
-If `supabase` is unavailable, do not treat markdown TODOs as authoritative. Read any `## Active TODOs` block only as a frozen mirror and say the DB-backed task brief is unavailable.
+1. one sentence on current project state;
+2. **Last session's `Next:`** when present;
+3. the top three current tasks with priorities only when a current receipt
+   exists;
+4. blockers, flagged/review-due work, dates, and a gap over fourteen days;
+5. the provenance/degraded state and honest gaps;
+6. one question offering pick up, create a task, or focus elsewhere; add
+   pending-learning review only when the file exists and Open Brain is working.
 
-### Step 3: Brief the user
+Do not begin a task after emitting the brief.
 
-Concise, scannable. ≤ 250 words:
+### Allowed post-brief actions
 
-- **One sentence:** project state (from index Summary).
-- **Last session's `Next:`** — today's starting point. (Skip if no session history.)
-- **Top 3 active tasks** from `task_urgency` with priority labels and short IDs if useful.
-- **Flagged:** blockers from the last session, DB flagged/review-due tasks, due dates, and time elapsed if it's been a while.
+For task creation, itemize the intended DB mutation, obtain explicit
+approval, place that M3 scope and approval in a fresh envelope, and run
+`validate` before the write. Use `returning`, rerun the current slice, and show
+the verified result. Do not edit the Markdown task mirror.
 
-End with options. Default: *"Ready to pick up, want to adjust priorities first, or focus on something else?"* If `pending_learnings.md` exists and Open Brain is available, include a fourth option: *"...or review the N pending learnings from last session?"*
-
-### Step 4: Post-brief actions *(only if user picked option 2 or 4 from Step 3)*
-
-**If "adjust priorities first":** Walk the user through what to reprioritize, park, cancel, or mark done. Write approved task changes to the Supabase Tasks DB, not to markdown TODOs. Re-display the updated DB task list before continuing to Step 5.
-
-```sql
--- Reprioritize or flag a task.
-update tasks
-set priority = $2, flagged = $3, updated_at = now()
-where id = $1
-returning id, project, title, priority, flagged;
-
--- Complete a task.
-update tasks
-set status = 'done', completed_at = now(), updated_at = now()
-where id = $1
-returning id, project, title, status, completed_at;
-
--- Park a task until a review date.
-update tasks
-set status = 'parked', review_on = $2, updated_at = now()
-where id = $1
-returning id, project, title, status, review_on;
-```
-
-**If "review pending learnings"** *(also requires `pending_learnings.md` exists AND Open Brain available)***:** Follow `closingtime` Step 4 (search connections, suggest types, save with explicit user approval, delete the file). If the user says "later" or "skip" partway through, leave remaining items untouched. Don't silently delete.
-
-### Step 5: Hand off
-
-The brief (and any pending review) is the deliverable. Don't pre-emptively start working on the top task; the user drives the next action.
-
-If pre-flight item 6 flagged `closingtime` as absent: append once after the brief — *"FYI: `closingtime` isn't installed in this harness. You'll need it to log sessions. Install: https://github.com/benjaminreal/MetaClaude#install"*
-
-<!-- TODO: update install URL once v2.0 closingtime + v1.0 newbeginning ship as GitHub Releases. Likely target: a release-assets page or the README's #install anchor (which itself may need a refresh). -->
-
-### Section Transfer Certification
-[Section 3 certified — 2026-07-05 — competent user can: understand what are the steps in the flow and what each does, kickoff a new session]
-
----
+For pending-learning review, use the shared `PENDING_LEARNING_LIFECYCLE`:
+search each candidate or record the named unavailable state, present wording,
+capture only approved items, and delete or retain the pending file according to
+the user's explicit disposition. Read and apply
+`references/candidate_quality_contract.md` before presenting or revising a
+candidate and again after owner edits; show the complete repaired wording and
+obtain fresh approval before capture. Language precedence is explicit user
+preference, then the dominant session language when it is English or Spanish,
+then English. Never cite `closingtime` by step number.
 
 ## 4. Harness Adaptations
 
-The skill's contract is: read project notes and deliver a brief. Everything else is optional and degrades cleanly. The harness exposes what it has; this skill works with whatever it gets.
+**Required:** file reading and conversation. If file reading is unavailable,
+ask the user to paste the index and last two session entries and label the local
+snapshot helper unavailable.
 
-**Required:**
-- **Read files.** If unavailable, ask the user to paste `project_index.md` and the last 2 entries of `project_session.md`; brief from the paste.
-- **Converse with the user.** To deliver the brief and resolve hand-off options.
+**Optional capabilities:**
 
-**Optional capabilities (graceful degradation):**
-
-| Capability | Used by | If missing |
+| Capability | Working path | Degraded path |
 |---|---|---|
-| Write / Edit files | Cold-start (Step 1a), index reconstruction (Step 1) | Output the proposed file content as text; ask user to save it manually |
-| `supabase` MCP (`execute_sql`) | Reading current tasks from `task_urgency`; optional hand-off task updates | Warn; read frozen markdown TODOs only as degraded context, never as writable state |
-| Shell access (`git log`, `ls`, `tail`) | Cold-start scan (Step 1a), efficient tail-reads (Step 2) | Read whole files; ask user to summarize repo structure during cold-start |
-| Tool-list introspection | Open Brain check (Pre-flight 4) | Assume Open Brain unavailable; tell user pending learnings will wait |
-| Skill-list introspection | Closingtime check (Pre-flight 6) | Skip the install pointer; assume `closingtime` is present |
-| Transcript / session-log access | Optional enrichment (corroborate last session's "Done") | Trust the project notes as the source of truth |
+| Bundled Python runtime | Snapshot, projection, envelope validation | Name helper unavailable; do not claim its checks |
+| Git | Adds head/dirty evidence | `git_available: false`; continue |
+| Tasks MCP | Current tasks and approved creation | Named four-state warning; frozen mirror only |
+| Open Brain | Review and capture approved pending items | Do not read pending content; say it must wait |
+| Parallel reads | Gather independent M0 evidence concurrently | Sequential reads are equivalent |
 
-**Path-selection preference:** prefer the most efficient available — `tail` over read-whole-file, `Read` with offset over loading the full file, native skill-list introspection over filesystem checks.
-
-**Unknown harness fallback:** assume all optional capabilities present, try them, degrade on first error. Tell the user when something didn't work.
-
-### Section Transfer Certification
-[Section 4 certified — 2026-07-05 — competent user can: understand what are the capabilities needed in his harness of choice]
-
----
+No model-name branch may change evidence, approval, or mutation rules.
 
 ## 5. Decision Rules
 
-Cross-cutting rules not bound to a single step. (Per-step branches and conditional firing live in Sections 2 and 3.)
-
 | Situation | Action |
 |---|---|
-| User says "skip" any step | Respect it. The skill serves the user, not its process. |
-| Long gap since last session (>14 days, by `Updated:` field or git timestamps) | Note elapsed time in the brief; suggest a task/decision staleness check before the user dives in. |
-| User invokes mid-session ("remind me where we are" rather than actual opening) | Brief anyway — same skill works mid-flow. |
-| User picks "adjust priorities first" from the hand-off | Permitted task update in the Supabase Tasks DB — the only state write newbeginning makes outside cold-start/index reconstruction. After persisting, re-query tasks and return to the brief's hand-off. |
-| User picks "focus on something else" from the hand-off | Step out cleanly. Don't push toward the top task; don't re-offer the brief. The skill's job is done. |
-| `project_index.md` and the DB disagree on tasks | Trust the DB; mention that the markdown TODO block is only a frozen/read-only mirror and can be refreshed at next `closingtime`. |
-| `project_index.md` and `project_session.md` disagree on narrative state | Trust the session log (chronological truth); flag the drift to the user; offer to reconcile at next `closingtime`. |
-| Invoked at portfolio/root level | Use the cross-project `task_urgency` top slice instead of a project-only query, after confirming the workspace really is portfolio/root scope. |
-| Cold-start scan finds conflicting signal (repo name ≠ README title ≠ user expectation) | Surface the conflict during the gap-fill interview; let the user choose. Don't pick. |
-
-### Section Transfer Certification
-[Section 5 certified — 2026-07-05 — competent user can: understand how the skill will behave in special cases]
-
----
+| User says skip | Acknowledge and omit that optional path |
+| Index and DB task mirror disagree | Current DB receipt wins; mirror remains read-only |
+| Index and session narrative disagree | Enter `conflicted`; do not auto-reconcile |
+| Long gap | Suggest a staleness check before execution |
+| Mid-session status request | Brief normally, then stop |
+| User chooses another focus | Step aside without re-offering the top task |
+| Invocation is interrupted | Claim only validated observations; name missing evidence |
 
 ## 6. Eval Criteria
 
-Three lenses. Different failure modes get different responses.
+- `OBSERVATION_GATE` passed or an exact degraded/conflicted state is named.
+- Recovery writes were drafted, explicitly approved, and read back before a
+  new snapshot.
+- Every authoritative task claim traces to a current receipt whose returned-row
+  fingerprint validates.
+- The brief is at most 250 words, surfaces `Next:`, names gaps, and ends with one
+  hand-off question.
+- The skill stops after the brief unless the user chooses an allowed action.
+- `instruction_bytes_loaded`, `projection_bytes_emitted`, and `brief_words` are
+  reported in release evidence; total-token guesses are not a gate.
+- `project_index.md`, `project_session.md`, and `pending_learnings.md` remain
+  byte-format compatible with v1 readers.
+- Pending-learning wording reviewed in this skill follows the candidate-quality
+  contract and is never silently changed after approval.
 
-**Output quality** (does the brief look right?)
-- **Snappy:** brief ≤ 250 words; total reads + brief ≤ 2.5K tokens. Section 1's "feel instant" is the goal; these are the proxies.
-- **`Next:` surfaced:** the last session's `Next:` field is named explicitly in the brief — it's the handoff, and burying it defeats the file format's design.
-- **Honest about gaps:** if `Next:` was empty, blockers absent, or session history thin, the brief says so. Don't paper over.
-- **No fabrication:** every narrative claim traces back to a line in the files, and every task claim traces back to `task_urgency` unless the brief explicitly says the DB is unavailable.
-
-**Workflow correctness** (did the right path fire?)
-- **Right Step 1 branch:** the branch taken matches observed file state (both / session-only / index-only / neither).
-- **Edits gated:** any write to `project_index.md` happened only during cold-start (Step 1a) or index reconstruction; any task write happened only during "adjust priorities" and used the Tasks DB.
-- **Conditionals respected:** Open Brain unavailable → no read of `pending_learnings.md`, no review option offered. Closingtime sibling absent → install pointer appended at hand-off.
-- **Hand-off as single question:** the 3-or-4 post-brief options were offered together, not stacked.
-- **Brief, then stop:** the skill doesn't begin executing the top task unless the user explicitly says go.
-
-**Failure response**
-- **Restart the brief** on fabrication or boundary violations (wrote state outside permitted moments, fabricated a task, claimed something the files or DB don't support).
-- **Patch in place** on length, pacing, or wording — trim a sentence; don't redo the whole brief.
-
-### Section Transfer Certification
-[Section 6 certified — 2026-07-05 — competent user can: understand when the skill has achieved or failed a run in 3 specific contexts]
----
+On fabrication, unapproved mutation, or provenance failure, restart from
+`OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
 
-**v1.1.0 — 2026-07-05**
-- Migrated task sourcing from per-project markdown TODO blocks to the Supabase `Tasks` database, using `task_urgency` for project briefs.
-- Added project-only default task query with flagged/review-due tasks surfaced first, plus a cross-project query for portfolio/root invocations or explicit user requests.
-- Changed "adjust priorities" from a markdown edit to an approved Tasks DB update.
-- Added graceful degradation when the `supabase` MCP is unavailable: warn, read frozen markdown TODOs only as context, and never write stale task state.
+**v2.0.3 — 2026-10-08 — candidate**
 
-**v1.0.1 — 2026-05-05**
-- **Small corrections to the documentation:** making sure a new user understand how to use the skill.
-- **Section Transfer Certifications added** to Sections 1–7, asserting each section is executable by a competent external user without needing to ask the LLM for clarification.
-- **Open Brain defined inline** at first mention (Section 1) so users without the framework context aren't blocked.
+- Shared append now requires the session filename in approved M2 scope; first-close audit needs no historical policy.
+- Prior preflights remain evidence for earlier package hashes.
 
-**v1.0.0 — 2026-05-01**
-- **Initial release.** Extracted from `closingtime` v1.0's `newbeginning` mode. Triggers narrowed to opening-only phrases; closing delegated to sibling `closingtime` v2.0+.
-- **Cold-start bootstrap (Step 1a):** newbeginning can initialize a `project_index.md` on a project that's never used these skills — scan + interview when the workspace has prior content, interview-only when empty.
-- **Index reconstruction:** when only `project_session.md` exists, newbeginning reconstructs a draft index from the last 5–10 entries.
-- **Optional integrations gated:** Open Brain (`capture_thought`) checked before reading `pending_learnings.md`; sibling `closingtime` checked at hand-off and install pointer appended if absent.
-- **Hand-off as a single question:** brief closes with 3–4 options (pick up / adjust priorities / focus elsewhere / review pending learnings). "Adjust priorities" is the only edit newbeginning makes outside cold-start.
-- **Capability-based harness adaptation:** the skill enumerates capabilities and degradation rules rather than naming specific products.
+**v2.0.2 — 2026-10-08 — candidate**
 
-[Section 7 certified — 2026-07-05 — competent user can: identify what changed between versions and decide whether to upgrade]
+- Preserved creation-only task guidance and reserved-ID retry protection during package regeneration.
+- Earlier validation hashes and transfer certificates do not certify this package.
+
+**v2.0.1 — 2026-08-25 — candidate**
+
+- Added the progressively loaded bilingual candidate-quality contract to
+  pending-learning review and owner-edit handling.
+
+**v2.0.0 — 2026-08-05 — candidate**
+
+- Replaced model-authored file scanning with the bounded snapshot/projection
+  helper and validated evidence envelope.
+- Added explicit bootstrap, reconstruction, and conflicted branches.
+- Added four-state external capabilities and three-case instruction resolution.
+- Moved schemas, SQL, hashing, and long rationale into bundled scripts and
+  progressive-disclosure references.
+- Preserved the v1 continuity-file formats and all eleven trigger semantics.
+
+Earlier releases remain in git and GitHub Releases for rollback. This candidate
+is canonical source only; deployment waits for Phases 4 and 5.

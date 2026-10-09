@@ -1,34 +1,5 @@
 #!/usr/bin/env python3
-"""Structural eval for the newbeginning skill.
-
-Runs deterministic checks on the skill's source file.
-Exit code 0 = all pass, 1 = one or more failures.
-
-What this covers
-----------------
-- Frontmatter: name, description, version fields present and well-formed.
-- 7-part section structure: all expected numbered sections present.
-- Sibling skill reference: closingtime mentioned as the paired skill.
-- Trigger phrases: the MUST-trigger list in the description matches documented
-  triggers in the body text.
-- Token target: the ≤2.5K token budget is documented.
-- Cold-start branch: Step 1a exists and describes the bootstrap path.
-- Permitted-edit carve-out: the write boundary is explicitly stated.
-- Tasks DB contract: task_urgency reads and DB-backed priority adjustment are documented.
-- Harness adaptations table: Required/Optional capability structure present.
-
-What this does NOT cover
-------------------------
-- Whether the skill produces good briefs (that's the Eval Criteria section's job).
-- Whether the skill triggers on realistic prompts (non-deterministic).
-- Whether an actual model follows the workflow correctly (behavioral, not structural).
-
-Run from the skill root:
-    python evals/structural_eval.py
-
-Or from anywhere:
-    python path/to/skills/newbeginning/evals/structural_eval.py
-"""
+"""Structural and packaging eval for the newbeginning vNext candidate."""
 
 from __future__ import annotations
 
@@ -36,311 +7,171 @@ import re
 import sys
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-SKILL_MD = SKILL_ROOT / "SKILL.md"
 
-EXPECTED_SECTIONS = [
-    "1. Purpose & Scope",
-    "2. Pre-flight Checklist",
-    "3. Core Workflow",
-    "4. Harness Adaptations",
-    "5. Decision Rules",
-    "6. Eval Criteria",
-    "7. Version & Changelog",
-]
-
+ROOT = Path(__file__).resolve().parent.parent
+SKILL = ROOT / "SKILL.md"
 EXPECTED_TRIGGERS = {
-    "newbeginning",
-    "new beginning",
-    "where did we leave off",
-    "what were we working on",
-    "pick up where we left off",
-    "catch me up",
-    "start session",
-    "open session",
-    "resume work",
-    "whats the status",
+    "newbeginning", "new beginning", "where did we leave off",
+    "what were we working on", "pick up where we left off", "catch me up",
+    "start session", "open session", "resume work", "whats the status",
     "brief me on this project",
 }
+SECTIONS = (
+    "1. Purpose & Scope", "2. Pre-flight Checklist", "3. Core Workflow",
+    "4. Harness Adaptations", "5. Decision Rules", "6. Eval Criteria",
+    "7. Version & Changelog",
+)
 
 
-def read(path: Path) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"Required file not found: {path}")
-    return path.read_text(encoding="utf-8")
+def text() -> str:
+    return SKILL.read_text(encoding="utf-8")
 
 
-def extract_frontmatter(text: str) -> dict[str, str]:
-    if not text.startswith("---"):
+def frontmatter(source: str) -> dict[str, str]:
+    end = source.find("\n---", 3)
+    if not source.startswith("---") or end < 0:
         return {}
-    end = text.find("\n---", 3)
-    if end == -1:
-        return {}
-    block = text[3:end].strip("\n")
-    result: dict[str, str] = {}
-    for line in block.splitlines():
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        result[key.strip()] = value.strip().strip('"')
-    return result
+    out: dict[str, str] = {}
+    for line in source[3:end].strip().splitlines():
+        if ":" in line:
+            key, _, value = line.partition(":")
+            out[key.strip()] = value.strip().strip('"')
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Checks
-# ---------------------------------------------------------------------------
-
-
-def check_frontmatter_completeness() -> list[str]:
-    """Frontmatter must contain name, description, and version fields."""
+def check_frontmatter() -> list[str]:
+    source = text()
+    fm = frontmatter(source)
     issues: list[str] = []
-    text = read(SKILL_MD)
-    fm = extract_frontmatter(text)
-
-    if not fm:
-        issues.append("No YAML frontmatter found (expected --- delimited block at top)")
-        return issues
-
-    for field in ("name", "description", "version"):
-        if field not in fm:
-            issues.append(f"Frontmatter missing required field: {field}")
-        elif not fm[field]:
-            issues.append(f"Frontmatter field '{field}' is empty")
-
-    if "name" in fm and fm["name"] != "newbeginning":
-        issues.append(
-            f"Frontmatter 'name' should be 'newbeginning', got '{fm['name']}'"
-        )
-
-    if "version" in fm and fm["version"]:
-        if not re.match(r"^\d+\.\d+\.\d+$", fm["version"]):
-            issues.append(
-                f"Version '{fm['version']}' is not valid semver (expected X.Y.Z)"
-            )
-
+    if fm.get("name") != "newbeginning":
+        issues.append(f"name={fm.get('name')!r}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", fm.get("version", "")):
+        issues.append(f"invalid version={fm.get('version')!r}")
+    match = re.search(r"MUST trigger on:\s*(.+?)(?:\. Sibling|\. Sibling)", fm.get("description", ""))
+    if not match:
+        issues.append("missing MUST trigger list")
+    else:
+        got = {item.strip().strip("'\"") for item in match.group(1).split(",")}
+        if got != EXPECTED_TRIGGERS:
+            issues.append(f"trigger drift: missing={sorted(EXPECTED_TRIGGERS-got)} extra={sorted(got-EXPECTED_TRIGGERS)}")
+    if "closingtime" not in fm.get("description", ""):
+        issues.append("sibling absent from description")
     return issues
 
 
-def check_section_structure() -> list[str]:
-    """All 7 expected numbered sections must be present as ## headings."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    for section in EXPECTED_SECTIONS:
-        pattern = rf"^##\s+{re.escape(section)}\s*$"
-        if not re.search(pattern, text, re.MULTILINE):
-            issues.append(f"Missing expected section: '## {section}'")
-
-    return issues
+def check_structure() -> list[str]:
+    source = text()
+    return [name for name in SECTIONS if f"## {name}" not in source]
 
 
-def check_sibling_reference() -> list[str]:
-    """The skill must reference closingtime as its sibling."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    if "closingtime" not in text.lower():
-        issues.append("No reference to sibling skill 'closingtime' found in SKILL.md")
-        return issues
-
-    fm = extract_frontmatter(text)
-    desc = fm.get("description", "")
-    if "closingtime" not in desc:
-        issues.append(
-            "Description does not mention 'closingtime' — sibling pointer "
-            "should be in the description for harness-level disambiguation"
-        )
-
-    return issues
-
-
-def check_trigger_phrases() -> list[str]:
-    """Trigger phrases in the description's MUST-trigger list should all appear
-    somewhere in the body text to confirm they're documented behavior."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-    fm = extract_frontmatter(text)
-    desc = fm.get("description", "")
-
-    must_match = re.search(r"MUST trigger on:\s*(.+?)(?:\.|Sibling)", desc)
-    if not must_match:
-        issues.append("Description missing 'MUST trigger on:' phrase list")
-        return issues
-
-    trigger_text = must_match.group(1)
-    triggers_found = {t.strip().strip("'\"") for t in trigger_text.split(",")}
-    triggers_found = {t for t in triggers_found if t}
-
-    missing_from_desc = EXPECTED_TRIGGERS - triggers_found
-    if missing_from_desc:
-        issues.append(
-            f"Expected triggers missing from description's MUST-trigger list: "
-            f"{sorted(missing_from_desc)}"
-        )
-
-    extra_in_desc = triggers_found - EXPECTED_TRIGGERS
-    if extra_in_desc:
-        issues.append(
-            f"Description lists triggers not in EXPECTED_TRIGGERS constant: "
-            f"{sorted(extra_in_desc)}. If intentional, update the constant."
-        )
-
-    return issues
-
-
-def check_token_target() -> list[str]:
-    """The skill must document its token budget (≤2.5K)."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    if "2.5K" not in text and "2500" not in text and "2,500" not in text:
-        issues.append(
-            "Token target not found. Expected '2.5K' or equivalent in the skill body "
-            "(Section 6 Eval Criteria or Section 3)."
-        )
-
-    return issues
-
-
-def check_cold_start_branch() -> list[str]:
-    """Step 1a must exist and describe the cold-start bootstrap."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    if "### Step 1a" not in text:
-        issues.append("Cold-start branch '### Step 1a' heading not found")
-        return issues
-
-    step_1a_match = re.search(
-        r"### Step 1a.*?\n(.*?)(?=\n### |\n## |\Z)", text, re.DOTALL
+def check_runtime_package() -> list[str]:
+    required = (
+        "scripts/runtime_cli.py", "scripts/helpers.py", "scripts/schemas.py",
+        "scripts/workflow.py", "references/runtime_contract.md",
+        "references/task_operations.md", "references/candidate_quality_contract.md",
     )
-    if step_1a_match:
-        body = step_1a_match.group(1)
-        if "project_index.md" not in body:
-            issues.append(
-                "Step 1a does not mention creating project_index.md — "
-                "cold-start should bootstrap this file"
-            )
-        if "interview" not in body.lower() and "ask" not in body.lower():
-            issues.append(
-                "Step 1a does not mention user interview/confirmation — "
-                "cold-start writes must be user-confirmed"
-            )
-
-    return issues
+    return [f"missing {path}" for path in required if not (ROOT / path).is_file()]
 
 
-def check_permitted_edit_carveout() -> list[str]:
-    """The skill must explicitly state its write boundaries."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    write_gate_patterns = [
-        r"permitted.edit",
-        r"only\s+write",
-        r"only\s+edit",
-        r"permitted\s+.*\s+edit",
-    ]
-
-    found = any(re.search(p, text, re.IGNORECASE) for p in write_gate_patterns)
-    if not found:
-        issues.append(
-            "No explicit write-boundary statement found. The skill should declare "
-            "when it's permitted to write files or task state "
-            "(cold-start/index reconstruction and DB-backed priority adjustment only)."
-        )
-
-    return issues
-
-
-def check_tasks_db_contract() -> list[str]:
-    """The skill must document task_urgency reads and DB-backed task updates."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    required_snippets = [
-        "task_urgency",
-        "where status = 'open' and project = $1",
-        "Supabase",
-        "frozen markdown TODOs",
-        "update tasks",
-    ]
-
-    for snippet in required_snippets:
-        if snippet not in text:
-            issues.append(f"Tasks DB contract missing expected snippet: {snippet}")
-
-    return issues
-
-
-def check_harness_adaptations_table() -> list[str]:
-    """Section 4 must contain a Required/Optional capabilities structure."""
-    issues: list[str] = []
-    text = read(SKILL_MD)
-
-    section_match = re.search(
-        r"## 4\. Harness Adaptations\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL
+def check_named_contract() -> list[str]:
+    source = text()
+    required = (
+        "OBSERVATION_GATE", "INSTRUCTION_RESOLUTION", "RECOVERY_BOOTSTRAP",
+        "RECOVERY_RECONSTRUCT", "N-conflicted", "PENDING_LEARNING_LIFECYCLE",
+        "scripts/runtime_cli.py", "references/runtime_contract.md",
     )
-    if not section_match:
-        issues.append("Section '## 4. Harness Adaptations' not found or empty")
-        return issues
+    return [f"missing {item}" for item in required if item not in source]
 
-    section = section_match.group(1)
 
-    if "**Required:**" not in section and "Required:" not in section:
-        issues.append("Harness Adaptations missing 'Required:' capabilities block")
-
-    if "Optional" not in section:
-        issues.append("Harness Adaptations missing 'Optional' capabilities block")
-
-    if "|" not in section:
-        issues.append(
-            "Harness Adaptations missing capability table (expected markdown table "
-            "with | delimiters)"
-        )
-
+def check_instruction_resolution() -> list[str]:
+    source = text()
+    issues: list[str] = []
+    for phrase in ("project root", "ancestor", "instructions_absent"):
+        if phrase not in source:
+            issues.append(f"instruction case absent: {phrase}")
+    if re.search(r"(?:root|project-root)\s+`(?:CLAUDE|AGENTS)\.md`", source):
+        issues.append("unconditional root instruction pointer")
+    if re.search(r"(?:closingtime|newbeginning)\s+Step\s+\d+", source):
+        issues.append("cross-skill step-number reference")
     return issues
 
 
-# ---------------------------------------------------------------------------
-# Runner
-# ---------------------------------------------------------------------------
+def check_capability_and_budget() -> list[str]:
+    source = text()
+    required = (
+        "absent", "present_unauthenticated", "present_wrong_scope", "working",
+        "instruction_bytes_loaded", "projection_bytes_emitted", "brief_words",
+        "16,384", "250 words",
+    )
+    return [f"missing {item}" for item in required if item not in source]
 
-CHECKS = [
-    ("frontmatter_completeness", check_frontmatter_completeness),
-    ("section_structure", check_section_structure),
-    ("sibling_reference", check_sibling_reference),
-    ("trigger_phrases", check_trigger_phrases),
-    ("token_target", check_token_target),
-    ("cold_start_branch", check_cold_start_branch),
-    ("permitted_edit_carveout", check_permitted_edit_carveout),
-    ("tasks_db_contract", check_tasks_db_contract),
-    ("harness_adaptations_table", check_harness_adaptations_table),
-]
+
+def check_write_and_task_boundaries() -> list[str]:
+    source = text()
+    required = (
+        "Permitted writes are limited", "explicit approval", "current receipt",
+        "frozen markdown TODOs", "references/task_operations.md",
+        "Do not edit the Markdown task mirror",
+    )
+    return [f"missing {item}" for item in required if item not in source]
+
+
+def check_compatibility_and_size() -> list[str]:
+    source = text()
+    body = source[source.find("\n---", 3) + 4 :]
+    issues: list[str] = []
+    for field in ("project_index.md", "project_session.md", "pending_learnings.md", "v1 readers"):
+        if field not in source:
+            issues.append(f"compatibility field absent: {field}")
+    if len(body.splitlines()) > 500:
+        issues.append(f"body exceeds 500 lines: {len(body.splitlines())}")
+    if re.search(r"\$\d", source):
+        issues.append("dollar-number placeholder present")
+    return issues
+
+
+def check_candidate_quality() -> list[str]:
+    source = " ".join(text().split())
+    required = (
+        "references/candidate_quality_contract.md",
+        "before presenting or revising",
+        "after owner edits",
+        "fresh approval",
+        "explicit user preference",
+        "dominant session language",
+        "English or Spanish",
+    )
+    return [f"candidate quality rule absent: {item}" for item in required if item not in source]
+
+
+CHECKS = (
+    ("frontmatter", check_frontmatter),
+    ("structure", check_structure),
+    ("runtime_package", check_runtime_package),
+    ("named_contract", check_named_contract),
+    ("instruction_resolution", check_instruction_resolution),
+    ("capability_and_budget", check_capability_and_budget),
+    ("write_and_task_boundaries", check_write_and_task_boundaries),
+    ("compatibility_and_size", check_compatibility_and_size),
+    ("candidate_quality", check_candidate_quality),
+)
 
 
 def run() -> int:
-    print(f"Structural eval: newbeginning skill at {SKILL_ROOT}\n")
-    total = len(CHECKS)
     failed: list[str] = []
-    for name, fn in CHECKS:
+    print(f"Structural eval: newbeginning at {ROOT}\n")
+    for name, check in CHECKS:
         try:
-            issues = fn()
-        except Exception as e:
-            issues = [f"check crashed: {type(e).__name__}: {e}"]
+            issues = check()
+        except Exception as exc:  # test runner must report, not crash silently
+            issues = [f"crashed: {type(exc).__name__}: {exc}"]
+        print(f"{'PASS' if not issues else 'FAIL'}  {name}")
+        for issue in issues:
+            print(f"        - {issue}")
         if issues:
-            print(f"FAIL  {name}")
-            for issue in issues:
-                print(f"        - {issue}")
             failed.append(name)
-        else:
-            print(f"PASS  {name}")
-    print()
-    if failed:
-        print(f"{len(failed)}/{total} check(s) failed: {failed}")
-        return 1
-    print(f"{total}/{total} checks passed.")
-    return 0
+    print(f"\n{len(CHECKS)-len(failed)}/{len(CHECKS)} checks passed.")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

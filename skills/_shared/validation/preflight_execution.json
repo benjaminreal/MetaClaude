@@ -1,0 +1,176 @@
+{
+  "date": "2026-10-08",
+  "candidate_commit": "110432e178cdb70038ca41886ce10dedef311cd3",
+  "candidate_manifest": "candidate_manifest.json",
+  "purpose": "Native discovery and synthetic Tasks-absent opening preflights only",
+  "approved_scope": "Candidate packages, synthetic notes, minimal harness metadata; five minutes each; subscription login; no paid API or alternate-model fallback",
+  "runs": [
+    {
+      "harness": "Codex CLI",
+      "requested_model": "gpt-6.1-sol",
+      "requested_effort": "high",
+      "subscription_login": "ChatGPT",
+      "elapsed_seconds": 57.53,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "trace_sha256": "10ecbf00704c45dc176f13ba4dc2e460e35f889b2c173d46fc766b37efdc624d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "execution_receipt_sha256": "35679f600e652c10974c0e422c6dcb32d8a70c0522442308d75c0ea780897095",
+      "outcome": "PASS_SCOPED_PREFLIGHT",
+      "native_discovery": "PASS",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "exit 0",
+      "projection_bytes": 831,
+      "envelope_validation": {
+        "exit_code": 0,
+        "valid": true,
+        "failures": []
+      },
+      "read_only_fixture": "PASS",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "model_identity_evidence": "CLI request pinned; raw trace does not echo server model identity"
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 68.15,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [
+        ".claude/skills/newbeginning/scripts/__pycache__/helpers.cpython-312.pyc",
+        ".claude/skills/newbeginning/scripts/__pycache__/schemas.cpython-312.pyc"
+      ],
+      "trace_sha256": "6af0a910487973e9d6a52a616b3a7d585d39211cfbe825d9aa65bb16339a1fe5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "execution_receipt_sha256": "8bddce0a0ed4817a982ec974b71dc68aa345aa614a535c6cbc7505d44d80777c",
+      "outcome": "INCOMPLETE_PERMISSION_BLOCK_AND_CACHE_MUTATION",
+      "native_discovery": "PASS",
+      "observed_model": "claude-opus-5-5",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "successful tool result",
+      "projection_bytes": 831,
+      "envelope_validation": "NOT RUN: scratch-writing Bash command denied",
+      "read_only_fixture": "FAIL: two new Python cache files",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "complete_opening_brief": false,
+      "subscription_overage_observed": false
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 74.4,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "scratch_hashes": {},
+      "trace_sha256": "d9b63970610016e061a04b5fadddabfd5bbcf2c18880b835a174677331e31345",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prompt_sha256": "ef15814501ddb4b5cae3d266b95322ac0b7572139e65d66d324b46348d4780f6",
+      "settings_sha256": "fe0f58ccea77272abdb1a28a16472c653939f9629dc04738872a5a63d9880e8b",
+      "preflight_only": true,
+      "outcome": "INCOMPLETE_SCRATCH_WRITE_DENIED",
+      "observed_model": "claude-opus-5-5",
+      "native_discovery": "PASS",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "successful tool result",
+      "projection_bytes": 831,
+      "envelope_validation": {
+        "exit_code": 2,
+        "error": "EINPUT: envelope file absent after Write denial",
+        "valid": false
+      },
+      "read_only_fixture": "PASS: outer before/after hashes unchanged; no cache files",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "brief_status": "Explicitly labeled unvalidated; recorded Next and unavailable Tasks surfaced",
+      "permission_denials": [
+        "Optional baseline-hashing Bash command",
+        "Write: intended scratch-envelope file"
+      ],
+      "permission_rule_status": "Cause identified locally: Write(path) rules accepted but ignored; file-writing paths require Edit(path) rules",
+      "external_model_retry": "No further model run attempted; owner-authorized local diagnosis completed and corrected rules prepared"
+    },
+    {
+      "harness": "Claude Code CLI",
+      "requested_model": "claude-opus-5-5",
+      "requested_effort": "high",
+      "subscription_login": "Max",
+      "elapsed_seconds": 65.7,
+      "timeout_seconds": 300,
+      "timed_out": false,
+      "exit_code": 0,
+      "changed_files": [],
+      "scratch_hashes": {
+        "opening_envelope.json": "1cb39dde1f1d1aef4544fe7b0c03008062ff4d78c31fb1201255e2cafbf434bb"
+      },
+      "trace_sha256": "2454229b53dfc12df821e7ea48fb39102b5ec6403b0ef90bedef8a1d670a6c11",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prompt_sha256": "67218b07b7c8801b29c12ea6dc5a1d84beb107906cba3967fe0ee3437eae0c15",
+      "settings_sha256": "e796a61979183991effa2d45a0107ba77753d30cd56cf82cc8834bb61172fdb6",
+      "preflight_only": true,
+      "outcome": "PASS_SCOPED_PREFLIGHT",
+      "observed_model": "claude-opus-5-5",
+      "native_discovery": "PASS",
+      "tasks_and_open_brain": "absent",
+      "snapshot": "successful tool result",
+      "projection_bytes": 831,
+      "envelope_validation": {
+        "valid": true,
+        "failures": []
+      },
+      "read_only_fixture": "PASS: complete outer before/after hashes unchanged; no cache files",
+      "closing_workflow_executed": false,
+      "recorded_next_executed": false,
+      "complete_opening_brief": true,
+      "permission_denials": [
+        "Optional baseline-hashing Bash command; outer manifest provides independent hash evidence"
+      ],
+      "permission_rule_status": "Edit(path) scratch grant observed allowing Write; corrected setup now works for this scoped preflight"
+    }
+  ],
+  "startup_rejection": {
+    "harness": "Codex CLI",
+    "model_request_made": false,
+    "error": "Invalid MCP transport from enabled-only overrides with ignored user config",
+    "correction": "Removed incomplete MCP overrides; user config remains ignored"
+  },
+  "trace_review": "COMPLETE: implementer inspected raw events and tool results directly; not independent certification",
+  "fresh_controlled_behavioral_validation": "NOT RUN",
+  "independent_transferability_review": "NOT RUN",
+  "production_promotion": "NOT AUTHORIZED",
+  "review_document": "preflight_review.md",
+  "local_cache_suppression_check": {
+    "check": "Explicit -B cache suppression under isolated Python",
+    "exit_code": 0,
+    "fixture_unchanged": true,
+    "cache_files": 0,
+    "external_model_called": false
+  },
+  "retest": "OWNER-APPROVED CORRECTED RUN COMPLETE, TRACE REVIEWED; scratch Write allowed and envelope valid; no fixture mutation",
+  "current_outcomes": {
+    "codex": "PASS_SCOPED_PREFLIGHT",
+    "claude": "PASS_SCOPED_PREFLIGHT"
+  },
+  "permission_diagnosis": {
+    "status": "PASS_STATIC_CONFIGURATION_CHECK",
+    "cli_version": "2.1.295",
+    "documentation": "https://code.claude.com/docs/en/permissions#read-and-edit",
+    "installed_binary_confirms_unmatched_write_path_rules": true,
+    "corrected_allow_and_deny_use_edit": true,
+    "only_write_tool_exposed_for_file_creation": true,
+    "launcher_syntax_valid": true,
+    "model_called": false,
+    "native_permission_execution": "OBSERVED: scratch Write allowed; envelope validate returned valid:true in approved corrected preflight",
+    "document": "permission_diagnosis.md"
+  }
+}

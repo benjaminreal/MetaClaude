@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "candidates": {
+    "newbeginning": {
+      "version": "2.0.3",
+      "candidate_tree_sha256": "sha256:f9283a2794342a12dbe0f2429300e46982cfadec91ff72a01d0c9d83a259e847",
+      "instruction_bytes_loaded": 10962
+    },
+    "closingtime": {
+      "version": "3.0.4",
+      "candidate_tree_sha256": "sha256:d10f5276fff830d16c9129db178b14362b05c3eec32201c7418429e0542f0b37",
+      "instruction_bytes_loaded": 13869
+    }
+  }
+}

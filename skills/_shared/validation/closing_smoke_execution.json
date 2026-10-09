@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-08",
+  "outcome": "PASS_SCOPED_CLOSING_SMOKE",
+  "candidate_manifest": {
+    "schema_version": "1.0",
+    "candidates": {
+      "newbeginning": {
+        "version": "2.0.3",
+        "candidate_tree_sha256": "sha256:f9283a2794342a12dbe0f2429300e46982cfadec91ff72a01d0c9d83a259e847",
+        "instruction_bytes_loaded": 10962
+      },
+      "closingtime": {
+        "version": "3.0.4",
+        "candidate_tree_sha256": "sha256:d10f5276fff830d16c9129db178b14362b05c3eec32201c7418429e0542f0b37",
+        "instruction_bytes_loaded": 13869
+      }
+    }
+  },
+  "provider": "OpenAI",
+  "harness": "Codex CLI",
+  "requested_model": "gpt-6.1-sol",
+  "requested_effort": "high",
+  "authentication": "ChatGPT subscription verified locally",
+  "additional_cost_budget_usd": 0,
+  "max_total_model_run_seconds": 300,
+  "total_model_run_seconds": 199.05,
+  "phase_exit_codes": {
+    "draft": 0,
+    "persist": 0
+  },
+  "preapproval_project_hashes_unchanged": true,
+  "readbacks_match_approved_proposal": true,
+  "frozen_task_mirror_unchanged": true,
+  "candidate_packages_and_instructions_unchanged": true,
+  "changed_files": [
+    "private-artifacts/session-journal/20261009T002607.442289Z-synthetic-checklist-closing-20261008-draft.json",
+    "project_index.md",
+    "project_session.md"
+  ],
+  "outer_audit": {
+    "entries": 1,
+    "journaled": 1,
+    "grandfathered": [],
+    "documented_unverified": [],
+    "unjournaled": [],
+    "orphan_records": [],
+    "grandfather_session_ceiling": 0,
+    "errors": []
+  },
+  "external_connector_calls_observed": 0,
+  "delegated_model_calls_observed": 0,
+  "setup_events": [
+    {
+      "event": "Startup config rejected before a model request",
+      "elapsed_seconds": 0.12,
+      "repair": "Removed stale enabled-only MCP overrides; matched prior successful isolated configuration"
+    },
+    {
+      "event": "Draft turn could not save scratch proposal",
+      "project_changes": false,
+      "repair": "Allowed only the already-approved external scratch directory; resumed the same synthetic session with the remaining model-run budget; exact proposal retained from structured raw tool output"
+    }
+  ],
+  "trace_hashes": {
+    "draft-trace.jsonl": "2b4f3845b780106faf243892f8b302a4057cbde969916decd38338ab7ebe5c91",
+    "persist-trace.jsonl": "fb5c79aeee65dec8e1225cd8bb6c3ff5691d0d915e2e81a89df608587202aa09",
+    "startup-rejected-draft-stderr.log": "cc173573ab555e5a3eed4e3be5b1c8aba5a60e760b5909e43802bb1e512da89e"
+  },
+  "limitations": [
+    "Synthetic first close with unavailable connectors and explicit skips only",
+    "Requested model pinned by CLI; server model identity not echoed in raw trace",
+    "Not live integration or independent transferability certification",
+    "Startup config rejection and initial scratch permission block retained; same-session continuation completed within aggregate 300-second model-run budget"
+  ],
+  "independent_transferability": "NOT RUN",
+  "production_promotion": "NOT AUTHORIZED"
+}
