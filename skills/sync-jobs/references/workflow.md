@@ -48,6 +48,11 @@ only requested columns need to exist in the selected tracker. See
 [profile compatibility and migration](profile_compatibility.md) before carrying
 an installation-local profile across an engine update.
 
+Score result and preview paths must be distinct, fresh destinations under
+existing directories and must not alias the worklist. The wrapper stages both
+outputs privately and publishes them create-only; existing files or symlinks,
+including dangling links, cause scoring to stop without replacing their targets.
+
 Unless `--report-name` is supplied, scoring creates a unique project-relative
 report-batch path. The final report uses that path when `--out` is omitted. The
 pre-write report check above uses a separate staging path. Report files are

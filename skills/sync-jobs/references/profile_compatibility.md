@@ -36,10 +36,13 @@ destination is never replaced. For a staging review, pass a new path such as
 `/tmp/run/report.md`; for another published batch, score again or provide a new
 batch name and use that same path when reporting.
 
-The selected profile creates score-result and preview files itself; their modes
-depend on its implementation. Keep these artifacts in an owner-private run
-directory when they contain personal judgments. The engine's mode-0600 report
-and workbook-backup guarantees do not certify every profile-produced file.
+The score wrapper gives the selected profile private staging paths for its
+result and preview, adds the profile binding to the staged result, then
+publishes both as mode-0600 create-only files. Choose distinct fresh paths under
+existing directories, separate from the source worklist; existing files and
+symlinks, including dangling links, are refused. Resolved destination directories
+are pinned for the scoring run, and a changed parent or a destination that
+appears during scoring stops publication.
 
 `write` rehearses by default and produces a private dry-run workbook. Use
 `--commit` only after reviewing the rehearsal for an authorized tracker update.

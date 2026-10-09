@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 
@@ -57,6 +58,102 @@ def _unique_report_name(profile):
         raise ValueError('Profile report directory must be project-relative')
     stamp = datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')
     return (reports / f'triage_{stamp}.md').as_posix()
+
+
+def _parse_score_paths(options):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--worklist', required=True)
+    parser.add_argument('--out', required=True)
+    parser.add_argument('--preview', required=True)
+    return parser.parse_known_args(options)
+
+
+def _staged_score_options(parsed, remaining, staged_out, staged_preview):
+    # Rebuild the known options so argparse abbreviations and repeated flags
+    # cannot leave a caller output path in the policy's argument list.
+    return [
+        '--worklist', parsed.worklist,
+        *remaining,
+        '--out', str(staged_out),
+        '--preview', str(staged_preview),
+    ]
+
+
+def _pin_new_score_destination(path, label):
+    requested = Path(path).expanduser()
+    if requested.name in {'', '.', '..'}:
+        raise ValueError(f'{label} destination must name a file')
+    parent = requested.parent if str(requested.parent) else Path('.')
+    resolved_parent = parent.resolve(strict=True)
+    flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0)
+    flags |= getattr(os, 'O_CLOEXEC', 0)
+    directory_fd = os.open(resolved_parent, flags)
+    if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
+        os.close(directory_fd)
+        raise NotADirectoryError(f'{label} parent is not a directory: {parent}')
+    destination = {
+        'path': requested,
+        'parent': resolved_parent,
+        'name': requested.name,
+        'fd': directory_fd,
+        'identity': (os.fstat(directory_fd).st_dev, os.fstat(directory_fd).st_ino),
+        'canonical': resolved_parent / requested.name,
+        'label': label,
+    }
+    try:
+        os.stat(destination['name'], dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return destination
+    except BaseException:
+        os.close(directory_fd)
+        raise
+    os.close(directory_fd)
+    raise FileExistsError(f'refusing existing {label} destination: {requested}')
+
+
+def _check_score_destination(destination):
+    current_parent = destination['path'].parent.resolve(strict=True)
+    current_info = os.stat(current_parent)
+    if (current_parent != destination['parent'] or
+            (current_info.st_dev, current_info.st_ino) != destination['identity']):
+        raise RuntimeError(
+            f"{destination['label']} parent changed during scoring: {destination['path']}"
+        )
+    try:
+        os.stat(destination['name'], dir_fd=destination['fd'], follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    raise FileExistsError(
+        f"{destination['label']} destination appeared during scoring: {destination['path']}"
+    )
+
+
+def _read_staged_regular_file(directory_fd, name, label):
+    try:
+        before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        raise
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError(f'scorer {label} output is not a regular file')
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+    file_fd = os.open(name, flags, dir_fd=directory_fd)
+    try:
+        opened = os.fstat(file_fd)
+        if (not stat.S_ISREG(opened.st_mode) or
+                (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)):
+            raise ValueError(f'scorer {label} output changed while being read')
+        with os.fdopen(file_fd, 'rb', closefd=False) as stream:
+            return stream.read()
+    finally:
+        os.close(file_fd)
+
+
+def _verify_score_staging_directory(path, directory_fd):
+    current = os.stat(path, follow_symlinks=False)
+    pinned = os.fstat(directory_fd)
+    if (not stat.S_ISDIR(current.st_mode) or
+            (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino)):
+        raise ValueError('scorer changed the private score staging directory')
 
 def load_profile(name):
     directory = (SKILL / 'profiles' / name).resolve()
@@ -157,21 +254,84 @@ def main(argv=None):
         module.JUDGMENT_TEMPLATE=json.loads(template_path.read_text())
         return module.main(['--tracker',str(tracker),*rest])
     if args.command=='score':
-        spec=importlib.util.spec_from_file_location('selected_profile_policy',policy_path)
-        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         score_options=list(rest)
         if not _has_report_name_option(score_options):
             try:
                 score_options.extend(['--report-name', _unique_report_name(profile)])
             except ValueError as exc:
                 ap.error(str(exc))
-        rc=module.main(score_options)
-        parsed=argparse.ArgumentParser();parsed.add_argument('--out',required=True)
-        output,_=parsed.parse_known_args(score_options)
-        path=Path(output.out);payload=json.loads(path.read_text())
-        payload['profile']={'id':profile['id'],'version':profile['version'],'policy_sha256':hashlib.sha256(policy_path.read_bytes()).hexdigest()}
-        path.write_text(json.dumps(payload,indent=2,ensure_ascii=False))
-        return rc
+        output, remaining_score_options = _parse_score_paths(score_options)
+        input_path = Path(output.worklist).expanduser().resolve(strict=False)
+        destinations = []
+        stage_directory_fd = None
+        try:
+            destinations.append(_pin_new_score_destination(output.out, 'score result'))
+            destinations.append(_pin_new_score_destination(output.preview, 'score preview'))
+            if destinations[0]['canonical'] == destinations[1]['canonical']:
+                raise ValueError('score result and preview destinations must be distinct')
+            if any(destination['canonical'] == input_path for destination in destinations):
+                raise ValueError('score outputs must not alias the source worklist')
+
+            with tempfile.TemporaryDirectory(prefix='sync-jobs-score-') as staging:
+                os.chmod(staging, 0o700)
+                staging_path = Path(staging)
+                stage_flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0)
+                stage_flags |= getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+                stage_directory_fd = os.open(staging_path, stage_flags)
+                staged_out = staging_path / 'results.json'
+                staged_preview = staging_path / 'preview.txt'
+                staged_options = _staged_score_options(
+                    output, remaining_score_options, staged_out, staged_preview
+                )
+                spec = importlib.util.spec_from_file_location(
+                    'selected_profile_policy', policy_path
+                )
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                rc = module.main(staged_options)
+
+                _verify_score_staging_directory(staging_path, stage_directory_fd)
+                try:
+                    result_bytes = _read_staged_regular_file(
+                        stage_directory_fd, 'results.json', 'result'
+                    )
+                    preview_bytes = _read_staged_regular_file(
+                        stage_directory_fd, 'preview.txt', 'preview'
+                    )
+                except FileNotFoundError:
+                    if rc not in (None, 0):
+                        return rc
+                    raise
+
+                payload = json.loads(result_bytes.decode('utf-8'))
+                payload['profile'] = {
+                    'id': profile['id'],
+                    'version': profile['version'],
+                    'policy_sha256': hashlib.sha256(policy_path.read_bytes()).hexdigest(),
+                }
+                result_bytes = json.dumps(
+                    payload, indent=2, ensure_ascii=False
+                ).encode('utf-8')
+
+                # Check both leaves after scoring before publishing either. The
+                # create-only helper repeats the check atomically at each link.
+                for destination in destinations:
+                    _check_score_destination(destination)
+                from private_files import publish_private_file
+                publish_private_file(
+                    destinations[0]['path'], result_bytes,
+                    directory_fd=destinations[0]['fd'],
+                )
+                publish_private_file(
+                    destinations[1]['path'], preview_bytes,
+                    directory_fd=destinations[1]['fd'],
+                )
+                return rc
+        finally:
+            if stage_directory_fd is not None:
+                os.close(stage_directory_fd)
+            for destination in destinations:
+                os.close(destination['fd'])
     if args.command=='write':
         checks=argparse.ArgumentParser();checks.add_argument('--results',required=True);checks.add_argument('--worklist',required=True)
         checked,writer_options=checks.parse_known_args(rest)

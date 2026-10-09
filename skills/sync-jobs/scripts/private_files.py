@@ -100,7 +100,12 @@ def _existing_target_error(parent_fd: int, name: str, target: Path) -> FileExist
     return FileExistsError(f"refusing to replace existing output: {target}")
 
 
-def publish_private_file(path: str | Path, content: str | bytes) -> Path:
+def publish_private_file(
+    path: str | Path,
+    content: str | bytes,
+    *,
+    directory_fd: int | None = None,
+) -> Path:
     """Atomically publish a new private file, refusing all existing targets.
 
     The completed 0600 temporary file is linked into place, which guarantees
@@ -114,7 +119,14 @@ def publish_private_file(path: str | Path, content: str | bytes) -> Path:
     parent = target.parent if str(target.parent) else Path(".")
     dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     dir_flags |= getattr(os, "O_CLOEXEC", 0)
-    parent_fd = os.open(parent, dir_flags)
+    owns_parent_fd = directory_fd is None
+    parent_fd = os.open(parent, dir_flags) if owns_parent_fd else directory_fd
+    if parent_fd is None:  # Narrow the optional type for static analyzers.
+        raise ValueError("output directory descriptor is unavailable")
+    if not stat.S_ISDIR(os.fstat(parent_fd).st_mode):
+        if owns_parent_fd:
+            os.close(parent_fd)
+        raise NotADirectoryError(f"output directory descriptor is not a directory: {parent}")
     temp_name = f".private-output-{secrets.token_hex(12)}.tmp"
     temp_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     temp_flags |= getattr(os, "O_NOFOLLOW", 0)
@@ -147,5 +159,6 @@ def publish_private_file(path: str | Path, content: str | bytes) -> Path:
             os.unlink(temp_name, dir_fd=parent_fd)
         except FileNotFoundError:
             pass
-        os.close(parent_fd)
+        if owns_parent_fd:
+            os.close(parent_fd)
     return target

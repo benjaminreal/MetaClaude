@@ -51,3 +51,24 @@ No external extraction dependency was added.
 The public canaries in the [September receipt](release_evidence_2026-09-13.md)
 are historical. Current authenticated posting/index capture, browser fallback,
 live tracker behavior and promotion/installation remain unqualified here.
+
+## Follow-up: score output symlink protection
+
+The score wrapper now supplies isolated staging paths to the selected policy
+instead of the caller's result and preview paths. It validates staged regular
+files, adds profile metadata, then publishes to fresh destinations without
+following output symlinks. Existing and dangling links, duplicate outputs,
+worklist aliases and destinations introduced during scoring are refused.
+Resolved destination directory descriptors remain pinned during publication.
+The result and preview use the existing mode-0600 publication helper; the
+earlier scorer-file permission observation above describes the prior snapshot.
+
+The focused profile module passed 9 tests. The complete isolated Python 3.12
+suite with openpyxl 3.1.5 passed 146 tests, with zero failures, errors or skips.
+Synthetic cases preserve linked target bytes, cover output option forms and
+abbreviations, validate staging cleanup and retain normal legacy/newer scoring,
+profile binding, reports and tracker-write checks. Skill quick validation and
+the Git whitespace/error check passed. Directory replacement and the final
+publication-race interval were inspected in code rather than directly injected
+in tests. This follow-up does not change refresh journals or installation-local
+profiles and has not been installed.
