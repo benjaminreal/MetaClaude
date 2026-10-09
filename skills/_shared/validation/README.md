@@ -20,7 +20,11 @@ Any package change requires a fresh identity and eligibility decision.
 - Ignored `Write(path)` permission rules caused the Claude setup block.
   Corrected `Edit(path)` rules allowed the scratch Write in the approved run;
   explicit `-I -B` prevented cache writes. See `permission_diagnosis.md`.
-- Fresh controlled behavioral validation: NOT RUN for these hashes.
+- Full controlled behavioral matrix: NOT RUN for these hashes.
+- Focused synthetic closing smoke: PASS for these hashes; see
+  `closing_smoke_review.md` and `closing_smoke_execution.json`. Two model turns
+  completed in 199.05 seconds aggregate after local harness setup corrections.
+  This is limited behavioral evidence, not the full controlled matrix.
 - Independent transferability review: NOT RUN for these hashes.
 - Production promotion: NOT AUTHORIZED by a draft source PR.
 
@@ -35,7 +39,7 @@ See `source_review.md` for the review scope and checks.
 The owner agreed to one focused synthetic closing smoke test and an ordinary
 PR review before candidate merge. The smoke test checks draft-before-approval,
 approved local persistence, readback/audit, and an untouched frozen task mirror.
-Its exact external-model run requires separate approval. It is not live
+Its exact external-model run was separately approved and passed. It is not live
 integration testing or independent transferability certification.
 
 The larger matrix below is reserved for production promotion. It is not a

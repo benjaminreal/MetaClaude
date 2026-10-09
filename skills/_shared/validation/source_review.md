@@ -33,8 +33,8 @@ Run using the workspace `uv run` environment:
 - `python -B skills/_shared/validation/verify_candidates.py`: hashes match.
 - `git diff --check`: PASS.
 
-No further blocker was found in this review scope. The focused model closing
-test is prepared but NOT RUN and still requires specific owner authorization.
-Candidate merge readiness remains pending that result. Production installation,
+No further blocker was found in this review scope. The specifically approved
+focused model closing test passed; see `closing_smoke_review.md`. Source review
+and the agreed focused smoke test support candidate merge. Production installation,
 live Tasks/Open Brain operations, and independent transferability certification
 are outside this source review.
