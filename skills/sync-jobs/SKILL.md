@@ -2,7 +2,7 @@
 name: sync-jobs
 description: Acquire and capture owner-selected LinkedIn, employer, ATS, Indeed, or unfamiliar job-board postings; sync validated jobs into a local Excel tracker and archive; and optionally triage them with an explicitly selected candidate profile. Use for posting URLs, saved-job sync, direct-source intake, sync-plus-triage, and owner-requested archive rechecks; excludes applications, cover letters, outreach, and general job discovery.
 metadata:
-  version: "2.6.0"
+  version: "2.6.1"
 ---
 
 # Sync jobs

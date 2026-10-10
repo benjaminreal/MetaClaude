@@ -4,6 +4,15 @@ Use this provider-specific workflow only for explicit posting IDs or an
 authorized Saved/In Progress index. It does not authorize applying, saving,
 unsaving, messaging, crawling, or exporting authentication material.
 
+## Transport boundary
+
+Read LinkedIn only through user-visible pages and controls in an explicitly
+authorized browser session. This boundary also applies to posting-age and
+open/closed-status checks. Do not call LinkedIn API endpoints, including public
+guest job endpoints, or use API scripts as a fallback. An endpoint being public
+does not authorize using it. Record unavailable date or status evidence as
+unknown instead of changing transports.
+
 ## Saved and In Progress indexes
 
 Use only user-visible controls and content in an explicitly authorized browser
@@ -12,6 +21,12 @@ Do not read cookies or tokens and do not call private HTTP, GraphQL or Voyager
 endpoints. A browser tool may inspect already rendered DOM when its documented
 capabilities allow that, but the DOM inspection must not issue network
 requests.
+
+Read posting dates and open/closed wording from the visible posting page. Keep
+the observed wording and observation time; a displayed refresh or repost date
+does not by itself establish a new hiring process. Board membership alone does
+not establish that a posting is open. Candidate-specific freshness calculations
+remain in the selected private profile.
 
 Visit each explicitly requested card and paginate or scroll with visible UI
 controls until the surface provides an independently verifiable terminal
