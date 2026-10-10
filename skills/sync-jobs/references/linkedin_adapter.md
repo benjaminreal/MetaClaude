@@ -34,13 +34,41 @@ state. Require exact `count == total`, complete pagination and unique numeric
 job IDs before making a complete-index claim. One exception: LinkedIn's SAVED
 total is advisory and may exceed the unique jobs shown. Accept that positive
 surplus only with `error` null, `card` SAVED, `pagination_complete` true and
-`termination` `total_reached` or `empty_page`, and log the exact gap. It never
+`termination` `total_reached`, `empty_page`, or a validated `last_page`, and log the exact gap. It never
 covers IN_PROGRESS, a retrieved count above the total, or incomplete
 pagination. A guard limit, any other count mismatch,
 empty result inconsistent with the visible board, missing metadata or a
 virtualized list whose unseen entries cannot be enumerated is incomplete and
 blocks sync. Save normalized records through `acquire-save`; do not save
 browser storage or raw account-state exports.
+
+For a populated last UI page with no enabled Next control, retain the actual
+`termination: "last_page"` and a `pagination_evidence` array. Each item records
+the selected `page` number, `visible_pages` from the pagination controls,
+`reported_total`, numeric string `job_ids` from all rendered posting cards,
+and `next_control` (`enabled`, `disabled`, or `absent`). Retain the underlying
+rendered page observations in the private run evidence. For example:
+
+```json
+{
+  "card": "SAVED", "count": 2, "total": 3, "error": null,
+  "pagination_complete": true, "termination": "last_page",
+  "jobs": [{"id": "1111111111"}, {"id": "2222222222"}],
+  "pagination_evidence": [
+    {"page": 1, "visible_pages": [1, 2], "reported_total": 3,
+     "job_ids": ["1111111111"], "next_control": "enabled"},
+    {"page": 2, "visible_pages": [1, 2], "reported_total": 3,
+     "job_ids": ["2222222222"], "next_control": "absent"}
+  ]
+}
+```
+
+The validator requires consecutive pages starting at 1, a stable total,
+unique IDs covering the index exactly, an enabled Next control on every
+intermediate page, and an absent or disabled Next control on the final page
+whose highest visible page number is selected. This validation also applies
+when `count == total`. A terminal label alone, skipped pages, changing totals,
+or duplicate page IDs block the index. An empty ending uses `empty_page`.
 
 ## Selected-ID capture
 

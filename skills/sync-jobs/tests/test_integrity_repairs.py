@@ -30,6 +30,21 @@ class Repairs(unittest.TestCase):
   self.runstage('ingest','--jobs-json',self.jobs,commit=True);self.assertEqual(digest(p),before)
   wb=openpyxl.load_workbook(self.tracker);self.assertEqual(wb['Jobs'].cell(3,3).value,'Original archived role');self.assertEqual(wb['Jobs'].cell(3,8).value,'JobPostings/postings/orphan.md');wb.close()
   after=digest(self.tracker);self.runstage('ingest','--jobs-json',self.jobs,commit=True);self.assertEqual(digest(self.tracker),after)
+ def test_terminal_page_evidence_gates_diff_reconcile_and_ingest(self):
+  data=json.loads(self.saved.read_text());ids=[str(j['id']) for j in data['jobs']]
+  data.update(total=len(ids)+1,card='SAVED',pagination_complete=True,termination='last_page',pagination_evidence=[{'page':1,'visible_pages':[1],'reported_total':len(ids)+1,'job_ids':ids,'next_control':'absent'}])
+  self.saved.write_text(json.dumps(data))
+  before=digest(self.tracker)
+  self.runstage('diff','--saved-json',self.saved,'--out',self.root/'terminal-diff.json')
+  self.runstage('reconcile','--saved-json',self.saved,'--out-dir',self.root/'terminal-report')
+  self.runstage('ingest','--jobs-json',self.jobs,'--saved-json',self.saved)
+  self.assertEqual(digest(self.tracker),before)
+  data['pagination_evidence'][0]['next_control']='enabled';self.saved.write_text(json.dumps(data))
+  for cmd,extras in [('diff',['--out',self.root/'bad-terminal.json']),('reconcile',['--out-dir',self.root/'bad-terminal-report']),('ingest',['--jobs-json',self.jobs])]:
+   self.runstage(cmd,'--saved-json',self.saved,*extras,commit=cmd=='ingest',ok=False)
+  self.assertEqual(digest(self.tracker),before)
+  self.assertFalse((self.root/'bad-terminal.json').exists())
+  self.assertEqual(list((self.root/'bad-terminal-report').glob('*')),[])
  def test_tracker_only_recovery_preserves_identity_lifecycle(self):
   self.runstage('ingest','--jobs-json',self.jobs,commit=True)
   wb=openpyxl.load_workbook(self.tracker);ws=wb['Jobs'];ws.cell(3,6).value='Applied';ws.cell(3,7).value='Watch reply';link=ws.cell(3,8).value;wb.save(self.tracker);before=[c.value for c in ws[3]];wb.close()

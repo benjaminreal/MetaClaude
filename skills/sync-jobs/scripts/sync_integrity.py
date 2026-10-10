@@ -7,6 +7,37 @@ import openpyxl
 
 ID = re.compile(r'/jobs/view/(\d+)')
 
+def validate_last_page(data, path):
+    """Check a populated terminal UI page without trusting its label alone."""
+    if data.get('card') != 'SAVED' or data.get('pagination_complete') is not True:
+        raise ValueError(f'{path}: last_page requires completed SAVED pagination')
+    pages = data.get('pagination_evidence')
+    if not isinstance(pages, list) or not pages:
+        raise ValueError(f'{path}: last_page requires per-page pagination evidence')
+    observed_ids = []
+    for number, page in enumerate(pages, 1):
+        if not isinstance(page, dict) or type(page.get('page')) != int or page['page'] != number:
+            raise ValueError(f'{path}: pagination evidence must cover consecutive pages from 1')
+        visible = page.get('visible_pages')
+        if (not isinstance(visible, list) or not visible
+                or any(type(n) != int or n < 1 for n in visible)
+                or len(set(visible)) != len(visible) or number not in visible):
+            raise ValueError(f'{path}: pagination evidence lacks the selected visible page')
+        if type(page.get('reported_total')) != int or page['reported_total'] != data['total']:
+            raise ValueError(f'{path}: reported total changed during pagination')
+        ids = page.get('job_ids')
+        if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or not i.isdigit() for i in ids):
+            raise ValueError(f'{path}: populated page evidence requires numeric job IDs')
+        observed_ids.extend(ids)
+        if number < len(pages):
+            if page.get('next_control') != 'enabled':
+                raise ValueError(f'{path}: intermediate page lacks an enabled Next control')
+        elif page.get('next_control') not in ('absent', 'disabled') or max(visible) != number:
+            raise ValueError(f'{path}: final page is not a verified terminal UI page')
+    index_ids = [str(job['id']) for job in data['jobs']]
+    if len(set(observed_ids)) != len(observed_ids) or set(observed_ids) != set(index_ids):
+        raise ValueError(f'{path}: page evidence IDs must uniquely cover the index')
+
 def saved_records(paths):
     records=[]
     for path in paths or []:
@@ -21,11 +52,13 @@ def saved_records(paths):
         count=data.get('count');total=data.get('total')
         if type(count)!=int or type(total)!=int or count!=len(jobs) or total<count:
             raise ValueError(f'{path}: invalid counts')
+        if data.get('termination') == 'last_page':
+            validate_last_page(data, path)
         gap=total-count
         # LinkedIn's SAVED total is advisory and can exceed the unique jobs
         # returned. Accept that surplus only after successful observed pagination
         # exhaustion; an arbitrary short fetch is not evidence of completeness.
-        if gap>0 and data.get('card')=='SAVED' and data.get('pagination_complete') is True and data.get('termination') in {'total_reached','empty_page'}:
+        if gap>0 and data.get('card')=='SAVED' and data.get('pagination_complete') is True and data.get('termination') in {'total_reached','empty_page','last_page'}:
             print(f'INDEX NOTICE: {path}: LinkedIn SAVED reported-total surplus +{gap} accepted after completed pagination (reported={total}, unique_retrieved={count})')
         elif gap!=0:
             raise ValueError(f'{path}: incomplete index (reported={total}, retrieved={count}); a reported-total surplus requires completed SAVED pagination')
