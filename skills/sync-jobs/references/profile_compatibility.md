@@ -21,6 +21,14 @@ fresh scoring before report or write; the write gate also checks that results
 still derive from the supplied worklist. No thresholds or personal preferences
 are supplied by the public package.
 
+Review installation-local acquisition guidance during an engine update as well
+as the executable policy. Older profile summaries may still suggest LinkedIn
+API scripts or public guest endpoints for posting-date or status checks. Bring
+that guidance into line with the [LinkedIn adapter](linkedin_adapter.md): use
+visible authorized browser pages and retain unknown evidence when a page does
+not establish a fact. Keep candidate rules and historical archives intact;
+update the live private guidance separately without publishing the profile.
+
 Legacy result fields remain reportable. When newer generic fields are present,
 the report labels `Fit Score` and `Priority` as legacy references so they do not
 look like the active eligibility or priority outputs. Held and assess-only rows
