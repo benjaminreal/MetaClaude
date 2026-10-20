@@ -2,7 +2,7 @@
 name: evidence-research
 description: Answer bounded desk-research questions for decisions by reusing prior work, retrieving sources, checking important claims and synthesizing explicit limits. Use for evidence-backed comparisons, unfamiliar-topic research and source verification. Explicit multi-platform research/report consolidation and hiring-contact dossiers belong to their specialist skills; ordinary code debugging and transcription do not trigger this skill.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   status: "candidate"
 ---
 
@@ -28,8 +28,12 @@ collection, ongoing monitoring and bulk transcription need their own method.
 
 Look through supplied material and bounded relevant local indexes/reports before
 broad collection. Record which prior evidence to reuse, refresh, reject or leave
-unresolved, and why. An old recommendation is not a fresh observation. A source
-that is now inaccessible can still support a qualified historical statement.
+unresolved, and why. Before judging prior work sufficient, list the relevant
+local folders, channels or source sets that exist and record each as read or
+skipped with a reason. A prior count or claim you cannot trace stays unresolved
+until every listed set is checked; it is not thereby contradicted. An old
+recommendation is not a fresh observation. A source that is now inaccessible can
+still support a qualified historical statement.
 
 Identify the question that would change the decision and the evidence that could
 answer it. Choose the smallest useful method:

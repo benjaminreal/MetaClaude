@@ -18,7 +18,7 @@ Skills install as a folder under `~/.claude/skills/` (Claude Code) or via the **
 | [`newbeginning`](./skills/newbeginning/) | v1.0.1 | Shipped | Session-opening brief — reads `project_index.md` and the last entries of `project_session.md`, surfaces pending learnings, briefs on state and "Next" items. Pairs with `closingtime`. |
 | [`research-triangulation`](./skills/research-triangulation/) | v1.5 | Shipped | End-to-end methodology for running the same research across multiple AI platforms (Claude, Perplexity, Gemini, ChatGPT) and consolidating findings through convergence/divergence analysis. |
 | [`nate-update`](./skills/nate-update/) | v1.0 | Shipped | 7-stage resumable pipeline to sync the Nate B. Jones knowledge base — detects new Substack posts, downloads articles/transcripts/prompt kits, ingests into Open Brain. |
-| [`evidence-research`](./skills/evidence-research/) | v0.1 | Candidate | Bounded desk research for decisions — reuses prior work, checks decisive claims against sources, keeps unknowns visible, stops at explicit bounds. Offline fixtures only; live pilot pending. |
+| [`evidence-research`](./skills/evidence-research/) | v0.1.1 | Candidate | Bounded desk research for decisions — reuses prior work, checks decisive claims against sources, keeps unknowns visible, stops at explicit bounds. Offline fixtures and a two-task live pilot on Codex; cross-harness check pending. |
 
 Each skill has its own `README.md`, `SKILL.md`, and (where relevant) `BACKLOG.md` with open items and closed-decision register, plus `evals/` for regression checks.
 
