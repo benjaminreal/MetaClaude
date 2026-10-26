@@ -207,8 +207,9 @@ done <"$policy_file"
 ((${#allowed_roots[@]} > 0)) || die "local policy has no allowed_root entries"
 ((${#allowed_models[@]} > 0)) || die "local policy has no allowed_model entries"
 
-whisper_cli="$(canonical_existing_file "$whisper_cli")"
-[[ -x "$whisper_cli" ]] || die "configured whisper_cli is not executable: $whisper_cli"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+whisper_cli="$(python3 -B "$script_dir/whisper_runtime.py" --configured "$whisper_cli")" ||
+  die "no supported Whisper runtime; see version diagnostics above"
 default_model="$(canonical_existing_file "$default_model")"
 
 for index in "${!allowed_roots[@]}"; do

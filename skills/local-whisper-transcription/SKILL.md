@@ -17,7 +17,12 @@ human-verified, or publish partial inference output.
 
 ## 2. Preflight
 
-1. Run `scripts/doctor.py --json`.
+1. Run `scripts/doctor.py --json` before each job. With `whisper_cli=auto`
+   in local policy, it checks every `whisper-cli` on PATH and standard Homebrew
+   installations, verifies each CLI's `--version`, and selects the newest
+   installed stable whisper.cpp **1.9.5 or higher**. Compare versions numerically;
+   never rely on a previous session's version or a hardcoded Cellar path.
+   Older, prerelease, failed, or unknown versions cannot establish readiness.
 2. If status is `setup_required`, report the missing local dependencies and
    stop. Never install `ffmpeg`/`whisper.cpp`, download a model, or substitute a
    cloud service without explicit approval.
@@ -31,6 +36,13 @@ human-verified, or publish partial inference output.
 The inference runner uses the policy's exact `default_model`. An explicit
 `--model` is accepted only when it is already listed as `allowed_model`.
 Runtime inference never chooses or downloads a model implicitly.
+
+Use `whisper_cli=auto` to follow installed upgrades. An explicit executable
+path remains an owner-selected pin and must also pass the 1.9.5 minimum; do not
+silently bypass a pin. Both runners repeat the version check before inference
+and disclose the selected executable and version. The CPU runner defaults to
+automatic discovery; `WHISPER_CLI` is its explicit pin. Version discovery only
+runs `--version`; it never loads a model, downloads, or upgrades software.
 
 ## 3. Workflow
 
@@ -91,6 +103,7 @@ Model recommendations are advisory until policy makes them authoritative.
 | Situation | Action |
 |---|---|
 | Whisper or model absent | Diagnose and stop; do not auto-install/download |
+| No verified stable whisper.cpp at least 1.9.5 | Stop before inference; report candidates and request approval only if installation/upgrade is needed |
 | Several installed models, no policy | Rank locally installed candidates; ask the user to authorize configuration |
 | Explicit model outside policy | Stop; do not bypass model allowlisting |
 | Channel score margin below 7 | Require sample review; do not auto-select |
@@ -108,6 +121,7 @@ A run succeeds only when:
 
 - the source remains unchanged;
 - doctor status was `ready` before inference;
+- the selected executable and verified whisper.cpp version were recorded;
 - the actual model/backend and any model override are disclosed;
 - channel samples used identical inference conditions and the selection
   evidence is retained;
@@ -123,6 +137,10 @@ Restart after a boundary violation or partial-output defect. Patch readable
 transcript wording only as disclosed editorial cleanup.
 
 ## 7. Version and transfer status
+
+Version 1.3.1 adds installed-runtime discovery and a whisper.cpp 1.9.5 minimum
+shared by the doctor, configurator, and both runners. Automatic policy follows
+newer installed stable releases; explicit pins remain enforced.
 
 A competent external user can diagnose an unprepared machine, understand what
 requires approval, configure an installed model, select or review a channel,

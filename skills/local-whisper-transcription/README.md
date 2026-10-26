@@ -8,7 +8,7 @@ Sensitive recordings — client interviews, salary negotiations, medical calls �
 
 **local-whisper-transcription** makes those judgment points explicit and testable. Readiness is diagnosed before anything runs; the model and the directories it may touch are fixed by a policy file *you* write; channel choice is decided by scored evidence rather than assumption; long recordings become physical chunks with hashes and global offsets; and assembly refuses to publish until every chunk is complete. Nothing is installed, downloaded, or uploaded without your explicit approval.
 
-**Version:** 1.2.0
+**Version:** 1.3.1
 
 ---
 
@@ -32,7 +32,7 @@ cp -r skills/local-whisper-transcription .claude/skills/local-whisper-transcript
 
 ## Requirements
 
-- **whisper.cpp** — `whisper-cli` built and on your machine, plus at least one downloaded model.
+- **whisper.cpp 1.9.5 or higher** — a verified stable `whisper-cli` installed locally, plus at least one downloaded model. Automatic mode selects the newest installed version each job.
 - **ffmpeg / ffprobe** — for inspection, channel sampling, extraction, and chunking.
 - **Python 3** and **Bash**.
 - **A local policy file** — see [Setup](#setup) below. The skill will not run inference without one.
@@ -51,12 +51,18 @@ python3 skills/local-whisper-transcription/scripts/doctor.py --json
 
 # 2. Write the policy with the executable, model, and roots you approve.
 skills/local-whisper-transcription/scripts/configure_local_policy.sh \
-  --whisper-cli /absolute/path/to/whisper-cli \
+  --whisper-cli auto \
   --default-model /absolute/path/to/model.bin \
   --allow-root /absolute/path/to/project-root
 ```
 
 The doctor's model suggestion is a *candidate*, not authorization — you review it, then put your choice into policy. The configurator canonicalizes every path, requires all targets to exist, writes mode `600`, and refuses to overwrite an existing policy. Details in [`references/local-policy.md`](references/local-policy.md).
+
+`whisper_cli=auto` stays automatic across upgrades; the doctor and both runners
+verify the selected version without loading a model. An explicit executable pin
+is still supported and must meet the minimum. Old or unknown versions stop
+before inference. Discovery covers PATH and standard Homebrew locations; it
+never downloads or installs an upgrade.
 
 ---
 
@@ -121,6 +127,9 @@ python3 skills/local-whisper-transcription/evals/structural_eval.py
 
 # Runtime — 15 checks against fixtures
 python3 skills/local-whisper-transcription/evals/runtime_eval.py
+
+# Version selection and runner rejection — no model inference
+python3 skills/local-whisper-transcription/evals/version_eval.py
 ```
 
 Structural covers section structure, the Metal-optional guarantee, script executability, install/download prohibitions, policy enforcement (unsafe options rejected, out-of-policy output rejected), and the absence of owner or project paths. Runtime covers channel prepare/score/extract, chunk manifests and hashes, overlap assembly, and doctor behavior with and without policy.

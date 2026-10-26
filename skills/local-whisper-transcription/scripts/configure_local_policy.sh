@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   configure_local_policy.sh \
-    --whisper-cli FILE \
+    --whisper-cli auto|FILE \
     --default-model FILE \
     --allow-root DIR [--allow-root DIR ...] \
     [--allow-model FILE ...] \
@@ -93,8 +93,12 @@ done
 [[ -n "$default_model" ]] || die "--default-model is required"
 ((${#allowed_roots[@]} > 0)) || die "at least one --allow-root is required"
 
-whisper_cli="$(canonical_file "$whisper_cli")"
-[[ -x "$whisper_cli" ]] || die "whisper-cli is not executable: $whisper_cli"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+selected_cli="$(python3 -B "$script_dir/whisper_runtime.py" --configured "$whisper_cli")" ||
+  die "no supported Whisper runtime; see version diagnostics above"
+if [[ "$whisper_cli" != "auto" ]]; then
+  whisper_cli="$selected_cli"
+fi
 default_model="$(canonical_file "$default_model")"
 if ((${#allowed_models[@]} == 0)); then
   allowed_models=("$default_model")
