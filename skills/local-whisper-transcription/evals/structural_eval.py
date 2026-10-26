@@ -26,7 +26,10 @@ def cpu_dry_run(*extra: str) -> subprocess.CompletedProcess[str]:
         source.touch()
         model.touch()
         env = os.environ.copy()
-        env["WHISPER_CLI"] = "/usr/bin/true"
+        fake_cli = root / "whisper-cli"
+        fake_cli.write_text('#!/bin/sh\n[ "$1" = "--version" ] || exit 99\necho "whisper.cpp version: 1.9.5"\n')
+        fake_cli.chmod(0o755)
+        env["WHISPER_CLI"] = str(fake_cli)
         return subprocess.run(
             [
                 str(CPU_RUNNER),
@@ -119,11 +122,14 @@ def main() -> int:
         policy = root / "policy.conf"
         source.touch()
         model.touch()
+        fake_cli = root / "whisper-cli"
+        fake_cli.write_text('#!/bin/sh\n[ "$1" = "--version" ] || exit 99\necho "whisper.cpp version: 1.9.5"\n')
+        fake_cli.chmod(0o755)
         policy.write_text(
             "\n".join(
                 [
                     "version=1",
-                    "whisper_cli=/usr/bin/true",
+                    f"whisper_cli={fake_cli}",
                     f"default_model={model}",
                     f"allowed_root={root}",
                     f"allowed_model={model}",

@@ -12,6 +12,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from whisper_runtime import select_runtime
+
 
 SCHEMA_VERSION = 1
 MODEL_GLOBS = ("ggml-*.bin", "*.gguf")
@@ -122,9 +124,11 @@ def parse_policy(path: Path) -> tuple[dict[str, Any], list[str]]:
 
     for key in ("whisper_cli", "default_model"):
         value = policy[key]
+        if key == "whisper_cli" and value == "auto":
+            continue
         if value and not Path(value).is_file():
             errors.append(f"{key} does not exist: {value}")
-    if policy["whisper_cli"] and Path(policy["whisper_cli"]).is_file():
+    if policy["whisper_cli"] and policy["whisper_cli"] != "auto" and Path(policy["whisper_cli"]).is_file():
         if not os.access(policy["whisper_cli"], os.X_OK):
             errors.append(f"whisper_cli is not executable: {policy['whisper_cli']}")
     for value in policy["allowed_roots"]:
@@ -261,17 +265,22 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     dependencies = {}
-    for name in ("ffmpeg", "ffprobe", "whisper-cli"):
+    for name in ("ffmpeg", "ffprobe"):
         discovered = shutil.which(name)
-        if name == "whisper-cli" and policy.get("whisper_cli"):
-            configured = Path(policy["whisper_cli"])
-            if configured.is_file() and os.access(configured, os.X_OK):
-                discovered = str(configured)
         dependencies[name] = {
             "available": discovered is not None,
             "path": discovered,
             "version": tool_version(discovered, name),
         }
+
+    runtime = select_runtime(policy.get("whisper_cli") or "auto")
+    selected_runtime = runtime["selected"]
+    dependencies["whisper-cli"] = {
+        "available": selected_runtime is not None,
+        "path": selected_runtime["path"] if selected_runtime else None,
+        "version": selected_runtime["version"] if selected_runtime else None,
+        "selection": runtime,
+    }
 
     default_model = policy.get("default_model")
     installed_by_path = {model["path"]: model for model in models}
@@ -306,7 +315,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     if not dependencies["ffmpeg"]["available"] or not dependencies["ffprobe"]["available"]:
         actions.append("Install a local ffmpeg distribution that provides ffmpeg and ffprobe.")
     if not dependencies["whisper-cli"]["available"]:
-        actions.append("Install whisper.cpp locally; do not substitute a cloud transcription service.")
+        actions.append(runtime["error"] + " Review installed candidates or request approval for a local upgrade; never substitute a cloud service.")
     if not models:
         actions.append("Obtain a verified local GGML/GGUF Whisper model from a trusted distribution.")
     if policy_errors:
@@ -371,6 +380,8 @@ def print_human(report: dict[str, Any]) -> None:
     )
     for name, state in report["dependencies"].items():
         print(f"{name}: {state['path'] if state['available'] else 'missing'}")
+        if name == "whisper-cli":
+            print(f"  version: {state['version'] or 'unverified'}; mode: {state['selection']['mode']}; minimum: {state['selection']['minimum_version']}")
     policy = report["policy"]
     print(f"policy: {'valid' if policy['valid'] else 'needs setup'} ({policy['path']})")
     for error in policy["errors"]:

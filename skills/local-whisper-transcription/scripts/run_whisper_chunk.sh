@@ -104,8 +104,9 @@ done
 [[ -f "$input" ]] || die "input file not found: $input"
 [[ -f "$model" ]] || die "model file not found: $model"
 
-whisper_cli="${WHISPER_CLI:-whisper-cli}"
-command -v "$whisper_cli" >/dev/null 2>&1 || die "whisper-cli not found: $whisper_cli"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+whisper_cli="$(python3 -B "$script_dir/whisper_runtime.py" --configured "${WHISPER_CLI:-auto}")" ||
+  die "no supported Whisper runtime; see version diagnostics above"
 
 if [[ "$force" != "true" ]]; then
   for suffix in txt srt json; do

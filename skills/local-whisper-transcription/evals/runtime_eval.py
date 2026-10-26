@@ -269,11 +269,14 @@ def main() -> int:
         fake_model = root / "ggml-small.bin"
         fake_model.write_bytes(b"model")
         policy = root / "policy.conf"
+        fake_cli = root / "whisper-cli"
+        fake_cli.write_text('#!/bin/sh\n[ "$1" = "--version" ] || exit 99\necho "whisper.cpp version: 1.9.5"\n')
+        fake_cli.chmod(0o755)
         policy.write_text(
             "\n".join(
                 [
                     "version=1",
-                    "whisper_cli=/usr/bin/true",
+                    f"whisper_cli={fake_cli}",
                     f"default_model={fake_model}",
                     f"allowed_root={root}",
                     f"allowed_model={fake_model}",
