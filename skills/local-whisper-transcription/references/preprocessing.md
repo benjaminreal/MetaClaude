@@ -25,6 +25,29 @@ benchmark.
 
 ## Channel comparison
 
+The channel helpers inspect and process the first audio stream in their input.
+For a source with multiple audio streams, extract each selected stream to its
+own single-stream file first. Keep verified speaker tracks separate, record
+their source-stream identities, and use separate output directories for each
+track. Multiple streams alone do not establish separate speakers.
+
+### Speech coverage and phase cancellation
+
+Review whether channels are alternative captures of the same conversation or
+contain distinct speech, including speakers isolated to different channels in
+a single stereo stream. A high channel score does not prove speech coverage.
+Select one channel only after verifying that all needed speech is retained;
+otherwise extract and process the required channels separately within the
+approved inference scope.
+
+Before a stereo mixdown, compare `0.5*c0+0.5*c1` with `0.5*c0-0.5*c1`
+using `pan` and `volumedetect` on the same speech-bearing spans with equal
+gains. A much quieter sum is evidence of possible cancellation. This check
+does not establish speaker identity or prove that a single channel is complete.
+Even largely inverted channels can each contain unique speech. If coverage is
+uncertain, retain both channels and process them separately. A whole-recording
+average can hide cancellation in shorter spans; inspect relevant spans too.
+
 Prepare deterministic samples:
 
 ```bash
@@ -51,10 +74,11 @@ scripts/channel_compare.py score \
 
 The score weights transcript heuristics 80% and signal heuristics 20%.
 Transcript heuristics cover usable text density, lexical diversity, repeated
-trigrams, and common English/Spanish hallucination markers. Automatically
-select only when the best channel leads by at least 7 points; otherwise require
-manual review. Always spot-check names, amounts, decisions, and suspicious
-background spans.
+trigrams, and common English/Spanish hallucination markers. Select one
+alternative capture only after verifying speech coverage and when the best
+channel leads by at least 7 points; otherwise require manual review. Retain
+distinct speech in separate channel workflows regardless of the margin. Always
+spot-check names, amounts, decisions, and suspicious background spans.
 
 Extract the selected channel:
 
@@ -64,6 +88,39 @@ scripts/channel_compare.py extract \
   --channel <zero-based-channel> \
   --output <selected-mono.wav>
 ```
+
+### Source-relative timestamps
+
+Before extraction, record the original file and stream/channel identities,
+container and stream start times, time bases, and the extraction command in a
+sidecar record. Choose and record a common source time origin. Verify which
+source instant corresponds to time zero after extraction and mono conversion;
+do not assume that stream-copy always resets timestamps or that a WAV retains
+the original offset.
+
+Treat this sidecar as sensitive recording data. Keep it in owner-approved
+private local storage within the permitted data roots, with access restricted
+to the owner. Exclude it from version control, skill packages, PR attachments,
+and other shared artifacts. Do not copy credentials into recorded commands.
+For explicitly approved sharing, create a separate sanitized copy: remove
+personal filenames, absolute paths, participant/project identifiers, and
+sensitive command arguments; use neutral track IDs where provenance is needed.
+Review that copy before sharing and retain the original privately.
+
+For an uncut extraction with unchanged playback timing, retain the verified
+constant mapping `source_relative_ms = track_local_ms + offset_ms`. For
+example, content starting at 00:02 in the source and at 00:00 in the mono WAV
+has `offset_ms = 2000`: a track-local cue at 00:00.250 belongs at source time
+00:02.250. Check the mapping near both ends. Cuts, gaps, or timing changes need
+an explicit mapping rather than an assumed constant offset.
+
+The chunker records offsets from its input audio's zero; the assembler adds
+those chunk offsets only. Neither automatically restores the original stream
+offset. Preserve raw manifests and assembled artifacts. When source-relative
+delivery is required, write separate derived outputs, apply the verified
+mapping exactly once to cue starts and ends, and record the mapping and source
+artifacts used. If the mapping is unresolved, label timestamps as track-local
+and disclose the alignment gap rather than presenting them as source-relative.
 
 ## Physical chunking
 

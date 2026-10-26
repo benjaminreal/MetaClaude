@@ -52,7 +52,20 @@ they do not run a model or establish transcription quality.
    `scripts/configure_local_policy.sh`. Read
    [references/local-policy.md](references/local-policy.md).
 4. Inspect the source with `ffprobe`; verify the spoken language from audio.
-5. Resolve every bundled script relative to this `SKILL.md`.
+5. For a call or meeting recording, inspect the audio streams and channels to
+   determine whether they contain separate speakers or mixed audio. Stream or
+   channel count alone does not establish speaker separation. If only mixed
+   audio is available, explain before inference that speaker labels require voice or
+   content review, and ask whether a multitrack original exists. Transcribe
+   verified separate speaker tracks or channels individually within the approved
+   run scope.
+6. Before combining stereo channels, compare `0.5*c0+0.5*c1` with
+   `0.5*c0-0.5*c1` over the same speech-bearing spans using `pan` and
+   `volumedetect`. A far quieter sum can indicate cancellation. Select one
+   channel only after verifying that it preserves all needed speech. If channels
+   contain distinct speech, or coverage is uncertain, retain and process each
+   separately; cancellation alone does not justify discarding a channel.
+7. Resolve every bundled script relative to this `SKILL.md`.
 
 The inference runner uses the policy's exact `default_model`. An explicit
 `--model` is accepted only when it is already listed as `allowed_model`.
@@ -70,13 +83,23 @@ runs `--version`; it never loads a model, downloads, or upgrades software.
 Read [references/preprocessing.md](references/preprocessing.md) before channel
 comparison, chunking, or assembly.
 
-1. For video, stream-copy the original audio with
-   `ffmpeg -map 0:a:0 -c:a copy`. When fidelity matters, compare decoded-audio
-   hashes between source and extraction.
+1. For video or a source with multiple audio streams, stream-copy each selected
+   audio stream to its own single-stream file with
+   `ffmpeg -map 0:a:<stream-index> -c:a copy`. Extract verified separate speaker
+   tracks individually and retain their source-stream identities and timeline
+   mappings as described in [preprocessing](references/preprocessing.md).
+   Use index `0` only when the first audio stream is the intended source. The channel helpers
+   operate on the first audio stream of their input, so give each extracted
+   track its own workflow and outputs. When fidelity matters, compare decoded-
+   audio hashes between source and extraction. Chunk and assembly times refer
+   to the extracted input; apply the verified source-timeline mapping exactly
+   once in separately derived source-relative outputs, preserving raw artifacts.
 2. For stereo/multichannel sources, use `scripts/channel_compare.py prepare`.
    Transcribe every deterministic sample under identical conditions, then use
-   `score`. Accept automatic selection only above its margin; otherwise review
-   samples manually. Use `extract` to create the selected full mono WAV.
+   `score`. Its margin ranks alternative captures; it does not establish that
+   one channel contains every speaker. Select one only after verifying speech
+   coverage and meeting the margin; otherwise review or process channels
+   separately. Use `extract` to create each required full mono WAV.
 3. For recordings longer than about ten minutes, use
    `scripts/chunk_audio.py`. Its defaults create physical 370-second mono WAV
    windows with 20-second overlaps and a global-offset manifest.
@@ -133,7 +156,12 @@ Model recommendations are advisory until policy makes them authoritative.
 | Several installed models, no policy | Rank locally installed candidates; ask the user to authorize configuration |
 | Explicit model outside policy | Stop; do not bypass model allowlisting |
 | Channel score margin below 7 | Require sample review; do not auto-select |
-| Input remains multichannel before chunking | Select a channel or explicitly approve mixdown |
+| Input remains multichannel before chunking | Preserve all needed speech through separate channel extraction or an explicitly approved non-cancelling mixdown |
+| Call or meeting recording has only mixed audio | Explain speaker-label limits before inference; ask whether a multitrack original exists |
+| Verified separate speaker tracks or channels are available | Transcribe each separately within the approved run scope |
+| Stereo channel sum is far quieter than the difference | Avoid the cancelling mixdown; select one only if it preserves all needed speech, otherwise retain both |
+| Channel coverage is uncertain | Keep and process channels separately; the scoring margin does not prove coverage |
+| Source-timeline mapping is unverified | Label outputs as track-local; do not claim source-relative alignment |
 | Recording exceeds about ten minutes | Create physical chunks and retain the manifest |
 | Metal unavailable or crashes | Retry on CPU using private staging |
 | Chunk SRT missing/invalid | Stop assembly without publishing |
@@ -151,6 +179,12 @@ A Whisper run succeeds only when (Phonon has additional checks in its reference)
 - the actual model/backend and any model override are disclosed;
 - channel samples used identical inference conditions and the selection
   evidence is retained;
+- channel selection preserved all needed speech, or distinct/uncertain channels
+  were retained separately;
+- source-relative timestamps, when claimed, use a verified extraction mapping
+  applied exactly once, with raw track-local artifacts preserved;
+- extraction sidecars remain private and outside version control or shared
+  packages; any approved shared copy is separately sanitized;
 - chunk hashes, boundaries, overlap, and global offsets are retained;
 - every chunk produced non-empty TXT/SRT/JSON together;
 - assembly parsed SRT structurally and disclosed removed/ambiguous overlaps;
@@ -171,6 +205,11 @@ No reference transcript is required to validate this integration.
 
 ## 7. Version and transfer status
 
+Version 1.4.1 promotes audio-stream inspection and stereo phase-cancellation
+checks into the shared workflow for every harness. Multiple audio streams are
+not assumed to be separate speakers; verified speaker tracks remain separate
+through extraction and transcription.
+
 Version 1.4.0 adds the versioned Fermion 0.2.4 / English Phonon-2 conversion and
 assembly contract. It preserves producer metadata, checks the configured local
 model receipt when supplied, and supports completed no-text windows. It does
@@ -188,6 +227,13 @@ only this skill. The skill still cannot authorize package/model acquisition,
 certify verbatim accuracy, or infer reliable speaker identities.
 
 ### Changelog
+
+**v1.4.1 — 2026-10-26**
+- Shares the audio-stream and phase-cancellation safeguards across harnesses.
+- Distinguishes verified speaker tracks from mixed streams and preserves the
+  selected streams during extraction.
+- Preserves unique channel content and records source-timeline mappings;
+  bundled helper timestamps remain track-local until explicitly mapped.
 
 **v1.4.0 — 2026-10-26**
 - Supports only the documented Fermion 0.2.4 producer signature for English
