@@ -127,9 +127,18 @@ rejected.
 Use the standard-library converter. The frozen Python API is:
 
 ```python
-load_producer_contract(*, model_profile=None, fermion_version=None) -> dict
-convert(raw: bytes, *, producer_contract: dict) -> dict[str, str]
+load_producer_contract(*, model_profile=None, fermion_version=None) -> ProducerContract
+convert(raw: bytes, *, producer_contract: ProducerContract) -> dict[str, str]
 ```
+
+The loader returns an immutable context handle after validating the requested
+version and any local profile/receipt. Pass that handle directly to `convert`;
+it may be reused across chunks. Bare dictionaries, including serialized
+contexts read back from JSON, are not accepted for new conversion. Context
+mapping values are detached snapshots, so editing a nested value cannot alter
+the loaded evidence. This prevents accidental use of unchecked receipt claims;
+it is not protection against malicious code within the same Python process.
+Assembly separately validates the portable JSON representation structurally.
 
 The CLI flags are `--input`, `--output-prefix`, optional `--model-profile`,
 and optional `--fermion-version`. A local model-path payload requires

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import math
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 
@@ -18,6 +18,37 @@ FERMION_VERSION = "0.2.4"
 MODEL_FILES = ("config.json", "packed_manifest.json", "model.fermion")
 PACKED_FORMAT = "fermion-five-value-parakeet-v1"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CONTEXT_TOKEN = object()
+
+
+class ProducerContract(Mapping):
+    """Immutable loader result, distinct from portable, caller-supplied JSON.
+
+    This prevents accidentally treating unchecked dictionaries as verified
+    local records. It is not a security boundary against same-process code.
+    """
+
+    __slots__ = ("_serialized",)
+
+    def __init__(self, values: dict, *, _token: object = None):
+        if _token is not _CONTEXT_TOKEN:
+            raise TypeError("use load_producer_contract() to obtain producer context")
+        object.__setattr__(self, "_serialized", json.dumps(values, allow_nan=False))
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise TypeError("producer context is immutable")
+
+    def _snapshot(self) -> dict:
+        return json.loads(self._serialized)
+
+    def __getitem__(self, key: str):
+        return self._snapshot()[key]
+
+    def __iter__(self):
+        return iter(self._snapshot())
+
+    def __len__(self) -> int:
+        return len(self._snapshot())
 
 
 def check_path(path: Path) -> None:
@@ -120,7 +151,7 @@ def validate_producer_contract(contract: dict) -> None:
 
 
 def load_producer_contract(*, model_profile: Path | None = None,
-                           fermion_version: str | None = None) -> dict:
+                           fermion_version: str | None = None) -> ProducerContract:
     """Verify local owner records once for reuse across conversions, without model imports."""
     if fermion_version is not None and fermion_version != FERMION_VERSION:
         raise ValueError("only exact Fermion 0.2.4 is supported")
@@ -197,7 +228,7 @@ def load_producer_contract(*, model_profile: Path | None = None,
                                  "installation_receipt_sha256": hashlib.sha256(receipt_raw).hexdigest(),
                                  "files": sorted(records, key=lambda item: item["path"])}}
     validate_producer_contract(contract)
-    return contract
+    return ProducerContract(contract, _token=_CONTEXT_TOKEN)
 
 
 def seconds(value: object) -> float:
@@ -302,18 +333,22 @@ def looks_like_phonon(data: object) -> bool:
             or (isinstance(model, str) and "phonon" in model.casefold())
             or (isinstance(data.get("backend"), str) and "phonon" in data["backend"].casefold())
             or data.get("profile") == "five-value"
-            or {"profile", "backend", "engine", "segment_count", "truncated"}.issubset(data))
+            or {"profile", "backend", "engine", "segment_count", "truncated"}.issubset(data)
+            or {"duration_seconds", "segment_count", "segments", "truncated"}.issubset(data))
 
 
-def convert(raw: bytes, *, producer_contract: dict) -> dict[str, str]:
+def convert(raw: bytes, *, producer_contract: ProducerContract) -> dict[str, str]:
+    if type(producer_contract) is not ProducerContract:
+        raise ValueError("producer_contract must come from load_producer_contract()")
+    context = producer_contract._snapshot()
     data = json_object(raw)
     if "_local_transcription" in data:
         raise ValueError("input already has conversion metadata")
-    canonical = canonical_artifacts(data, producer_contract=producer_contract)
+    canonical = canonical_artifacts(data, producer_contract=context)
     data["_local_transcription"] = {
         "adapter_version": 2, "source_json_sha256": hashlib.sha256(raw).hexdigest(),
         "timing_precision": "decoding_window", "speaker_labels": "not_provided",
-        "producer_contract": copy.deepcopy(producer_contract),
+        "producer_contract": context,
         "producer": {name: data[name] for name in ("model", "profile", "backend", "engine")},
         **{name: canonical[name] for name in ("completion_state", "cue_count", "empty_segment_count")},
     }

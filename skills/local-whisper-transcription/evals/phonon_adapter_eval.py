@@ -221,6 +221,34 @@ class PhononAdapterEval(unittest.TestCase):
         self.assertEqual(fixture["profile_path"].read_bytes(), fixture["profile_bytes"])
         self.assertEqual(fixture["receipt_path"].read_bytes(), fixture["receipt_bytes"])
 
+    def test_conversion_requires_loader_context_not_caller_receipt_claims(self) -> None:
+        invented = dict(self.repo_contract)
+        invented["model_directory"] = str(self.root / "never-installed")
+        invented["revision"] = "invented"
+        invented["evidence"] = {
+            "fermion_version": "installation_receipt", "model_id": "owner_profile",
+            "model_directory": "owner_profile", "revision": "installation_receipt",
+            "file_hashes": "installation_receipt", "model_profile_sha256": "0" * 64,
+            "installation_receipt_sha256": "f" * 64,
+            "files": [{"path": name, "bytes": 1, "sha256": "0" * 64}
+                      for name in ("config.json", "packed_manifest.json", "model.fermion")],
+        }
+        self.assertFalse(Path(invented["model_directory"]).exists())
+        with self.assertRaisesRegex(ValueError, "load_producer_contract"):
+            call_convert(payload(model=invented["model_directory"]), invented)
+        with self.assertRaisesRegex(ValueError, "load_producer_contract"):
+            call_convert(payload(), dict(self.repo_contract))
+        fixture = make_profile_fixture(self.root / "verified-conversion")
+        loaded = adapter.load_producer_contract(model_profile=fixture["profile_path"])
+        evidence_snapshot = loaded["evidence"]
+        evidence_snapshot["files"][0]["sha256"] = "0" * 64
+        self.assertNotEqual(evidence_snapshot, loaded["evidence"])
+        with self.assertRaises(TypeError):
+            loaded["revision"] = "changed"
+        converted = call_convert(payload(model=str(fixture["model_dir"])), loaded)
+        self.assertEqual(json.loads(converted["json"])["_local_transcription"]
+                         ["producer_contract"]["evidence"], loaded["evidence"])
+
     def test_profile_receipt_reject_bad_version_identity_hash_size_paths_and_container(self) -> None:
         with self.subTest("no inferred package version"):
             with self.assertRaises((ValueError, TypeError)):
@@ -254,7 +282,6 @@ class PhononAdapterEval(unittest.TestCase):
             {"model": "Other/Model"},
             {"cli_version": "0.2.5"},
             {"model_directory": "../escape"},
-            {"files": [{"path": "../outside", "bytes": 1, "sha256": "0" * 64}]},
             {"files": [{"path": "config.json", "bytes": 999, "sha256": "0" * 64}]},
         ]
         for index, changes in enumerate(bad_receipts):
@@ -264,6 +291,15 @@ class PhononAdapterEval(unittest.TestCase):
                 fixture = make_profile_fixture(case, receipt_changes=changes)
                 with self.assertRaises((ValueError, OSError)):
                     adapter.load_producer_contract(model_profile=fixture["profile_path"])
+
+        with self.subTest("receipt basename validation with complete file list"):
+            fixture = make_profile_fixture(self.root / "escaping-receipt-member")
+            receipt = json.loads(fixture["receipt_path"].read_text())
+            self.assertEqual(len(receipt["files"]), 3)
+            receipt["files"][0]["path"] = "../outside"
+            fixture["receipt_path"].write_bytes(json_bytes(receipt))
+            with self.assertRaisesRegex(ValueError, "receipt member path"):
+                adapter.load_producer_contract(model_profile=fixture["profile_path"])
 
         with self.subTest("unsupported packed format"):
             case = self.root / "bad-container"
@@ -537,6 +573,7 @@ class PhononAdapterEval(unittest.TestCase):
     def test_assembly_rejects_missing_corrupt_or_unmarked_phonon_metadata(self) -> None:
         variants = (
             "missing",
+            "stripped-identity",
             "unsupported-version",
             "producer-mismatch",
             "invalid-evidence",
@@ -555,7 +592,12 @@ class PhononAdapterEval(unittest.TestCase):
                 write_artifacts(prefix, artifacts)
                 json_path = Path(f"{prefix}.json")
                 converted = json.loads(json_path.read_text(encoding="utf-8"))
-                if variant == "missing":
+                if variant == "stripped-identity":
+                    for key in ("_local_transcription", "model", "profile", "backend", "engine"):
+                        del converted[key]
+                    Path(f"{prefix}.txt").write_text("Edited synthetic text.\n")
+                    json_path.write_text(json.dumps(converted), encoding="utf-8")
+                elif variant == "missing":
                     del converted["_local_transcription"]
                     json_path.write_text(json.dumps(converted), encoding="utf-8")
                 elif variant == "unsupported-version":
