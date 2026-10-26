@@ -8,7 +8,7 @@ Sensitive recordings â€” client interviews, salary negotiations, medical calls â
 
 **local-whisper-transcription** makes those judgment points explicit and testable. Readiness is diagnosed before anything runs; the model and the directories it may touch are fixed by a policy file *you* write; channel choice is decided by scored evidence rather than assumption; long recordings become physical chunks with hashes and global offsets; and assembly refuses to publish until every chunk is complete. Nothing is installed, downloaded, or uploaded without your explicit approval.
 
-**Version:** 1.4.0
+**Version:** 1.4.1
 
 ---
 
