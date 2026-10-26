@@ -1,6 +1,6 @@
 ---
 name: local-whisper-transcription
-description: "Run private, audit-ready local transcription of interviews, calls, meetings, voice memos, video, or audio with whisper.cpp. Use for diagnosing local Whisper readiness, selecting a configured model, comparing stereo channels, creating physical overlapping chunks, running Metal-first or CPU inference, repairing difficult spans, and assembling global-time TXT/SRT/JSON/Markdown outputs. Never install, download, or upload without explicit user approval."
+description: "Run private, audit-ready local transcription of interviews, calls, meetings, voice memos, video, or audio with whisper.cpp or optional English Phonon-2/MLX. Use for diagnosing local Whisper readiness, selecting a configured model, comparing stereo channels, creating physical overlapping chunks, running Metal-first or CPU inference, repairing difficult spans, and assembling global-time TXT/SRT/JSON/Markdown outputs. Never install, download, or upload without explicit user approval."
 ---
 
 # Local Whisper Transcription
@@ -14,6 +14,27 @@ quotation.
 
 Do not upload media, overwrite sources, claim automatic diarization is
 human-verified, or publish partial inference output.
+
+## Engine selection and approval
+
+Whisper remains the default for multilingual, Spanish, mixed-language, and
+translation work. For English recordings, the supported optional local route is
+Fermion 0.2.4 with Phonon-2 on Apple silicon through MLX; read
+[references/phonon-2.md](references/phonon-2.md). Do not infer multilingual
+capability from its Parakeet teacher or silently change the default.
+
+Before any model run, obtain explicit approval for the exact model, provider,
+harness, purpose, input recordings/windows, and maximum expected cost. Skill
+editing, setup approval, and an existing installation do not authorize inference.
+Keep package installation and model acquisition separately approved. This applies
+to local Whisper and Phonon alike; offline processing still invokes a model.
+
+The doctor, model allowlist, Metal preflight, and inference runners below are
+**Whisper-only**. Their status or policy does not authorize or validate Phonon.
+Use the Phonon reference's separate preflight and output conversion workflow.
+Never silently switch engines, change defaults, or start a microphone/server.
+The Phonon converter and assembler validate data shape and artifact consistency;
+they do not run a model or establish transcription quality.
 
 ## 2. Preflight
 
@@ -70,6 +91,11 @@ comparison, chunking, or assembly.
 6. Retain raw chunks and assemble a readable transcript with uncertainty and
    editorial speaker-label disclosure.
 
+For English Phonon-2 jobs, follow the separate profile, version, inference
+approval, conversion, and assembly procedure in
+[references/phonon-2.md](references/phonon-2.md). Do not pass Whisper-only
+language, prompt, backend, or policy options to Fermion.
+
 ```bash
 scripts/run_whisper_metal_default.sh \
   --input <absolute-chunk.wav> \
@@ -117,7 +143,7 @@ Model recommendations are advisory until policy makes them authoritative.
 
 ## 6. Evaluation criteria
 
-A run succeeds only when:
+A Whisper run succeeds only when (Phonon has additional checks in its reference):
 
 - the source remains unchanged;
 - doctor status was `ready` before inference;
@@ -136,11 +162,24 @@ A run succeeds only when:
 Restart after a boundary violation or partial-output defect. Patch readable
 transcript wording only as disclosed editorial cleanup.
 
+For Phonon, a zero exit status with `truncated: false` and structurally valid
+producer JSON establishes successful raw inference completion. It does not
+establish recognition accuracy, word alignment, or that Phonon is better than
+Whisper. The synthetic adapter eval checks conversion and assembly behavior;
+model-only comparisons can report agreement and disagreement, not accuracy.
+No reference transcript is required to validate this integration.
+
 ## 7. Version and transfer status
+
+Version 1.4.0 adds the versioned Fermion 0.2.4 / English Phonon-2 conversion and
+assembly contract. It preserves producer metadata, checks the configured local
+model receipt when supplied, and supports completed no-text windows. It does
+not run inference or claim model quality. Whisper remains the default.
 
 Version 1.3.1 adds installed-runtime discovery and a whisper.cpp 1.9.5 minimum
 shared by the doctor, configurator, and both runners. Automatic policy follows
-newer installed stable releases; explicit pins remain enforced.
+newer installed stable releases; explicit pins remain enforced. The earlier
+Phonon draft remained unmerged; version 1.4.0 is its first integrated release.
 
 A competent external user can diagnose an unprepared machine, understand what
 requires approval, configure an installed model, select or review a channel,
@@ -150,10 +189,21 @@ certify verbatim accuracy, or infer reliable speaker identities.
 
 ### Changelog
 
+**v1.4.0 — 2026-10-26**
+- Supports only the documented Fermion 0.2.4 producer signature for English
+  Phonon-2 on MLX, while retaining Whisper as the default.
+- Adds profile/receipt identity validation, canonical TXT/SRT conversion,
+  explicit completed-no-text metadata, and schema-version-2 Phonon assembly.
+- Adds synthetic adapter/assembly regression coverage; no model is run by the
+  eval and no quality claim follows from format validation.
+
+**v1.3.1**
+- Added installed-runtime discovery and the shared whisper.cpp 1.9.5 minimum;
+  automatic selection follows newer stable installed versions while explicit
+  executable pins remain enforced.
+
 **v1.2.0 — 2026-07-28**
-- **Initial release.** Private, audit-ready local transcription on whisper.cpp,
-  built and hardened in one pass; earlier version numbers were internal
-  iterations and were never published.
+- Initial release of private, audit-ready local transcription on whisper.cpp.
 - **Readiness diagnosis** — `scripts/doctor.py --json` reports `ready` or
   `setup_required` and ranks installed models as candidates only. It never
   installs, downloads, or authorizes anything.
@@ -177,4 +227,5 @@ certify verbatim accuracy, or infer reliable speaker identities.
   structurally, removes only high-confidence overlap duplicates, flags
   ambiguous ones for review, and publishes nothing until every chunk is complete.
 - **Portable** — no owner or project paths in the skill; machine specifics live
-  only in local policy. Evals: 25 structural + 15 runtime checks.
+  only in local policy. Structural, runtime, version-selection, and Phonon
+  adapter evals use synthetic fixtures and do not perform model inference.

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Local Whisper Transcription"
-  short_description: "Audit-ready local transcription pipeline"
+  display_name: "Local Audio Transcription"
+  short_description: "Local Whisper and optional English Phonon-2"
   default_prompt: "Use $local-whisper-transcription to diagnose, prepare, transcribe, and assemble this recording locally."

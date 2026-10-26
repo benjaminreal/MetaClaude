@@ -1,6 +1,6 @@
 # local-whisper-transcription
 
-> Run private, audit-ready transcription of interviews, calls, and meetings entirely on your own machine, powered by whisper.cpp.
+> Run private, audit-ready transcription of interviews, calls, and meetings entirely on your own machine, powered by whisper.cpp, with an optional English Phonon-2 route.
 
 ## Why this skill?
 
@@ -8,7 +8,7 @@ Sensitive recordings — client interviews, salary negotiations, medical calls �
 
 **local-whisper-transcription** makes those judgment points explicit and testable. Readiness is diagnosed before anything runs; the model and the directories it may touch are fixed by a policy file *you* write; channel choice is decided by scored evidence rather than assumption; long recordings become physical chunks with hashes and global offsets; and assembly refuses to publish until every chunk is complete. Nothing is installed, downloaded, or uploaded without your explicit approval.
 
-**Version:** 1.3.1
+**Version:** 1.4.0
 
 ---
 
@@ -29,6 +29,16 @@ cp -r skills/local-whisper-transcription .claude/skills/local-whisper-transcript
 > If this is the first skill you install and `~/.claude/skills/` didn't exist before, restart Claude Code so it picks up the new directory.
 
 ---
+
+## Optional Phonon-2
+
+For English recordings, the skill supports the local Fermion 0.2.4 producer on
+Apple silicon with MLX; see [the Phonon-2 workflow](references/phonon-2.md).
+Whisper remains the default, including for Spanish, mixed-language, and
+translation work. Phonon setup and each inference run need separate approval.
+The adapter converts successful, complete producer JSON for assembly and
+discloses decoding-window timestamps. A successful inference is not evidence of
+recognition quality, word alignment, or superiority to Whisper.
 
 ## Requirements
 
@@ -130,9 +140,12 @@ python3 skills/local-whisper-transcription/evals/runtime_eval.py
 
 # Version selection and runner rejection — no model inference
 python3 skills/local-whisper-transcription/evals/version_eval.py
+
+# Phonon producer conversion and assembly; synthetic inputs only, no model run
+python3 skills/local-whisper-transcription/evals/phonon_adapter_eval.py
 ```
 
-Structural covers section structure, the Metal-optional guarantee, script executability, install/download prohibitions, policy enforcement (unsafe options rejected, out-of-policy output rejected), and the absence of owner or project paths. Runtime covers channel prepare/score/extract, chunk manifests and hashes, overlap assembly, and doctor behavior with and without policy.
+Structural covers section structure, the Metal-optional guarantee, script executability, install/download prohibitions, policy enforcement (unsafe options rejected, out-of-policy output rejected), and the absence of owner or project paths. Runtime covers channel prepare/score/extract, chunk manifests and hashes, overlap assembly, and doctor behavior with and without policy. The Phonon adapter eval exercises synthetic identity/receipt validation, conversion, artifact integrity, assembly timing and offsets, no-text completion, mixed-engine rejection, overlap review, and legacy Whisper compatibility. These checks validate the data workflow; they do not measure transcription accuracy or run either model.
 
 ---
 

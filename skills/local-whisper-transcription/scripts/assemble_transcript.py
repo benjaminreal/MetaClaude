@@ -10,6 +10,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from convert_phonon_json import (
+    check_path, json_object, looks_like_phonon, milliseconds, validate_converted,
+)
+
 
 SCHEMA_VERSION = 1
 TIMECODE_RE = re.compile(
@@ -134,7 +138,8 @@ def main() -> int:
     if not chunks:
         die("manifest has no chunks")
 
-    output_prefix = args.output_prefix.expanduser().resolve()
+    output_prefix = args.output_prefix.expanduser().absolute()
+    check_path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     outputs = {
         "txt": Path(f"{output_prefix}.txt"),
@@ -150,6 +155,8 @@ def main() -> int:
     decisions: list[dict[str, Any]] = []
     review_items: list[dict[str, Any]] = []
     previous_chunk_end = 0
+    transcription_engine = None
+    producers: list[dict[str, Any]] = []
 
     for chunk in chunks:
         prefix = str(chunk["transcript_prefix"])
@@ -157,22 +164,74 @@ def main() -> int:
             suffix: Path(f"{prefix}.{suffix}") for suffix in ("txt", "srt", "json")
         }
         for suffix, artifact in artifacts.items():
-            if not artifact.is_file() or artifact.stat().st_size == 0:
-                die(f"missing or empty chunk {suffix.upper()}: {artifact}")
+            if not artifact.is_file():
+                die(f"missing chunk {suffix.upper()}: {artifact}")
         try:
-            json.loads(artifacts["json"].read_text(encoding="utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raw_json = artifacts["json"].read_bytes()
+            chunk_data = json.loads(raw_json)
+        except (UnicodeDecodeError, ValueError) as error:
             die(f"invalid chunk JSON: {artifacts['json']}: {error}")
+        engine = "phonon" if looks_like_phonon(chunk_data) else "whisper"
+        if transcription_engine is not None and transcription_engine != engine:
+            die("mixed Phonon and Whisper chunks are unsupported")
+        transcription_engine = engine
         srt_path = artifacts["srt"]
-        chunk_start = int(chunk["start_ms"])
-        chunk_end = int(chunk["end_ms"])
-        parsed = parse_srt(srt_path)
+        adjustments: list[dict[str, Any]] = []
+        if engine == "phonon":
+            chunk_data = json_object(raw_json)  # Strict object/key validation for Phonon.
+            for artifact in artifacts.values():
+                check_path(artifact)
+            expected = validate_converted(chunk_data)
+            for suffix in ("txt", "srt"):
+                if artifacts[suffix].read_bytes() != expected[suffix].encode("utf-8"):
+                    die(f"Phonon chunk {suffix.upper()} disagrees with canonical producer JSON")
+            for field in ("index", "start_ms", "end_ms"):
+                if type(chunk.get(field)) is not int:
+                    die(f"Phonon manifest {field} must be an integer")
+            chunk_start, chunk_end = chunk["start_ms"], chunk["end_ms"]
+            span = chunk_end - chunk_start
+            if chunk_start < 0 or span <= 0:
+                die("Phonon manifest requires nonnegative start and positive duration")
+            if "duration_ms" in chunk and (type(chunk["duration_ms"]) is not int or chunk["duration_ms"] != span):
+                die("Phonon manifest duration_ms disagrees with offsets")
+            producer_duration = milliseconds(chunk_data["duration_seconds"])
+            if abs(producer_duration - span) > 1:
+                die("Phonon producer duration disagrees with manifest span by more than 1 ms")
+            parsed = expected["cues"]
+            for local_index, local in enumerate(parsed):
+                end = local["local_end_ms"]
+                if end > span:
+                    if end - span != 1:
+                        die("Phonon cue exceeds manifest span")
+                    local["local_end_ms"] = span
+                    adjustments.append({"local_index": local_index, "field": "local_end_ms",
+                                        "from_ms": end, "to_ms": span,
+                                        "reason": "1_ms_manifest_rounding_boundary"})
+                if (local["local_start_ms"] < 0 or local["local_start_ms"] >= span
+                        or local["local_end_ms"] <= local["local_start_ms"]):
+                    die("Phonon cue is outside the allowed manifest span")
+            producers.append({
+                "chunk_index": chunk["index"], "start_ms": chunk_start, "end_ms": chunk_end,
+                "duration_ms": span, "producer_duration_ms": producer_duration,
+                "segment_count": chunk_data["segment_count"],
+                **chunk_data["_local_transcription"], "rounding_adjustments": adjustments,
+                "source_json_hash_verification": "recorded_only_original_bytes_unavailable",
+                "producer_execution_verification": "not_attested",
+            })
+        else:
+            for suffix, artifact in artifacts.items():
+                if artifact.stat().st_size == 0:
+                    die(f"missing or empty chunk {suffix.upper()}: {artifact}")
+            chunk_start = int(chunk["start_ms"])
+            chunk_end = int(chunk["end_ms"])
+            parsed = parse_srt(srt_path)
         for local_index, local in enumerate(parsed):
             segment = {
                 "chunk_index": int(chunk["index"]),
                 "local_index": local_index,
                 "start_ms": chunk_start + int(local["local_start_ms"]),
-                "end_ms": min(chunk_end, chunk_start + int(local["local_end_ms"])),
+                "end_ms": (chunk_start + int(local["local_end_ms"]) if engine == "phonon"
+                           else min(chunk_end, chunk_start + int(local["local_end_ms"]))),
                 "text": local["text"],
                 "source_srt": str(srt_path),
             }
@@ -234,13 +293,14 @@ def main() -> int:
             item["local_index"],
         )
     )
-    if not kept:
+    if not kept and transcription_engine != "phonon":
         die("assembly produced no transcript segments")
 
     srt_parts = []
     txt_parts = []
     markdown_parts = [
-        "# Assembled local Whisper transcript",
+        ("# Assembled local Phonon-2 transcript" if transcription_engine == "phonon"
+         else "# Assembled local Whisper transcript"),
         "",
         (
             f"Source manifest: `{manifest_path}`. Machine-generated; "
@@ -248,6 +308,16 @@ def main() -> int:
         ),
         "",
     ]
+    if transcription_engine == "phonon":
+        markdown_parts.extend([
+            "Timing precision: decoding windows, not word alignment. Speaker labels are not provided.",
+            "",
+        ])
+        if not kept:
+            markdown_parts.extend([
+                "Completed with no text (completed_no_text): all chunks were validated; no cues were produced.",
+                "This does not verify absence of speech.", "",
+            ])
     for index, segment in enumerate(kept, start=1):
         srt_parts.extend(
             [
@@ -266,7 +336,7 @@ def main() -> int:
         )
 
     audit = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": 2 if transcription_engine == "phonon" else SCHEMA_VERSION,
         "manifest": str(manifest_path),
         "source": manifest.get("source"),
         "duplicate_threshold": args.duplicate_threshold,
@@ -284,6 +354,10 @@ def main() -> int:
         ),
     }
 
+    if transcription_engine == "phonon":
+        audit.update({"transcription_engine": "phonon", "producers": producers,
+                      "completion_state": "completed" if kept else "completed_no_text"})
+
     with tempfile.TemporaryDirectory(
         prefix=".assemble-stage-", dir=str(output_prefix.parent)
     ) as temp_dir:
@@ -298,12 +372,24 @@ def main() -> int:
         staged["srt"].write_text("\n".join(srt_parts), encoding="utf-8")
         staged["json"].write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
         staged["md"].write_text("\n".join(markdown_parts) + "\n", encoding="utf-8")
-        for key, destination in outputs.items():
-            os.replace(staged[key], destination)
+        published = []
+        try:
+            for key, destination in outputs.items():
+                check_path(destination)
+                staged[key].chmod(0o600)
+                os.link(staged[key], destination)  # Exclusive publication, never overwrite.
+                published.append(destination)
+        except (OSError, ValueError):
+            for destination in published:
+                destination.unlink()
+            raise
 
     print(output_prefix)
     return 0 if not review_items else 4
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (ValueError, OSError, TypeError, KeyError, OverflowError) as error:
+        die(str(error))
