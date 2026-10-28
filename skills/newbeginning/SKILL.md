@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.0.6"
+  version: "2.2.2"
 ---
 
 # newbeginning
@@ -10,34 +10,31 @@ metadata:
 > *"Every new beginning comes from some other beginning's end."*
 > — Semisonic, 1998
 
-Resume an ongoing project from bounded, evidence-backed continuity state. Brief
-the user, offer one hand-off question, then stop.
+Brief from bounded continuity evidence, offer one hand-off question, then stop.
 
 ## 1. Purpose & Scope
 
-Use this skill to orient at session start or whenever the user asks where the
-project stands. Read narrative state from project notes and task state from a
+Orient at session start or on request. Read project notes and a
 current Tasks DB receipt. The live `task_urgency` table is authoritative for
 task state. Never infer a live task claim from memory or the Markdown mirror.
 
-Permitted writes are limited to:
+Permitted writes are limited to an explicitly approved `RECOVERY_BOOTSTRAP`
+or `RECOVERY_RECONSTRUCT` index through index-only freeze/approve/write-approved.
+Task creation, pending-learning edits/dispositions/deletion and Open Brain
+captures belong during the session or at closingtime: say so and stop.
 
-- an explicitly approved `RECOVERY_BOOTSTRAP` or `RECOVERY_RECONSTRUCT` index;
-- an explicitly approved post-brief Tasks DB task creation;
-- approved Open Brain captures during pending-learning review.
-
-Do not log the session, rewrite routine narrative state, select a task for the
-user, or begin executing the hand-off. Those belong to `closingtime` or the
-user's next instruction.
+Do not log, rewrite routine state, select a task, or execute the hand-off;
+wait for the user's next instruction.
 
 ### Runtime resources
 
 - Run deterministic local work through `scripts/runtime_cli.py`.
+- Read `references/recovery.md` before persistence/recovery; use
+  `references/envelope_examples.md` for constructor and receipt recipes.
 - Read `references/runtime_contract.md` when building or diagnosing an evidence
   envelope.
-- Read `references/task_operations.md` only when querying or changing tasks.
-- Read `references/candidate_quality_contract.md` only when pending-learning
-  review or wording revision is selected.
+- Read `references/task_operations.md` only when querying tasks.
+- Read `references/candidate_quality_contract.md` only for read-only candidate searches.
 
 Keep scratch envelopes and returned-row files outside the repository working
 tree. If the helper is unavailable, name that degraded state; do not claim its
@@ -59,8 +56,8 @@ projection, validation, or conflict checks ran.
 3. **Observe capabilities.** Local capabilities are booleans:
    `shell_available`, `git_available`, `temporary_workspace_available`, and
    `parallel_read_only_available`. `tasks_mcp` and `open_brain` are each one of:
-   `absent`, `present_unauthenticated`, `present_wrong_scope`, or `working`.
-   Only a successful read in this invocation establishes `working`.
+   `absent` (tools not listed), `present_unauthenticated`, `present_wrong_scope`,
+   or `working` (a successful read in this invocation).
 4. **Confirm brief depth.** Default to project state, latest `Next:`, top three
    tasks, blockers/flags, and one hand-off question. Honor a shorter request.
 5. **Check sibling availability.** If `closingtime` is detectably absent, add one
@@ -70,7 +67,10 @@ projection, validation, or conflict checks ran.
 
 ### `OBSERVATION_GATE` — snapshot and branch
 
-Run `snapshot <workspace-root>`. Treat its projection, hashes, filename
+Run `new-envelope <workspace-root>` to capture evidence and helper-stamped
+start and `captured_at`. For each later helper call chain use a new envelope;
+never copy start times. Replace `unprobed` states before validation.
+Use `snapshot <workspace-root> --entries 10` for reconstruction. Treat its projection, hashes, filename
 resolution, parse warnings, and sync-conflict list as local evidence. State the
 branch and changed files only from its `git` fields. Detect one branch:
 
@@ -84,10 +84,13 @@ branch and changed files only from its `git` fields. Detect one branch:
 
 #### `RECOVERY_RECONSTRUCT`
 
-Use the most recent five to ten entries plus observed git/file evidence to draft
+Use `snapshot --entries 10` for the most recent five to ten entries plus observed git/file evidence to draft
 `project_index.md`. Preserve unknown people or purpose fields as unknown. Show
-the entire proposed file and obtain explicit approval before writing. Verify
-the saved content, then run a fresh snapshot before continuing.
+the entire proposed file after index-only `freeze-draft`; obtain explicit approval
+before writing through exact-scope `approve-draft` and
+`write-approved --expect <sha256|absent>`. Use the shipped
+`references/index_template.md`, verify the saved content, then recapture with
+a fresh snapshot before continuing.
 
 #### `RECOVERY_BOOTSTRAP`
 
@@ -95,7 +98,9 @@ If the workspace has a commit, README, or at least three source files, scan
 those bounded signals and draft the index; ask the user to confirm name, people,
 and purpose. If the workspace is empty, confirm it is the intended directory and
 interview only. Write a minimal English `project_index.md` after approval,
-verify it, and report that Session #1 will be logged by `closingtime`.
+use index-only freeze/approve/write-approved from `references/recovery.md`,
+verify it, and report that Session #1 will be logged by `closingtime`. An unborn
+git branch (no commits) is normal; corrupt git explicitly degrades.
 
 ### Task evidence and envelope validation
 
@@ -124,11 +129,14 @@ code. A sync conflict always stops.
 
 ### Opening projection and brief
 
-Use only the validated bounded projection:
+The helper reads whole files and emits a bounded projection. Report
+`unfinished_operations` and direct recovery to `resume`; do not start another
+close. A non-monotonic history warns; parse ambiguity or semantic narrative contradictions stop; a stale index
+date alone is a gap. Use only the validated bounded projection:
 
 | Measure | Bound |
 |---|---:|
-| Project index | Full index within the helper projection |
+| Project index | Bounded text; explicitly report truncation |
 | Session log | Last two entries |
 | Project task slice | 8 rows |
 | Portfolio task slice | 20 rows |
@@ -143,42 +151,36 @@ The brief contains:
    exists;
 4. blockers, flagged/review-due work, dates, and a gap over fourteen days;
 5. the provenance/degraded state and honest gaps;
-6. one question offering exactly three options — pick up, create a task, or
-   focus elsewhere; add pending-learning review as a fourth only when the file
-   exists and Open Brain is working;
+6. one question offering exactly three options — pick up, discuss a task, or
+   focus elsewhere;
 7. a final evidence line: `Evidence: instructions <state>; instruction_bytes_loaded <n>; projection_bytes_emitted <n>; brief_words <n>`.
-   `instruction_bytes_loaded` is the snapshot's `skill_md_bytes`, plus the
+   `instruction_bytes_loaded` is `instruction_budget.skill_md_bytes`, plus the
    bytes of each reference you read, plus each resolved instruction file.
 
 Use absolute session dates. Resolve "today", "yesterday", and gaps only
 against the snapshot's `local_date`; never against the UTC date.
 
 The whole reply, including the question and the evidence line, stays within
-250 words; `brief_words` counts all of it. Draft the complete reply, run
-`count-words -` on it, and report that number; never estimate it. Write the
+250 words; `brief_words` counts all of it. After the last edit, run
+`count-words -` on the exact final reply sent; report only that count. Write the
 brief in the user's explicitly requested language, otherwise in the language
 of their message. Do not begin a task after emitting the brief.
 
-### Allowed post-brief actions
+### Post-brief boundary — `PENDING_LEARNING_LIFECYCLE`
 
-For task creation, itemize the intended DB mutation, obtain explicit
-approval, place that M3 scope and approval in a fresh envelope, and run
-`validate` before the write. Use `returning`, rerun the current slice, and show
-the verified result. Do not edit the Markdown task mirror.
-
-For pending-learning review, use the shared `PENDING_LEARNING_LIFECYCLE`:
-search each candidate or record the named unavailable state, present wording,
-capture only approved items, and delete or retain the pending file according to
-the user's explicit disposition. Read and apply
-`references/candidate_quality_contract.md` before presenting or revising a
-candidate and again after owner edits; show the complete repaired wording and
-obtain fresh approval before capture. Language precedence is explicit user
-preference, then the dominant session language when it is English or Spanish,
-then English. Never cite `closingtime` by step number.
+Stop after the brief. Do not edit the Markdown task mirror. Opening performs
+no task creation, pending-file transition or capture. A search remains a read;
+`SKIP-openbrain` prohibits search too, which sends candidate text to the service.
+Read `references/candidate_quality_contract.md` before presenting or revising
+wording as a discussion, including after owner edits; any later capture needs
+fresh approval during the session or closingtime. Language precedence is
+explicit user preference, then the dominant session language when it is English
+or Spanish, then English. These quality rules grant no opening write authority.
 
 ## 4. Harness Adaptations
 
-**Required:** file reading and conversation. If file reading is unavailable,
+**Required for helper paths:** Python 3, file reading and conversation.
+Without Python nothing is persisted; output an unverified brief or index draft only. If file reading is unavailable,
 ask the user to paste the index and last two session entries and label the local
 snapshot helper unavailable.
 
@@ -188,8 +190,8 @@ snapshot helper unavailable.
 |---|---|---|
 | Bundled Python runtime | Snapshot, projection, envelope validation | Name helper unavailable; do not claim its checks |
 | Git | Adds head/dirty evidence | `git_available: false`; continue |
-| Tasks MCP | Current tasks and approved creation | Named four-state warning; frozen mirror only |
-| Open Brain | Review and capture approved pending items | Do not read pending content; say it must wait |
+| Tasks MCP | Current tasks only | Named four-state warning; frozen mirror only |
+| Open Brain | Read-only candidate searches | Do not read pending content; say it must wait |
 | Parallel reads | Gather independent M0 evidence concurrently | Sequential reads are equivalent |
 
 No model-name branch may change evidence, approval, or mutation rules.
@@ -213,9 +215,9 @@ No model-name branch may change evidence, approval, or mutation rules.
   new snapshot.
 - Every authoritative task claim traces to a current receipt whose returned-row
   fingerprint validates.
-- The brief is at most 250 words, surfaces `Next:`, names gaps, and ends with one
-  hand-off question.
-- The skill stops after the brief unless the user chooses an allowed action.
+- The brief is at most 250 words, surfaces `Next:`, names gaps, and places one
+  hand-off question immediately before the final evidence line.
+- The skill stops after the brief and routes requested mutations to the session or closingtime.
 - Every brief ends with the evidence line reporting the instruction state,
   `instruction_bytes_loaded`, `projection_bytes_emitted`, and `brief_words`;
   total-token guesses are not a gate. Counts, receipt times, and git facts come
@@ -229,6 +231,26 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 `OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
+
+**v2.2.2 — 2026-10-28 — candidate**
+
+- Legacy log headings readable. 2.2.0–2.2.1: index-only opening writes, portable
+  recovery, fixed targets, fresh evidence, one approval per invocation.
+
+**v2.1.0 — 2026-10-27 — candidate**
+
+- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
+  identity and parsed times; conflict/alias stops; read-only git evidence.
+- Atomic append intents, conditional rollback, resume and unfinished-operation
+  guard; approved local transitions share a lock and explicit preimages.
+- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
+- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
+  and independent recertification remain required. This is not deployment.
+
+**v2.0.7 — 2026-10-27 — candidate**
+
+- Documentation refresh for the Phase 4.5 review (HANDOFF and README); no
+  runtime or workflow change.
 
 **v2.0.6 — 2026-10-27 — candidate**
 
@@ -276,4 +298,4 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 - Preserved the v1 continuity-file formats and all eleven trigger semantics.
 
 Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phases 4 and 5.
+is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.

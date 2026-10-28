@@ -1,64 +1,86 @@
-# newbeginning 2.0.3 — candidate handoff
+# newbeginning 2.2.2 — candidate
 
-**Status:** Independent transferability review NOT RUN for this candidate.
-The July certificate applied to an earlier version; it does not certify this
-package. Local tests and real usage are different kinds of evidence.
+This package is canonical source, not installed or certified for deployment.
+Prior Phase 4 behavior results apply to earlier hashes only. The previous
+Phase 4.5 decision was FAIL; the full record is in the maintainers' private
+evaluation archive, and a public summary is in the repository's
+`skills/_shared/validation/phase4_5/README.md`.
+A fresh Phase 4 eligibility determination precedes the next Phase 4.5;
+deployment waits for Phase 4.5 PASS and Phase 5.
 
-## Prerequisites
+Python 3 and shell access are required for every bundled helper; only the
+standard library is used. Without Python, output drafts and say nothing was
+persisted. Optional Git, Tasks MCP and Open Brain are observed separately;
+no credentials or network client are bundled.
 
-- An agent that can read the whole skill folder and converse with the owner.
-- Python 3 and shell access for the bundled CLI, which uses only the standard
-  library. Follow workspace runner instructions when present.
-- One intended project root with continuity files, or an owner-confirmed
-  location for approved bootstrap.
-- Optional Git, a compatible Tasks MCP SQL connector scoped by the owner's
-  project instructions, and Open Brain tools. No credentials are bundled.
+Use `python3 /path/to/newbeginning/scripts/runtime_cli.py new-envelope ROOT` to
+start. It captures start/captured_at and derives this package's name/version. Later
+independent helper chains use new-envelope; never copy earlier start times.
+Capture more than fifteen minutes after start refuses ESTALEEVIDENCE. Word
+counts use count-words on exact final text sent, after the last edit.
+Discover services and replace both `unprobed` states before validation. Read
+`references/envelope_examples.md` for complete JSON recipes and
+`references/recovery.md` for exact command syntax, state tables, stdin support,
+errors and historical migration. At most one file argument per call may be
+`-`; do not assume every literal argument supports stdin.
 
-Install the entire folder, including scripts and references, and start a fresh
-agent session. Authoritative tasks require a compatible task_urgency view.
+All project writes need the displayed approval scope. Freeze returns canonical
+scope_lines, approve compares that exact text and records owner_reply
+separately. An exclusion requires a revised freeze. Hashes are consistency
+checks, not proof of conversation authority, provenance or authenticity.
 
-## Normal use
+The helper reads whole continuity files and emits a bounded projection (16,384
+bytes); it does not bound filesystem bytes read. It explicitly reports index
+or latest-entry truncation. Snapshot --entries 1..10 changes projection only;
+the concurrency digest always covers two entries. Ancestor instruction
+files still need explicit reading. Semantic narrative contradictions stop;
+a stale index date alone is a gap.
 
-Invoke $newbeginning at the project root. The agent resolves project/ancestor
-instructions, snapshots bounded continuity evidence, reads current Tasks rows
-when available, and validates a scratch envelope. It emits at most 250 words
-with the last Next: and one handoff question, then stops.
+Conflict detection covers workspace root and journal directory only: conflicted
+copy, sync-conflict, case-conflict and continuity-specific numbered/copy names.
+Aliases are reported or refused when ambiguous. There is no recursive/OneDrive host-suffix reconciliation or detection of
+iCloud numbered copies for non-continuity files; Finder continuity " copy 2" is detected. Writers share `private-artifacts/session-journal/.lock` across TMPDIR values.
+Same-host dead pids recover immediately; live pids block regardless of age.
+Other-host locks expire after ten minutes, even during a legitimate long write.
+Recovery warnings are reported. Other devices can write in the residual precheck/replace or rollback window. No
+absolute cross-device lost-update guarantee is made.
 
-Useful CLI entry points:
+Legacy v1 continuity layouts, journals and _policy.json stay readable and are
+never automatically rewritten. Legacy journal matching is limited consistency
+evidence, not crash recovery. Legacy pending blocks stay opaque: preserve
+Connection/Connects to, absent Status and unknown metadata without data loss.
 
-```text
-python /path/to/newbeginning/scripts/runtime_cli.py snapshot /path/to/project
-python /path/to/newbeginning/scripts/runtime_cli.py fingerprint-rows /scratch/rows.json
-python /path/to/newbeginning/scripts/runtime_cli.py count-words /scratch/brief.md
-python /path/to/newbeginning/scripts/runtime_cli.py validate /scratch/envelope.json
-```
+Not validated here: live Tasks writes, live Open Brain, real process kills,
+power loss, actual Dropbox races, other languages or fresh behavior in both
+harnesses. Deterministic faults and seeded crash states are synthetic.
 
-Read references/runtime_contract.md to assemble an envelope; executable
-validators are in scripts/schemas.py. Keep scratch evidence outside the
-project. Validation checks consistency, not the authenticity of supplied rows.
+## Operator handoff
 
-## Degraded and recovery use
 
-- Tasks absent, unauthorized, or scoped elsewhere: name the exact state, treat
-  the Markdown mirror as possibly stale, and make no current-task claim.
-- Python unavailable: name the missing helper and unperformed checks.
-- Index absent: draft reconstruction/bootstrap, obtain approval, read back the
-  saved index, and recapture before briefing.
-- Source contradiction or root-level sync conflict: stop and name it; separate
-  approval is required for reconciliation.
-- Open Brain unavailable: leave pending-learning content unread and defer
-  review. Ordinary opening does not require Open Brain.
+Routine use returns an evidence-backed brief of at most 250 words and stops.
+The hand-off question precedes the final evidence line. It does not begin work
+or append a session. Five branches: normal, index-only, reconstruction,
+bootstrap and conflicted (stop). An unborn branch is normal; corrupt git
+explicitly degrades. Without a current Tasks receipt, tasks are unverified and
+the Markdown mirror is read-only.
 
-## Authority and limits
+Approved bootstrap/reconstruction uses the shipped index_template.md,
+index-only freeze-draft, approve-draft and write-approved --expect. These are
+opening's only writes. Task creation, Open Brain captures and pending-file
+edits/dispositions/deletion belong during the session or at closingtime: route
+those requests there and stop. Searches remain reads; SKIP-openbrain means no
+search or capture, since searches send candidate text to the service.
 
-Routine opening writes nothing to the project or external systems. Approved
-post-brief task creation reserves its UUID before writing and reads that same
-UUID after an uncertain outcome. Task updates, completion, parking, and
-cancellation are outside opening scope.
+Report unfinished_operations and direct the operator to resume. A verified
+append stays journaled; changed remaining indexes use a fresh index-only
+freeze-draft --continue <parent-intent> with new approval, or approved child
+abandonment. Opening never creates pending Tasks intent.
 
-Local fixtures cover contracts, helper failure paths, packaging, and structure.
-They do not prove fresh model behavior, working external writes, third-language
-quality, recursive conflict discovery, or independent transferability.
-Current hashes and validation gates are recorded in the repository's
-skills/_shared/validation/README.md; normal invocation does not need that
-maintainer evidence. Production promotion remains a separate decision.
+Use the whole folder; runtime and references are bundled independently of its
+sibling. The original receipt survives a bound interrupted operation returned by resume;
+otherwise re-observe and freeze a current receipt. New evidence expires after
+six hours, with at most 120 seconds future skew. One draft approval per invocation;
+discard superseded proposals before approval (conversation duty).
+For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
+the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
+No installation into personal skill directories occurs during implementation.

@@ -13,6 +13,8 @@ plus the deterministic tests that keep both skills honest.
 | `mapping.py` | The frozen-to-vNext checklist mapping — 71 behavioral checks, each dispositioned `retained` / `mapped` / `retired`, with the counts self-checked. |
 | `fixtures.py` | Deterministic envelope fixtures and one-defect mutants. |
 | `helpers.py` | Phase 2 local snapshot, compare-and-swap append/journal, audit, and deployment-hash helpers. No network client or credentials. |
+| `round3_fixtures.py` | Round-3 scope, portability, recovery, lock, parser, freshness and regression checks. |
+| `round3_1_fixtures.py` | Optional staging, exact scopes, final-text counts, fresh call chains and D01 regression. |
 | `helper_fixtures.py` | Real-filesystem fixtures, isolated under temporary directories. |
 | `run_helper_tests.py` | Focused Phase 2 helper gate. |
 | `runtime_cli.py` | CLI bridge used by the packaged skill runtimes. |
@@ -21,7 +23,7 @@ plus the deterministic tests that keep both skills honest.
 | `candidate_quality_fixtures.py` | English/Spanish quality fixture catalog; semantic expectations need independent scoring. |
 | `runtime_contract.md` | Progressive-disclosure envelope and helper reference. |
 | `task_operations.md` | Progressive-disclosure Tasks DB queries and receipt rules. |
-| `task_operations_newbeginning.md` | Opening-specific task reads and retry-safe creation; no task updates. |
+| `task_operations_newbeginning.md` | Opening-specific task reads only; no task mutations. |
 | `sync_runtime_copies.py` | Regenerates identical deployable runtime copies in both skill folders. |
 | `lifecycle_contract.md` | Approved normative lifecycle/test contract, relocated for implementation. |
 | `run_contract_tests.py` | Runs the public deterministic contract and local-helper gates. |
@@ -80,8 +82,7 @@ drifts.
 The task reference is deliberately different between the skills. The generator
 uses `task_operations_newbeginning.md` for the opening package and
 `task_operations.md` for closeout. Both copies remain generated and checked;
-regeneration must not expand opening authority or remove reserved-ID retry
-protection.
+regeneration must preserve opening's read-only task scope.
 
 ## Mutant discipline
 

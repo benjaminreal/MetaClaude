@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
@@ -59,16 +60,21 @@ ENTRY_DRAFT = """### Session #[N] | 2026-08-04 | Code (Test)
 
 def _append(envelope, entry_text):
     """Freeze, approve, then append: the sanctioned closeout sequence (F-04)."""
-    receipt = H.freeze_draft(envelope, entry_text)
-    scope = ((envelope or {}).get("approval") or {}).get("scope_string") or "fixture-scope"
-    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, scope))
+    if not envelope:
+        return H.append_session_entry(envelope, entry_text)
+    verdict = S.validate_envelope(envelope, envelope.get("returned_rows_by_capability") or {})
+    if not verdict["valid"]:
+        raise H.HelperError("EINVALIDENVELOPE", str(verdict["failures"]))
+    receipt = H.freeze_draft(envelope, entry_text, INDEX_TEXT if "project_index.md" in envelope.get("mutation_scope", {}).get("M2", []) else None)
+    envelope["approval"]["scope_string"] = receipt["scope_lines"]
+    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, receipt["scope_lines"]))
 
 
 @contextmanager
 def workspace(index_name="project_index.md", session_name="project_session.md",
               index_text=INDEX_TEXT, session_text=SESSION_TEXT):
     with tempfile.TemporaryDirectory(prefix="session-helper-fixture-") as raw:
-        root = Path(raw)
+        root = Path(raw).resolve()
         if index_name and index_text is not None:
             (root / index_name).write_text(index_text, encoding="utf-8")
         if session_name and session_text is not None:
@@ -93,13 +99,18 @@ def _policy(root: Path, ceiling: int = 2) -> None:
     )
 
 
-def _envelope(root: Path, invocation_id: str = "fixture-inv-1") -> dict:
+def _envelope(root: Path, invocation_id: str | None = None) -> dict:
     env = fixtures.base_envelope(
-        invocation_id=invocation_id,
+        invocation_id=invocation_id or str(uuid.uuid4()),
         workspace_root=str(root),
         local_snapshot=H.capture_local_snapshot(root),
     )
+    env["invocation_started_at"] = env["local_snapshot"]["observed_at"]
+    for receipt in env["mcp_receipts"]:
+        receipt["observed_at"] = env["local_snapshot"]["observed_at"]
     env["skill_version"] = "closingtime@fixture"
+    env["mutation_scope"] = {"M2": [(env["local_snapshot"]["session"].get("path") or "project_session.md")], "M3": [], "M4": []}
+    env["approval"]["scope_string"] = H._scope_text(H._scope_operations(env))
     env["returned_rows_by_capability"] = {"tasks_mcp": fixtures.TASK_ROWS}
     return env
 
@@ -123,12 +134,8 @@ def check_f2_no_git() -> list[str]:
 
     with workspace() as root:
         (root / ".git").mkdir()
-        _expect_error(
-            "EGITFAIL",
-            lambda: H.capture_local_snapshot(root),
-            issues,
-            "F2-git-present-failing",
-        )
+        if H.capture_local_snapshot(root)["git"].get("state") != "corrupt":
+            issues.append("F2 corrupt git must degrade explicitly")
     return issues
 
 
@@ -253,8 +260,8 @@ def check_f9_invalid_envelope_refusal() -> list[str]:
             )
             if (root / "project_session.md").read_bytes() != before:
                 issues.append("F9-unrelated-scope: session bytes changed")
-            if (root / "private-artifacts").exists():
-                issues.append("F9-unrelated-scope: journal created")
+            if H.audit_session_log(root)["journaled"]:
+                issues.append("F9-unrelated-scope: append journaled")
     return issues
 
 
@@ -336,11 +343,11 @@ def check_f10_concurrency_and_audit() -> list[str]:
         _policy(root)
         env = _envelope(root, "fixture-stale-lock")
         lock = H._lock_path(root)
-        lock.write_text("dead-process", encoding="utf-8")
+        lock.write_text(json.dumps({"host": H.socket.gethostname(), "pid": 99999999, "started_at": time.time()}), encoding="utf-8")
         old = time.time() - H.LOCK_STALE_SECONDS - 5
         os.utime(lock, (old, old))
         result = _append(env, ENTRY_DRAFT)
-        if "ESTALE" not in result["warnings"]:
+        if "ELOCK_STALE_RECOVERED" not in result["warnings"]:
             issues.append(f"F10-stale-lock: warnings={result['warnings']}")
 
     # A readback mismatch refuses journal creation and remains auditable.
@@ -355,11 +362,11 @@ def check_f10_concurrency_and_audit() -> list[str]:
                 "F10-readback-mismatch",
             )
         journal_records = list((root / "private-artifacts" / "session-journal").glob("*.json"))
-        journal_records = [p for p in journal_records if p.name != H.GRANDFATHER_POLICY]
+        journal_records = [p for p in journal_records if p.name not in {H.GRANDFATHER_POLICY, "workspace.json"}]
         if journal_records:
             issues.append("F10-readback-mismatch: journal was written after failed readback")
         audit = H.audit_session_log(root)
-        if [entry["session_number"] for entry in audit["unjournaled"]] != [3]:
+        if audit["unjournaled"]:
             issues.append(f"F10-readback-audit: {audit}")
 
     return issues
@@ -474,7 +481,7 @@ def check_f10_documented_unverified_exception() -> list[str]:
 def check_f15_deploy() -> list[str]:
     issues: list[str] = []
     with tempfile.TemporaryDirectory(prefix="session-sync-fixture-") as raw:
-        root = Path(raw)
+        root = Path(raw).resolve()
         canonical = root / "canonical"
         matched = root / "matched"
         mismatched = root / "mismatched"
@@ -507,7 +514,7 @@ def check_instruction_resolution() -> list[str]:
     """CAP-8: root files win; else ancestors are walked; else instructions_absent."""
     issues: list[str] = []
     with tempfile.TemporaryDirectory(prefix="session-helper-instr-") as raw:
-        parent = Path(raw) / "portfolio"
+        parent = Path(raw).resolve() / "portfolio"
         project = parent / "project"
         project.mkdir(parents=True)
         (project / "project_index.md").write_text(INDEX_TEXT, encoding="utf-8")
@@ -565,13 +572,13 @@ def check_f04_frozen_draft() -> list[str]:
             stream.write("\n---\n\n### Session #9 | 2026-08-04 | Foreign\n**Next:** x\n")
         rebased = _envelope(root)
         before = (root / "project_session.md").read_text(encoding="utf-8")
-        approved = H.approve_draft(receipt, rebased["approval"]["scope_string"])
+        approved = H.approve_draft(receipt, receipt["scope_lines"])
         expect("EDRAFTMISMATCH", lambda: H.append_session_entry(rebased, ENTRY_DRAFT, approved), "F04-rebased")
         expect("ESTALE", lambda: H.append_session_entry(draft_env, ENTRY_DRAFT, approved), "F04-foreign-write")
         if (root / "project_session.md").read_text(encoding="utf-8") != before:
             issues.append("F04: refused append still mutated the session log")
         journal = root / "private-artifacts" / "session-journal"
-        records = [p for p in journal.glob("*.json") if p.name != "_policy.json"] if journal.is_dir() else []
+        records = [p for p in journal.glob("*.json") if p.name not in {"_policy.json", "workspace.json"}] if journal.is_dir() else []
         if records:
             issues.append(f"F04: refused append journaled {records}")
 
@@ -592,7 +599,7 @@ def check_f04_frozen_draft() -> list[str]:
         early = dict(approved, approved_at="2000-01-01T00:00:00Z")
         early["receipt_sha256"] = H._receipt_digest(early)
         expect("ECHRONOLOGY", lambda: H.append_session_entry(env, ENTRY_DRAFT, early), "F04-before-draft")
-        expect("EDRAFTRECEIPT", lambda: H.approve_draft(approved, scope), "F04-double-approve")
+        expect("EINVOCATIONUSED", lambda: H.approve_draft(approved, scope), "F04-double-approve")
         result = H.append_session_entry(env, ENTRY_DRAFT, approved)
         if not result.get("readback_ok"):
             issues.append(f"F04-happy: {result}")

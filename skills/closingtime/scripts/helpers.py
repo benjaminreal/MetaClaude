@@ -14,6 +14,7 @@ from another device.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import datetime as dt
 import fnmatch
@@ -21,6 +22,8 @@ import hashlib
 import json
 import os
 import re
+import socket
+import copy
 import subprocess
 import tempfile
 import time
@@ -46,25 +49,23 @@ SESSION_NAMES = (
 PENDING_NAMES = ("pending_learnings.md", "Pending_Learnings.md")
 INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md")
 GIT_CHANGED_PATHS_CAP = 20
-SYNC_PATTERNS = ("*(Conflicted copy*", "*.sync-conflict-*", "* (case conflict)*")
+SYNC_PATTERNS = ("*conflicted copy*", "*.sync-conflict-*", "*(case conflict*")
+ARCHIVE_NAMES = ("project_decisions_archive.md",)
 
 SESSION_HEADER_RE = re.compile(
-    r"^### Session #(?P<number>\d+)\s*\|\s*(?P<date>\d{4}-\d{2}-\d{2})\s*\|",
+    r"^### Session #(?P<number>[0-9]+)[ \t]*\|[ \t]*(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*\|[ \t]*[^\s|][^\n|]*$",
     re.MULTILINE,
-)
-ENTRY_RE = re.compile(
-    r"(?ms)(?:\A|\n)(---\n\n### Session #(?P<number>\d+).*?)"
-    r"(?=\n---\n\n### Session #|\Z)"
 )
 
 
 class HelperError(RuntimeError):
     """A deterministic helper refusal with a stable contract error code."""
 
-    def __init__(self, code: str, detail: str):
+    def __init__(self, code: str, detail: str, **context):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+        self.context = context
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -96,6 +97,7 @@ def _observation_clock() -> dict:
     offset = local.strftime("%z")
     return {
         "observed_at": now.isoformat().replace("+00:00", "Z"),
+        "captured_at": now.isoformat().replace("+00:00", "Z"),
         "local_date": local.date().isoformat(),
         "local_utc_offset": f"{offset[:3]}:{offset[3:]}" if offset else None,
     }
@@ -123,25 +125,26 @@ def _inside(root: Path, path: Path) -> Path:
     return resolved
 
 
-def _resolve_named_file(root: Path, names: tuple[str, ...]) -> Path | None:
-    try:
-        children = list(root.iterdir())
-    except OSError as exc:
-        raise HelperError("EPERM", f"cannot list {root}: {exc}") from exc
-    by_exact = {child.name: child for child in children if child.is_file()}
-    for name in names:
-        if name in by_exact:
-            return _inside(root, by_exact[name])
+def _named_observation(root: Path, names: tuple[str, ...]) -> tuple[Path | None, list[str]]:
+    children = list(root.iterdir())
+    matches = sorted((p for p in children if p.name.casefold() in {n.casefold() for n in names}), key=lambda p: p.name)
+    for p in matches:
+        if not p.is_file():
+            raise HelperError("EPERM", f"continuity path is not a file: {p}")
+        _inside(root, p)
+    if not matches:
+        return None, []
+    # Only the canonical spelling is unambiguous precedence. Multiple aliases
+    # without that spelling are not a license to choose a history.
+    exact = next((p for p in matches if p.name == names[0]), None)
+    if exact is None and len(matches) > 1:
+        raise HelperError("EAMBIGUOUSNAME", ", ".join(p.name for p in matches))
+    chosen = exact or matches[0]
+    return _inside(root, chosen), [p.name for p in matches if p != chosen]
 
-    by_casefold: dict[str, list[Path]] = {}
-    for child in children:
-        if child.is_file():
-            by_casefold.setdefault(child.name.casefold(), []).append(child)
-    for name in names:
-        matches = by_casefold.get(name.casefold(), [])
-        if len(matches) == 1:
-            return _inside(root, matches[0])
-    return None
+
+def _resolve_named_file(root: Path, names: tuple[str, ...]) -> Path | None:
+    return _named_observation(root, names)[0]
 
 
 def _read_text(root: Path, path: Path | None) -> str:
@@ -155,74 +158,106 @@ def _read_text(root: Path, path: Path | None) -> str:
 
 
 def _last_session_entries(text: str, count: int = 2) -> tuple[str, int]:
-    matches = list(SESSION_HEADER_RE.finditer(text))
-    if not matches:
-        return "", 0
-    selected = matches[-count:]
-    start = selected[0].start()
-    tail = text[start:].strip()
-    latest = max(int(match.group("number")) for match in matches)
-    return tail, latest
+    entries, _ = S.parse_history(text)
+    legacy = S.legacy_session_numbers(text)
+    if not entries:
+        return "", max(legacy, default=0)
+    return text[entries[-count:][0]["header_start"]:].strip(), max([e["session_number"] for e in entries] + legacy)
+
+
+def _contained(root: Path, path: Path) -> Path:
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(Path(root).resolve())
+    except (ValueError, OSError) as exc:
+        raise HelperError("EPERM", f"path escapes workspace: {path}") from exc
+    return resolved
 
 
 def _sync_conflicts(root: Path) -> list[str]:
-    conflicts: list[str] = []
-    try:
-        children = list(root.iterdir())
-    except OSError as exc:
-        raise HelperError("EPERM", f"cannot scan {root}: {exc}") from exc
-    for child in children:
-        if not child.is_file():
-            continue
-        folded = child.name.casefold()
-        if any(fnmatch.fnmatch(folded, pattern.casefold()) for pattern in SYNC_PATTERNS):
-            conflicts.append(child.name)
+    conflicts = []
+    journal = _contained(root, root / "private-artifacts/session-journal")
+    directories = [root] + ([journal] if journal.is_dir() else [])
+    stems = {Path(n).stem.casefold() for n in INDEX_NAMES + SESSION_NAMES + PENDING_NAMES + ARCHIVE_NAMES}
+    for directory in directories:
+        for child in directory.iterdir():
+            if child.name == ".lock":
+                continue
+            folded = child.name.casefold()
+            generic = any(fnmatch.fnmatch(folded, pattern) for pattern in SYNC_PATTERNS)
+            specific = any(re.fullmatch(re.escape(stem) + r"(?: [0-9]+| copy(?: [0-9]+)?| \([0-9]+\))\.md", folded) for stem in stems)
+            if generic or specific:
+                conflicts.append(child.relative_to(root).as_posix())
     return sorted(conflicts)
 
 
 def _git_snapshot(root: Path) -> dict:
-    def run(*args: str) -> subprocess.CompletedProcess[str]:
+    def run(*args):
         try:
-            return subprocess.run(
-                ["git", "-C", str(root), *args],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=10,
-                check=False,
-            )
+            return subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10, check=False)
         except FileNotFoundError:
-            return subprocess.CompletedProcess(args, 127, "", "git not installed")
+            return subprocess.CompletedProcess(args, 127, b"", b"git not installed")
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise HelperError("EGITFAIL", str(exc)) from exc
+            return subprocess.CompletedProcess(args, 126, b"", str(exc).encode())
+
+    def degraded(result):
+        return {"available": False, "state": "corrupt", "error": result.stderr.decode("utf-8", "replace").strip() or "git evidence failed"}
 
     probe = run("rev-parse", "--is-inside-work-tree")
-    if probe.returncode == 127:
-        return {"available": False}
-    if probe.returncode != 0:
-        if (root / ".git").exists():
-            raise HelperError("EGITFAIL", probe.stderr.strip() or "git probe failed")
-        return {"available": False}
-
-    head = run("rev-parse", "HEAD")
-    status = run("status", "--porcelain=v1", "--untracked-files=all")
-    diff = run("diff", "--stat", "HEAD", "--")
-    for result in (head, status, diff):
-        if result.returncode != 0:
-            raise HelperError("EGITFAIL", result.stderr.strip() or "git command failed")
+    if probe.returncode:
+        if probe.returncode == 127 or (not (root / ".git").exists() and not (root / ".git").is_symlink() and b"not a git repository" in probe.stderr):
+            return {"available": False}
+        return degraded(probe)
+    top = run("rev-parse", "--show-toplevel")
+    if top.returncode:
+        return degraded(top)
+    toplevel = Path(os.fsdecode(top.stdout).strip()).resolve()
     branch = run("symbolic-ref", "--short", "-q", "HEAD")
-    changed = [line[3:] for line in status.stdout.splitlines() if len(line) > 3]
-
-    return {
-        "available": True,
-        "head": head.stdout.strip(),
-        "branch": branch.stdout.strip() if branch.returncode == 0 else None,
-        "dirty": bool(status.stdout.strip()),
-        "changed_paths": changed[:GIT_CHANGED_PATHS_CAP],
-        "changed_path_count": len(changed),
-        "diff_stat_sha256": _sha256_text(diff.stdout),
-        "status_sha256": _sha256_text(status.stdout),
-    }
+    if branch.returncode not in (0, 1):
+        return degraded(branch)
+    head = run("rev-parse", "--verify", "-q", "HEAD")
+    unborn = False
+    if head.returncode:
+        # A symbolic branch is unborn only if its ref genuinely does not exist.
+        if branch.returncode:
+            return degraded(head)
+        ref = run("show-ref", "--verify", "--quiet", "refs/heads/" + os.fsdecode(branch.stdout).strip())
+        if ref.returncode != 1:
+            return degraded(ref)
+        unborn = True
+    else:
+        obj = run("cat-file", "-e", "HEAD^{commit}")
+        if obj.returncode:
+            return degraded(obj)
+    status = run("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", str(root))
+    diff = run("diff", "--stat", *( [] if unborn else ["HEAD"] ), "--", str(root))
+    for result in (status, diff):
+        if result.returncode:
+            return degraded(result)
+    tokens = status.stdout.split(b"\0")
+    changed = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]; i += 1
+        if not token:
+            continue
+        paths = [token[3:]]
+        if b"R" in token[:2] or b"C" in token[:2]:
+            if i < len(tokens):
+                paths.append(tokens[i]); i += 1
+        for raw in paths:
+            try:
+                rel = (toplevel / os.fsdecode(raw)).relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if rel not in changed:
+                changed.append(rel)
+    return {"available": True, "head": None if unborn else os.fsdecode(head.stdout).strip(),
+            "unborn": unborn, "branch": os.fsdecode(branch.stdout).strip() if not branch.returncode else None,
+            "toplevel": str(toplevel), "dirty": bool(changed), "changed_paths": changed[:GIT_CHANGED_PATHS_CAP],
+            "changed_path_count": len(changed), "diff_stat_sha256": _sha256_bytes(diff.stdout),
+            "status_sha256": _sha256_bytes(status.stdout)}
 
 
 def _parse_warnings(index_text: str, session_text: str) -> list[str]:
@@ -230,15 +265,10 @@ def _parse_warnings(index_text: str, session_text: str) -> list[str]:
     if index_text and not re.search(r"(?m)^## Summary\s*$", index_text):
         warnings.append("index_missing_summary")
     if session_text:
-        headers = list(SESSION_HEADER_RE.finditer(session_text))
-        if "### Session" in session_text and not headers:
-            warnings.append("session_unparseable")
-        numbers = [int(m.group("number")) for m in headers]
-        if len(numbers) != len(set(numbers)):
-            warnings.append("duplicate_session_number")
-
+        entries, history_warnings = S.parse_history(session_text)
+        warnings.extend(history_warnings)
         updated = re.search(r"(?m)^\*\*Updated:\*\*\s*(\d{4}-\d{2}-\d{2})", index_text)
-        dated = [m.group("date") for m in headers]
+        dated = [entry["date"] for entry in entries]
         if updated and dated and updated.group(1) < max(dated):
             warnings.append("index_updated_before_latest_session")
     return warnings
@@ -263,40 +293,26 @@ def _projection_payload(index_path: Path | None, index_text: str,
 
 def _truncate_projection(projection: dict, cap: int) -> tuple[dict, int, int]:
     full_bytes = len(_canonical_json(projection))
+    out = json.loads(json.dumps(projection))
     if full_bytes <= cap:
-        return projection, full_bytes, full_bytes
-
-    source_index = projection["index"]["text"]
-    source_session = projection["session"]["tail"]
-
-    def candidate(fraction: float) -> dict:
-        out = json.loads(json.dumps(projection))
-        index_chars = int(len(source_index) * fraction)
-        session_chars = int(len(source_session) * fraction)
-        out["index"]["text"] = source_index[:index_chars]
-        # Keep the most recent end of the session projection, where Next and
-        # Blockers normally live.
-        out["session"]["tail"] = (
-            source_session[-session_chars:] if session_chars else ""
-        )
-        out["truncated"] = True
-        return out
-
-    empty = candidate(0.0)
-    if len(_canonical_json(empty)) > cap:
-        raise HelperError("EPROJECTIONCAP", "cap is smaller than projection metadata")
-
-    low, high = 0.0, 1.0
-    best = empty
-    for _ in range(32):
-        mid = (low + high) / 2
-        trial = candidate(mid)
-        if len(_canonical_json(trial)) <= cap:
-            best, low = trial, mid
-        else:
-            high = mid
-    emitted = len(_canonical_json(best))
-    return best, emitted, full_bytes
+        return out, full_bytes, full_bytes
+    out["truncated"] = True
+    # Drop whole older entries first. Keep the latest header at the start.
+    while len(_canonical_json(out)) > cap:
+        headers, _ = S.parse_history(out["session"]["tail"])
+        if len(headers) < 2:
+            break
+        out["session"]["tail"] = out["session"]["tail"][headers[1]["header_start"]:]
+    while len(_canonical_json(out)) > cap and out["index"]["text"]:
+        out["index"]["text"] = out["index"]["text"][:max(0, len(out["index"]["text"]) - max(1, (len(_canonical_json(out))-cap)//2))]
+    if len(_canonical_json(out)) > cap:
+        out["session"]["latest_entry_truncated"] = True
+        while len(_canonical_json(out)) > cap and out["session"]["tail"]:
+            out["session"]["tail"] = out["session"]["tail"][:-max(1, (len(_canonical_json(out))-cap)//2)]
+    emitted = len(_canonical_json(out))
+    if emitted > cap:
+        raise HelperError("EPROJECTIONCAP", "cap smaller than metadata")
+    return out, emitted, full_bytes
 
 
 def _instruction_resolution(root: Path) -> dict:
@@ -342,19 +358,30 @@ def _instruction_budget() -> dict:
     }
 
 
-def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
+def _is_intent_file(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text()).get("kind") in {"append_intent", "write_intent", "remaining_intent"}
+    except (OSError, ValueError, AttributeError):
+        return True  # malformed recovery evidence is unfinished, never ignored
+
+
+def capture_local_snapshot(workspace_root: str | os.PathLike[str], entries: int = 2) -> dict:
     """Return the bounded local snapshot defined by lifecycle contract D.1."""
     root = _resolve_root(workspace_root)
-    index_path = _resolve_named_file(root, INDEX_NAMES)
-    session_path = _resolve_named_file(root, SESSION_NAMES)
-    pending_path = _resolve_named_file(root, PENDING_NAMES)
+    if not isinstance(entries, int) or not 1 <= entries <= 10:
+        raise HelperError("EINPUT", "entries must be 1..10")
+    index_path, index_alts = _named_observation(root, INDEX_NAMES)
+    session_path, session_alts = _named_observation(root, SESSION_NAMES)
+    pending_path, pending_alts = _named_observation(root, PENDING_NAMES)
+    archive_path, archive_alts = _named_observation(root, ARCHIVE_NAMES)
 
     index_text = _read_text(root, index_path)
     session_text = _read_text(root, session_path)
     session_tail, latest_number = _last_session_entries(session_text, count=2)
+    projected_tail, _ = _last_session_entries(session_text, count=entries)
 
     projection = _projection_payload(
-        index_path, index_text, session_path, session_tail, pending_path is not None
+        index_path, index_text, session_path, projected_tail, pending_path is not None
     )
     projection, emitted, full = _truncate_projection(projection, PROJECTION_BYTE_CAP)
 
@@ -365,34 +392,45 @@ def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
         return {
             "path": path.name,
             "present": True,
-            "sha256": _sha256_text(text),
+            "sha256": _sha256_bytes(path.read_bytes()),
             "mtime": dt.datetime.fromtimestamp(
                 stat.st_mtime, dt.timezone.utc
             ).isoformat().replace("+00:00", "Z"),
             "words": len(text.split()),
         }
 
+    git = _git_snapshot(root)
+    warnings = _parse_warnings(index_text, session_text)
+    for label, alts in (("index", index_alts), ("session", session_alts), ("pending", pending_alts), ("archive", archive_alts)):
+        if alts:
+            warnings.append(label + "_alternates_present")
+    if git.get("state") == "corrupt":
+        warnings.append("git_unreadable")
+    journal = _contained(root, root / "private-artifacts/session-journal")
+    unfinished = sorted(str(p.relative_to(root)) for p in journal.iterdir()
+                        if p.suffix == ".pending" or (p.suffix == ".json" and p.name not in {GRANDFATHER_POLICY, "workspace.json"} and _is_intent_file(p))) if journal.is_dir() else []
     return {
-        "index": file_observation(index_path, index_text),
+        "index": {**file_observation(index_path, index_text), "alternates": index_alts},
         "session": {
-            **file_observation(session_path, session_text),
+            **file_observation(session_path, session_text), "alternates": session_alts,
             "tail_sha256": _sha256_text(session_tail),
             "latest_session_number": latest_number,
         },
-        "pending_learnings": {
-            "present": pending_path is not None,
-            "path": pending_path.name if pending_path else None,
-        },
-        "git": _git_snapshot(root),
+        "pending_learnings": {**file_observation(pending_path, _read_text(root, pending_path)), "alternates": pending_alts},
+        "decisions_archive": {**file_observation(archive_path, _read_text(root, archive_path)), "alternates": archive_alts},
+        "unfinished_operations": unfinished,
+        "subprojects": sorted(p.name for p in root.iterdir() if p.is_dir() and not p.is_symlink() and any((p / name).is_file() for name in INDEX_NAMES + SESSION_NAMES))[:20],
+        "git": git,
         "instructions": _instruction_resolution(root),
         "instruction_budget": _instruction_budget(),
         "sync_conflicts": _sync_conflicts(root),
-        "parse_warnings": _parse_warnings(index_text, session_text),
+        "parse_warnings": warnings,
         "projection": projection,
         "projection_bytes_emitted": emitted,
         "projection_bytes_full": full,
         "projection_cap": PROJECTION_BYTE_CAP,
         "workspace_root": str(root),
+        "workspace_id": _workspace_id(root),
         **_observation_clock(),
     }
 
@@ -400,7 +438,7 @@ def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
 def _session_path_from_envelope(root: Path, envelope: dict) -> Path:
     observed = ((envelope.get("local_snapshot") or {}).get("session") or {}).get("path")
     if observed:
-        candidate = root / observed
+        candidate = _contained(root, root / observed)
         if candidate.exists():
             return _inside(root, candidate)
         raise HelperError("ESTALE", f"observed session file disappeared: {observed}")
@@ -410,18 +448,30 @@ def _session_path_from_envelope(root: Path, envelope: dict) -> Path:
     return root / "project_session.md"
 
 
+def _workspace_id(root: Path, create: bool = False) -> str | None:
+    path = _contained(root, root / "private-artifacts/session-journal/workspace.json")
+    if path.exists():
+        try:
+            value = json.loads(path.read_text())["workspace_id"]
+            uuid.UUID(value)
+            return value
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HelperError("ERECOVERY", "invalid workspace identity") from exc
+    if create:
+        value = str(uuid.uuid4())
+        _atomic_record(_journal_dir(root) / "workspace.json", {"workspace_root": str(root), "workspace_id": value})
+        return value
+    return None
+
+
 def _lock_path(root: Path) -> Path:
-    root = root.resolve()
-    lock_root = Path(tempfile.gettempdir()) / "session-skill-locks"
-    lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()
-    return lock_root / f"{digest}.lock"
+    return _journal_dir(root) / ".lock"
 
 
 @contextlib.contextmanager
 def _advisory_lock(root: Path, invocation_id: str) -> Iterator[bool]:
-    path = _lock_path(root)
-    token = f"{invocation_id}:{os.getpid()}:{time.time()}"
+    path = _contained(root, _lock_path(root))
+    token = json.dumps({"host": socket.gethostname(), "pid": os.getpid(), "started_at": time.time(), "invocation_id": invocation_id})
     stale_recovered = False
     for _ in range(2):
         try:
@@ -431,11 +481,26 @@ def _advisory_lock(root: Path, invocation_id: str) -> Iterator[bool]:
             break
         except FileExistsError as exc:
             try:
-                age = time.time() - path.stat().st_mtime
+                original = path.read_bytes()
+                info = json.loads(original)
+                if info["host"] == socket.gethostname():
+                    try:
+                        os.kill(int(info["pid"]), 0)
+                        stale = False
+                    except ProcessLookupError:
+                        stale = True
+                    except PermissionError:
+                        stale = False
+                else:
+                    stale = time.time() - float(info["started_at"]) > LOCK_STALE_SECONDS
             except FileNotFoundError:
                 continue
-            if age <= LOCK_STALE_SECONDS:
-                raise HelperError("ELOCK", f"same-host lock is active: {path}") from exc
+            except (ValueError, KeyError, TypeError) as error:
+                raise HelperError("ELOCK", "unreadable lock; preserve and inspect") from error
+            if not stale:
+                raise HelperError("ELOCK", f"writer lock is active: {path}") from exc
+            if path.read_bytes() != original:
+                raise HelperError("ELOCK", "lock changed during stale recovery")
             try:
                 path.unlink()
             except FileNotFoundError:
@@ -443,7 +508,6 @@ def _advisory_lock(root: Path, invocation_id: str) -> Iterator[bool]:
             stale_recovered = True
     else:
         raise HelperError("ELOCK", f"could not acquire {path}")
-
     try:
         yield stale_recovered
     finally:
@@ -457,53 +521,97 @@ def _advisory_lock(root: Path, invocation_id: str) -> Iterator[bool]:
 def _render_entry(entry_text: str, session_number: int) -> str:
     normalized = entry_text.replace("\r\n", "\n").strip()
     if len(normalized.split()) > SESSION_ENTRY_WORD_CAP:
-        raise HelperError(
-            "EWORDCAP",
-            f"entry has {len(normalized.split())} words; cap is {SESSION_ENTRY_WORD_CAP}",
-        )
-    if "Session #[N]" in normalized:
-        normalized = normalized.replace("Session #[N]", f"Session #{session_number}", 1)
-    else:
-        match = SESSION_HEADER_RE.search(normalized)
-        if not match:
-            raise HelperError("EENTRYFORMAT", "entry needs a '### Session #[N]' header")
-        if int(match.group("number")) != session_number:
-            raise HelperError(
-                "ESTALE",
-                f"draft names session {match.group('number')}; next is {session_number}",
-            )
-    if not normalized.startswith("### Session #"):
-        raise HelperError("EENTRYFORMAT", "session header must be the first line")
+        raise HelperError("EWORDCAP", f"entry exceeds {SESSION_ENTRY_WORD_CAP} words")
+    normalized = normalized.replace("Session #[N]", f"Session #{session_number}", 1)
+    headers = [line for line in normalized.splitlines() if line.startswith("### Session")]
+    if len(headers) != 1 or not normalized.startswith(headers[0]) or re.search(r"(?m)^---\s*$", normalized):
+        raise HelperError("EENTRYFORMAT", "exactly one entry header; no embedded separators")
+    header = SESSION_HEADER_RE.fullmatch(headers[0])
+    mode = headers[0].rsplit("|", 1)[-1].strip()
+    if not header or not re.fullmatch(r"[^\s()[\]]+[^()[\]]* \([^()[\]]+\)", mode):
+        raise HelperError("EENTRYFORMAT", "complete number | real date | mode/tool header required")
+    try:
+        dt.date.fromisoformat(header.group("date"))
+    except ValueError as exc:
+        raise HelperError("EENTRYFORMAT", "impossible entry date") from exc
+    if int(header.group("number")) != session_number:
+        raise HelperError("ESTALE", "entry number differs from allocated number")
+    for field in ("Focus", "Done", "Next", "Blockers"):
+        values = re.findall(r"(?m)^\*\*" + field + r":\*\*[ \t]*(.*)$", normalized)
+        if len(values) != 1 or not values[0].strip() or re.fullmatch(r"\[[^]]*\]", values[0].strip()):
+            raise HelperError("EENTRYFORMAT", f"one populated {field}: field required")
     return "---\n\n" + normalized + "\n"
 
 
 def _readback_entry(session_path: Path, session_number: int) -> str | None:
     text = session_path.read_text(encoding="utf-8")
-    for match in ENTRY_RE.finditer(text):
-        if int(match.group("number")) == session_number:
-            return match.group(1).rstrip() + "\n"
+    entries, _ = S.parse_history(text)
+    for entry in entries:
+        if entry["session_number"] == session_number:
+            return entry["chunk"]
     return None
 
 
-def _journal_record_path(root: Path, invocation_id: str, written_at: str) -> Path:
-    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", invocation_id)
-    stamp = written_at.replace(":", "").replace("-", "")
-    return root / "private-artifacts" / "session-journal" / f"{stamp}-{safe_id}.json"
+def _journal_dir(root: Path) -> Path:
+    path = _contained(root, root / "private-artifacts/session-journal")
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HelperError("EJOURNAL", f"journal directory unavailable: {exc}") from exc
+    return path
 
 
 def _write_journal_record(root: Path, record: dict) -> Path:
+    """Legacy fixture/import writer; append uses durable intents instead."""
     issues = S.validate_journal_record(record)
     if issues:
-        raise HelperError("EJOURNAL", json.dumps(issues, sort_keys=True))
-    path = _journal_record_path(root, record["invocation_id"], record["written_at"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with path.open("x", encoding="utf-8") as stream:
-            json.dump(record, stream, ensure_ascii=False, indent=2, sort_keys=True)
-            stream.write("\n")
-    except FileExistsError as exc:
-        raise HelperError("EJOURNAL", f"journal record already exists: {path}") from exc
+        raise HelperError("EJOURNAL", json.dumps(issues))
+    path = _journal_dir(root) / (uuid.uuid4().hex + ".json")
+    _atomic_record(path, dict(record, workspace_root=str(root)))
     return path
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_record(path: Path, record: dict) -> None:
+    # Temporary evidence is preserved on failure, never mistaken for an intent.
+    path = _contained(Path(record["workspace_root"]), path)
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    with temporary.open("xb") as stream:
+        stream.write(_canonical_json(record) + b"\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    _fsync_dir(path.parent)
+
+
+def _move_record(path: Path, suffix: str) -> Path:
+    destination = path.with_suffix(suffix)
+    if destination != path:
+        if destination.exists():
+            raise HelperError("ERECOVERY", f"recovery destination exists: {destination}")
+        os.replace(path, destination)
+        _fsync_dir(destination.parent)
+    return destination
+
+
+def _file_state(path: Path) -> dict:
+    if not path.exists():
+        return {"exists": False, "length": 0, "sha256": "absent"}
+    if not path.is_file():
+        raise HelperError("EPERM", f"not a regular file: {path}")
+    data = path.read_bytes()
+    return {"exists": True, "length": len(data), "sha256": _sha256_bytes(data)}
+
+
+def _state_matches(path: Path, expected: dict) -> bool:
+    return _file_state(path) == expected
 
 
 DRAFT_RECEIPT_KIND = "closingtime_draft_receipt"
@@ -557,177 +665,865 @@ def _receipt_digest(receipt: dict) -> str:
     return _sha256_bytes(_canonical_json({k: v for k, v in receipt.items() if k != "receipt_sha256"}))
 
 
-def freeze_draft(envelope: dict, entry_text: str) -> dict:
-    """Bind the draft-time snapshot, tail and exact entry before the draft is shown.
+def _package_skill() -> str | None:
+    skill = Path(__file__).resolve().parent.parent / "SKILL.md"
+    if not skill.is_file():
+        return None  # canonical shared library / standalone fixture import
+    match = re.search(r"(?m)^name:\s*(newbeginning|closingtime)\s*$", skill.read_text().split("---", 2)[1])
+    return match[1] if match else None
 
-    The receipt is the compare-and-swap baseline: a later snapshot cannot
-    replace it, so a change between draft and approval is detected at append.
-    """
-    snapshot = (envelope or {}).get("local_snapshot")
+
+def _enforce_package_skill(envelope: dict) -> None:
+    package = _package_skill()
+    if package and envelope.get("skill") != package:
+        raise HelperError("ESKILL", "envelope skill differs from this package")
+
+
+def _workspace_binding(envelope: dict) -> Path:
+    _enforce_package_skill(envelope)
+    root = _resolve_root(envelope.get("workspace_root", ""))
+    snapshot = envelope.get("local_snapshot") or {}
+    identity = snapshot.get("workspace_id")
+    if identity and identity != _workspace_id(root):
+        raise HelperError("EWORKSPACEMISMATCH", "snapshot belongs to another journal identity")
+    if not identity and not S._same_root(snapshot.get("workspace_root"), str(root)):
+        raise HelperError("EWORKSPACEMISMATCH", "legacy snapshot needs a fresh observation at this root")
+    return root
+
+
+def _snapshot_digest(snapshot: dict) -> str:
+    value = copy.deepcopy(snapshot)
+    value.pop("workspace_root", None)  # informational location, not identity
+    return _sha256_bytes(_canonical_json(value))
+
+
+def _fresh(snapshot: dict, invocation_started_at: object = None) -> None:
+    failures = S.freshness_failures(snapshot, invocation_started_at)
+    if failures:
+        raise HelperError("ESTALEEVIDENCE", failures[0]["detail"])
+
+
+def _check_identity(root: Path, value: dict) -> None:
+    identity = value.get("workspace_id")
+    if identity and identity != _workspace_id(root):
+        raise HelperError("EWORKSPACEMISMATCH", "journal workspace identities differ")
+
+
+def _approval_path(root: Path, invocation: str) -> Path:
+    return _journal_dir(root) / (hashlib.sha256(invocation.encode()).hexdigest() + ".approval")
+
+
+def _check_invocation(root: Path, receipt: dict) -> None:
+    path = _approval_path(root, receipt["invocation_id"])
+    if path.exists() and json.loads(path.read_text()).get("receipt_sha256") != receipt["receipt_sha256"]:
+        raise HelperError("EINVOCATIONUSED", "invocation already has a different approved draft")
+
+
+def _preflight(root: Path, envelope: dict, operations: list[dict], expected: dict | None = None) -> None:
+    snapshot = envelope["local_snapshot"]
+    current = capture_local_snapshot(root)
+    if any(w in S.HISTORY_ERRORS for w in current["parse_warnings"]) or current["session"]["alternates"]:
+        raise HelperError("EHISTORY", "ambiguous or malformed session history")
+    for op in operations:
+        if op["class"] != "M2":
+            if envelope.get("skill") == "newbeginning":
+                raise HelperError("ESKILL", "opening only writes the approved index")
+            continue
+        name = op["path"]
+        if envelope.get("skill") == "newbeginning" and (name not in INDEX_NAMES or op["operation"] != "replace"):
+            raise HelperError("ESKILL", "opening only writes the approved index")
+        if op["operation"] == "append":
+            if envelope.get("skill") != "closingtime" or name not in SESSION_NAMES:
+                raise HelperError("ESKILL", "only closingtime appends a session")
+            _session_path_from_envelope(root, envelope)
+            obs = snapshot.get("session") or {}
+            actual = _file_state(_contained(root, root / name))["sha256"]
+            if actual != (obs.get("sha256") if obs.get("present") else "absent"):
+                raise HelperError("ESTALE", "session changed since observation")
+        else:
+            target, field = _writer_target(root, envelope, name)
+            if envelope.get("skill") == "newbeginning" and (field != "index" or op["operation"] != "replace"):
+                raise HelperError("ESKILL", "opening only writes the approved index")
+            obs = snapshot.get(field) or {}
+            preimage = (expected or {}).get(name, obs.get("sha256") if obs.get("present") else "absent")
+            if _file_state(target)["sha256"] != preimage:
+                raise HelperError("ESOURCECHANGED", "approved preimage changed: " + name)
+
+
+def _scope_operations(envelope: dict, legacy: bool = False) -> list[dict]:
+    result = []
+    for cls in ("M2", "M3", "M4"):
+        items = (envelope.get("mutation_scope") or {}).get(cls, [])
+        if not isinstance(items, list):
+            raise HelperError("EINPUT", "scope must contain lists")
+        for item in items:
+            if cls == "M2":
+                name = item.get("path") if isinstance(item, dict) else item
+                if not isinstance(name, str) or not name or Path(name).is_absolute() or ".." in Path(name).parts or "\n" in name or "\r" in name:
+                    raise HelperError("EPERM", "scope needs contained relative paths")
+                name = Path(name).as_posix()
+                snap = envelope.get("local_snapshot") or {}
+                session = (snap.get("session") or {}).get("path") or SESSION_NAMES[0]
+                parent_close = any((v.get("path") == session and v.get("operation", "append") == "append") if isinstance(v, dict) else v == session for v in items)
+                default = ["append"] if name == session else (["stage"] if name == "pending_learnings.md" and parent_close else ["replace"])
+                if legacy:
+                    # Match already-bound pre-round-3 receipts during recovery;
+                    # new freezes never request this historical scope expansion.
+                    pending = (snap.get("pending_learnings") or {}).get("path") or PENDING_NAMES[0]
+                    default = ["append"] if name == session else (["replace", "delete"] if name == pending else ["replace"])
+                kinds = [item["operation"]] if isinstance(item, dict) and "operation" in item else default
+                for kind in kinds:
+                    if kind not in {"append", "replace", "delete", "stage"}:
+                        raise HelperError("EINPUT", "unknown local operation kind")
+                    if kind == "stage" and name != "pending_learnings.md":
+                        raise HelperError("ESTAGE", "stage is limited to pending_learnings.md")
+                    result.append({"class": cls, "operation": kind, "path": name})
+            else:
+                if not isinstance(item, str) or not item.strip() or "\n" in item or "\r" in item:
+                    raise HelperError("EINPUT", "external/repository scope needs exact operation identifier")
+                result.append({"class": cls, "operation": item})
+    return sorted(result, key=lambda v: _canonical_json(v))
+
+
+def _scope_text(operations: list[dict], legacy: bool = False) -> str:
+    return "\n".join(op["class"] + " " + op["operation"] + (" " + op["path"] if "path" in op else "") +
+                     (" (optional; new candidate blocks only)" if op["operation"] == "stage" else "") +
+                     (" (+ journal receipt under private-artifacts/session-journal/)" if op["class"] == "M2" and (not legacy or op["operation"] == "append") else "") for op in operations)
+
+
+def _observed_targets(envelope: dict) -> dict:
+    snap = envelope["local_snapshot"]
+    return {field: ((snap.get(field) or {}).get("path") or names[0]) for field, names in
+            (("index", INDEX_NAMES), ("pending_learnings", PENDING_NAMES), ("decisions_archive", ARCHIVE_NAMES))}
+
+
+def _unfinished(root: Path) -> list[str]:
+    journal = _contained(root, root / "private-artifacts/session-journal")
+    if not journal.is_dir():
+        return []
+    return [str(p.relative_to(root)) for p in sorted(journal.iterdir()) if p.suffix == ".pending" or
+            (p.suffix == ".json" and p.name not in {GRANDFATHER_POLICY, "workspace.json"} and _is_intent_file(p))]
+
+
+def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str | None = None, continue_parent: str | None = None) -> dict:
+    if not envelope:
+        raise HelperError(S.MISSING_RECEIPT, "envelope absent")
+    _fresh(envelope.get("local_snapshot") or {}, envelope.get("invocation_started_at"))
+    root = _workspace_binding(envelope)
+    verdict = S.validate_envelope(envelope, envelope.get("returned_rows_by_capability") or {})
+    codes = {f["code"] for f in verdict["failures"]} - {S.SCOPE_UNAPPROVED}
+    if "EHISTORY" in codes:
+        raise HelperError("EHISTORY", "ambiguous or malformed session history")
+    if codes:
+        raise HelperError("EINVALIDENVELOPE", ",".join(sorted(codes)))
+    root = _workspace_binding(envelope)
+    if _unfinished(root) and not continue_parent:
+        raise HelperError("EUNFINISHED", "run resume: " + ", ".join(_unfinished(root)))
+    operations = _scope_operations(envelope)
+    targets = _observed_targets(envelope)
+    _preflight(root, envelope, operations)
+    if entry_text is not None and any(op["class"] == "M2" and op["operation"] != "append" and op["path"] != targets["index"] and op != {"class": "M2", "operation": "stage", "path": "pending_learnings.md"} for op in operations):
+        raise HelperError("EINPUT", "parent close permits session, index and optional pending stage only")
+    if any(op["operation"] == "stage" for op in operations) and not any(op["operation"] == "append" for op in operations):
+        raise HelperError("ESTAGE", "stage requires the same close's parent append")
+    if len([op for op in operations if op["operation"] == "stage"]) > 1:
+        raise HelperError("ESTAGE", "only one optional stage line per close")
+    if continue_parent:
+        parents = [(p, r) for p, r in _load_intents(root) if p == _contained(root, root / continue_parent) and r["kind"] == "append_intent" and p.suffix == ".done"]
+        if len(parents) != 1 or entry_text is not None:
+            raise HelperError("ERECOVERY", "continuation requires one verified parent and no entry")
+        continue_parent = parents[0][0].relative_to(root).as_posix()
+        if _append_classification(parents[0][1], final=True, root=root) != "appended":
+            raise HelperError("ERECOVERY", "continuation parent append changed")
+        remaining = _remaining_paths(root, parents[0][1], _load_intents(root))
+        if len(operations) != 1 or operations[0] != {"class": "M2", "operation": "replace", "path": targets["index"]} or targets["index"] not in {op["path"] for op in remaining}:
+            raise HelperError("ERECOVERY", "continuation covers only the remaining index")
+    if envelope.get("skill") == "newbeginning" and any(op["operation"] == "append" for op in operations):
+        raise HelperError("ESKILL", "newbeginning never appends")
+    if targets["index"] in [op.get("path") for op in operations] and index_text is None:
+        raise HelperError("EDRAFTMISMATCH", "index in scope requires exact index draft")
+    archive = targets["decisions_archive"]
+    if any(op.get("path") == archive and op["operation"] == "replace" for op in operations):
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", (envelope.get("local_payload_hashes") or {}).get(archive, "")):
+            raise HelperError("EDRAFTMISMATCH", "archive scope requires local_payload_hashes binding")
+    if entry_text is not None:
+        _render_entry(entry_text, (envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1)
+    elif any(op["operation"] == "append" for op in operations):
+        raise HelperError("EENTRYFORMAT", "append scope requires entry")
+    preimages = {}
+    for field, name in targets.items():
+        obs = envelope["local_snapshot"].get(field) or {}
+        preimages[name] = obs.get("sha256") if obs.get("present") else "absent"
     receipt = {
-        "schema_version": S.SCHEMA_VERSION,
-        "kind": DRAFT_RECEIPT_KIND,
-        "invocation_id": (envelope or {}).get("invocation_id"),
-        "workspace_root": (envelope or {}).get("workspace_root"),
-        "snapshot_sha256": _sha256_bytes(_canonical_json(snapshot)),
-        "snapshot_observed_at": (snapshot or {}).get("observed_at"),
-        "observed_tail_sha256": ((snapshot or {}).get("session") or {}).get("tail_sha256"),
-        "entry_sha256": _sha256_text(entry_text),
-        "entry_words": count_words(entry_text),
-        "drafted_at": _utc_now(),
-        "approved_at": None,
-        "scope_string": None,
+        "schema_version": S.SCHEMA_VERSION, "kind": DRAFT_RECEIPT_KIND, "recovery_version": 2,
+        "invocation_id": envelope.get("invocation_id"), "skill": envelope.get("skill"), "workspace_root": str(root),
+        "workspace_id": _workspace_id(root), "continue_parent": continue_parent,
+        "snapshot_sha256": _snapshot_digest(envelope["local_snapshot"]),
+        "snapshot_observed_at": envelope["local_snapshot"].get("observed_at"),
+        "snapshot_captured_at": envelope["local_snapshot"].get("captured_at", envelope["local_snapshot"].get("observed_at")),
+        "invocation_started_at": envelope.get("invocation_started_at"),
+        "observed_tail_sha256": (envelope["local_snapshot"].get("session") or {}).get("tail_sha256"),
+        "entry_sha256": _sha256_text(entry_text) if entry_text is not None else None,
+        "entry_words": count_words(entry_text or ""),
+        "index_draft_sha256": _sha256_text(index_text) if index_text is not None else None,
+        "index_draft": index_text,
+        "m2_preimages": preimages, "scope_operations": operations,
+        "local_payload_hashes": envelope.get("local_payload_hashes") or {},
+        "scope_lines": _scope_text(operations), "scope_sha256": _sha256_text(_scope_text(operations)),
+        "drafted_at": _utc_now(), "approved_at": None, "scope_string": None, "owner_reply": None,
     }
     receipt["receipt_sha256"] = _receipt_digest(receipt)
     return receipt
 
 
-def approve_draft(receipt: dict, scope_string: str) -> dict:
-    """Stamp approval with the helper clock; call only after explicit approval."""
-    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND:
-        raise HelperError("EDRAFTRECEIPT", "not a draft receipt")
+def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> dict:
+    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND or receipt.get("recovery_version") != 2:
+        raise HelperError("EDRAFTRECEIPT", "not a current draft receipt; freeze again")
     if receipt.get("receipt_sha256") != _receipt_digest(receipt):
-        raise HelperError("EDRAFTRECEIPT", "draft receipt was modified")
+        raise HelperError("EDRAFTRECEIPT", "modified receipt")
     if receipt.get("approved_at"):
-        raise HelperError("EDRAFTRECEIPT", "draft is already approved; freeze a new draft")
-    if not scope_string:
-        raise HelperError(S.SCOPE_UNAPPROVED, "approval needs the exact scope string")
-    drafted = _parse_utc(receipt.get("drafted_at"))
+        raise HelperError("EINVOCATIONUSED", "invocation already approved")
+    if not scope_string or scope_string != receipt.get("scope_lines"):
+        raise HelperError(S.SCOPE_UNAPPROVED, "approval must equal exact rendered scope; exclusions require a new freeze")
+    package = _package_skill()
+    if package and (receipt.get("skill") != package or package == "newbeginning" and any(op.get("path") not in INDEX_NAMES or op.get("operation") != "replace" for op in receipt.get("scope_operations", []))):
+        raise HelperError("ESKILL", "draft is outside this package scope")
+    _fresh({"captured_at": receipt.get("snapshot_captured_at", receipt.get("snapshot_observed_at"))}, receipt.get("invocation_started_at"))
+    root = _resolve_root(receipt["workspace_root"])
+    _check_identity(root, receipt)
     now = dt.datetime.now(dt.timezone.utc)
-    while drafted is not None and now <= drafted:
-        time.sleep(0.001)
-        now = dt.datetime.now(dt.timezone.utc)
-    approved = dict(receipt, approved_at=now.isoformat().replace("+00:00", "Z"), scope_string=scope_string)
-    approved["receipt_sha256"] = _receipt_digest(approved)
+    drafted = _parse_utc(receipt.get("drafted_at"))
+    if drafted is None or drafted >= now:
+        raise HelperError("ECHRONOLOGY", "draft time must precede helper approval time")
+    with _advisory_lock(root, receipt["invocation_id"]) as recovered:
+        path = _approval_path(root, receipt["invocation_id"])
+        if path.exists():
+            raise HelperError("EINVOCATIONUSED", "one approved draft per invocation")
+        approved = dict(receipt, warnings=["ELOCK_STALE_RECOVERED"] if recovered else [], workspace_id=_workspace_id(root, create=True), approved_at=now.isoformat().replace("+00:00", "Z"), scope_string=scope_string, owner_reply=owner_reply)
+        approved["receipt_sha256"] = _receipt_digest(approved)
+        _atomic_record(path, {"workspace_root": str(root), "receipt_sha256": approved["receipt_sha256"]})
     return approved
 
 
-def _check_approved_draft(envelope: dict, entry_text: str, receipt: dict | None) -> None:
-    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND:
-        raise HelperError("EDRAFTRECEIPT", "append requires the approved draft receipt")
-    if receipt.get("receipt_sha256") != _receipt_digest(receipt):
-        raise HelperError("EDRAFTRECEIPT", "draft receipt was modified")
-    if not receipt.get("approved_at"):
-        raise HelperError("EDRAFTRECEIPT", "draft receipt is not approved; run approve-draft after approval")
-    if receipt.get("invocation_id") != envelope.get("invocation_id") or \
-            receipt.get("workspace_root") != envelope.get("workspace_root"):
-        raise HelperError("EDRAFTMISMATCH", "receipt belongs to another invocation or workspace")
-    if receipt.get("snapshot_sha256") != _sha256_bytes(_canonical_json(envelope.get("local_snapshot"))):
-        raise HelperError("EDRAFTMISMATCH", "envelope snapshot differs from the draft-time snapshot")
-    if receipt.get("entry_sha256") != _sha256_text(entry_text):
-        raise HelperError("EDRAFTMISMATCH", "entry differs from the approved draft")
+def _check_approved_draft(envelope: dict, entry_text: str | None, receipt: dict | None) -> None:
+    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND or receipt.get("recovery_version") != 2:
+        raise HelperError("EDRAFTRECEIPT", "requires current approved draft receipt")
+    if receipt.get("receipt_sha256") != _receipt_digest(receipt) or not receipt.get("approved_at"):
+        raise HelperError("EDRAFTRECEIPT", "modified or unapproved draft receipt")
+    legacy = "snapshot_captured_at" not in receipt
+    scope = _scope_text(_scope_operations(envelope, legacy=legacy), legacy=legacy)
+    snapshot_matches = receipt.get("snapshot_sha256") == _snapshot_digest(envelope.get("local_snapshot"))
+    if legacy:
+        snapshot_matches |= receipt.get("snapshot_sha256") == _sha256_bytes(_canonical_json(envelope.get("local_snapshot")))
+        if envelope.get("resume_intent"):
+            for path, record in _load_intents(_resolve_root(envelope["workspace_root"])):
+                original = record["approved_envelope"]["local_snapshot"]
+                if str(path) == envelope["resume_intent"] and receipt["receipt_sha256"] == record["draft_receipt_sha256"]:
+                    snapshot_matches |= receipt.get("snapshot_sha256") == _sha256_bytes(_canonical_json(original)) and _snapshot_digest(original) == _snapshot_digest(envelope["local_snapshot"])
+    if receipt.get("invocation_id") != envelope.get("invocation_id") or not snapshot_matches or receipt.get("scope_lines") != scope or receipt.get("scope_sha256") != _sha256_text(scope):
+        raise HelperError("EDRAFTMISMATCH", "invocation, root, snapshot or scope differs from frozen draft")
+    if "invocation_started_at" in receipt and receipt["invocation_started_at"] != envelope.get("invocation_started_at"):
+        raise HelperError("EDRAFTMISMATCH", "invocation start differs from frozen draft")
+    if entry_text is not None and receipt.get("entry_sha256") != _sha256_text(entry_text):
+        raise HelperError("EDRAFTMISMATCH", "entry differs from frozen draft")
     if receipt.get("scope_string") != (envelope.get("approval") or {}).get("scope_string"):
-        raise HelperError("EDRAFTMISMATCH", "envelope approval scope differs from the approved draft")
-    observed = _parse_utc(receipt.get("snapshot_observed_at"))
-    drafted = _parse_utc(receipt.get("drafted_at"))
-    approved = _parse_utc(receipt.get("approved_at"))
-    now = dt.datetime.now(dt.timezone.utc)
-    if not (observed and drafted and approved and observed <= drafted < approved <= now):
+        raise HelperError("EDRAFTMISMATCH", "envelope approval differs from frozen scope")
+    observed, drafted, approved = [_parse_utc(receipt.get(k)) for k in ("snapshot_observed_at", "drafted_at", "approved_at")]
+    if not (observed and drafted and approved and observed <= drafted < approved <= dt.datetime.now(dt.timezone.utc)):
         raise HelperError("ECHRONOLOGY", "require snapshot <= drafted < approved <= now")
 
 
-def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict | None = None) -> dict:
-    """Validate, compare-and-swap append, read back, and journal one entry."""
+def _approved_context(envelope: dict, receipt: dict, entry_text: str | None = None) -> Path:
     if not envelope:
-        raise HelperError(S.MISSING_RECEIPT, "evidence envelope is absent")
-    returned_rows = envelope.get("returned_rows_by_capability") or {}
-    verdict = S.validate_envelope(envelope, returned_rows)
-    if not verdict["valid"]:
-        codes = sorted({failure["code"] for failure in verdict["failures"]})
-        raise HelperError("EINVALIDENVELOPE", ",".join(codes))
+        raise HelperError(S.MISSING_RECEIPT, "envelope absent")
+    root = _workspace_binding(envelope)
+    _check_approved_draft(envelope, entry_text, receipt)
+    _check_identity(root, receipt)
+    _check_invocation(root, receipt)
+    recovering = False
+    if envelope.get("resume_intent"):
+        for path, record in _load_intents(root):
+            if str(path) == envelope["resume_intent"] and record["draft_receipt_sha256"] == receipt["receipt_sha256"] and record["kind"] == "remaining_intent" and path.suffix == ".pending":
+                parents = [(p, r) for p, r in _load_intents(root) if p == _contained(root, root / record["parent_intent"]) and p.suffix == ".done" and r["kind"] == "append_intent"]
+                recovering = len(parents) == 1 and _append_classification(parents[0][1], final=True, root=root) == "appended"
+        if not recovering:
+            raise HelperError("ERECOVERY", "resume exemption needs a bound unfinished child")
+    if not recovering:
+        _fresh(envelope["local_snapshot"], envelope.get("invocation_started_at"))
+    result = S.validate_envelope(envelope, envelope.get("returned_rows_by_capability") or {}, resume_bound=recovering)
+    if not result["valid"]:
+        raise HelperError("EINVALIDENVELOPE", ",".join(sorted({f["code"] for f in result["failures"]})))
     if not (envelope.get("approval") or {}).get("granted"):
-        raise HelperError(S.SCOPE_UNAPPROVED, "session append lacks approval")
+        raise HelperError(S.SCOPE_UNAPPROVED, "explicit approval required")
+    return root
 
-    invocation_id = envelope.get("invocation_id")
-    if not invocation_id:
-        raise HelperError(S.MISSING_RECEIPT, "invocation_id")
-    skill_version = envelope.get("skill_version")
-    if not skill_version:
-        raise HelperError("EMISSINGVERSION", "skill_version is required for the journal")
 
-    _check_approved_draft(envelope, entry_text, approved_draft)
+def _check_conflicts(root: Path) -> None:
+    conflicts = _sync_conflicts(root)
+    if conflicts:
+        raise HelperError(S.SYNC_CONFLICT, ", ".join(conflicts))
 
-    root = _resolve_root(envelope.get("workspace_root", ""))
-    session_path = _session_path_from_envelope(root, envelope)
-    session_relative = session_path.relative_to(root).as_posix()
-    approved_local = (envelope.get("mutation_scope") or {}).get("M2", [])
-    if not isinstance(approved_local, list) or session_relative not in approved_local:
-        raise HelperError(
-            S.SCOPE_UNAPPROVED,
-            f"session append requires {session_relative} in the approved M2 scope",
-        )
-    warnings: list[str] = []
 
-    with _advisory_lock(root, invocation_id) as stale_recovered:
-        if stale_recovered:
-            warnings.append("ESTALE")
-
-        conflicts = _sync_conflicts(root)
-        if conflicts:
-            raise HelperError(S.SYNC_CONFLICT, ", ".join(conflicts))
-
-        current_text = _read_text(root, session_path if session_path.exists() else None)
-        current_tail, current_latest = _last_session_entries(current_text, count=2)
-        observed_session = (envelope.get("local_snapshot") or {}).get("session") or {}
-        observed_tail_hash = observed_session.get("tail_sha256")
-        if observed_tail_hash != _sha256_text(current_tail):
-            raise HelperError("ESTALE", "session tail changed after observation")
-
-        next_number = current_latest + 1
-        chunk = _render_entry(entry_text, next_number)
-        prefix = ""
-        if not session_path.exists():
-            prefix = "# Session Log\n\n"
-        elif current_text and not current_text.endswith("\n\n"):
-            prefix = "\n" if current_text.endswith("\n") else "\n\n"
-
+def _load_intents(root: Path) -> list[tuple[Path, dict]]:
+    journal = _contained(root, root / "private-artifacts/session-journal")
+    if not journal.is_dir():
+        return []
+    records = []
+    for path in sorted(journal.iterdir()):
+        if path.name in {GRANDFATHER_POLICY, "workspace.json", ".lock"} or path.is_dir():
+            continue
+        _contained(root, path)
+        if path.suffix not in {".pending", ".json", ".done", ".abandoned"}:
+            continue
         try:
-            with session_path.open("a", encoding="utf-8", newline="") as stream:
-                stream.write(prefix + chunk)
-                stream.flush()
-                os.fsync(stream.fileno())
-        except OSError as exc:
-            raise HelperError("EPERM", f"cannot append {session_path}: {exc}") from exc
+            record = json.loads(path.read_text())
+        except (ValueError, OSError) as exc:
+            raise HelperError("ERECOVERY", f"malformed record: {path}") from exc
+        if not isinstance(record, dict):
+            raise HelperError("ERECOVERY", f"record is not an object: {path}")
+        if record.get("kind") not in {"append_intent", "write_intent", "remaining_intent"}:
+            if path.suffix != ".json" or S.validate_journal_record(record):
+                raise HelperError("ERECOVERY", f"foreign record: {path}")
+            continue  # legacy journals are audit-only, never rewritten
+        _check_identity(root, record)
+        if record.get("record_sha256") != _intent_digest(record):
+            raise HelperError("ERECOVERY", f"modified intent: {path}")
+        required = {"workspace_root", "target", "preimage", "draft_receipt_sha256", "invocation_id", "approved_scope", "written_at", "approved_envelope", "approved_draft"}
+        required |= ({"append_bytes", "append_length", "append_sha256", "session_number", "entry_sha256", "m2_operations"} if record["kind"] == "append_intent" else {"relative_path", "operation", "postimage", "transition_id"} if record["kind"] == "write_intent" else {"relative_path", "parent_intent"})
+        if not required <= record.keys() or not isinstance(record["target"], str):
+            raise HelperError("ERECOVERY", f"incomplete intent: {path}")
+        draft = record["approved_draft"]
+        saved_envelope = record["approved_envelope"]
+        if not isinstance(draft, dict) or not isinstance(saved_envelope, dict) or draft.get("receipt_sha256") != record["draft_receipt_sha256"] or draft.get("receipt_sha256") != _receipt_digest(draft):
+            raise HelperError("ERECOVERY", f"recovery inputs differ from intent: {path}")
+        for state in [record["preimage"]] + ([record["postimage"]] if record["kind"] == "write_intent" else []):
+            if not isinstance(state, dict) or set(state) != {"exists", "length", "sha256"} or not isinstance(state["exists"], bool) or type(state["length"]) is not int or state["length"] < 0 or not isinstance(state["sha256"], str):
+                raise HelperError("ERECOVERY", f"invalid byte state: {path}")
+        _record_target(root, record)
+        records.append((path, record))
+    keys = [(r["draft_receipt_sha256"], r["kind"], r.get("transition_id", "append")) for p, r in records if p.suffix != ".abandoned"]
+    allocations = [(r["target"], r["session_number"]) for p, r in records if r["kind"] == "append_intent" and p.suffix != ".abandoned"]
+    if len(keys) != len(set(keys)) or len(allocations) != len(set(allocations)):
+        raise HelperError("ERECOVERY", "multiple conflicting intent matches")
+    return records
 
-        expected_hash = _sha256_text(chunk)
-        readback = _readback_entry(session_path, next_number)
-        if readback is None or _sha256_text(readback) != expected_hash:
-            raise HelperError("EREADBACK", "appended entry hash did not read back")
 
-        written_at = _utc_now()
-        record = {
-            "schema_version": S.SCHEMA_VERSION,
-            "invocation_id": invocation_id,
-            "envelope_sha256": _sha256_bytes(_canonical_json(envelope)),
-            "session_number": next_number,
-            "entry_sha256": expected_hash,
-            "written_at": written_at,
-            "skill_version": skill_version,
-            "draft_receipt_sha256": approved_draft["receipt_sha256"],
-            "approved_at": approved_draft["approved_at"],
-        }
-        journal_path = _write_journal_record(root, record)
+def _intent_digest(record: dict) -> str:
+    return _sha256_bytes(_canonical_json({k: v for k, v in record.items() if k != "record_sha256"}))
 
-    return {
-        "session_number": next_number,
-        "entry_sha256": expected_hash,
-        "journal_record_path": str(journal_path),
-        "readback_ok": True,
-        "warnings": warnings,
-    }
+
+def _persist_intent(root: Path, record: dict) -> Path:
+    record["workspace_root"] = str(root)
+    record["workspace_id"] = _workspace_id(root, create=True)
+    record["record_sha256"] = _intent_digest(record)
+    path = _journal_dir(root) / (uuid.uuid4().hex + ".pending")
+    _atomic_record(path, record)
+    return path
+
+
+def _record_target(root: Path, record: dict) -> Path:
+    target = Path(record["target"])
+    if target.is_absolute():  # legacy v2 intent, retain bytes and relocate by its recorded root
+        try:
+            target = target.relative_to(record["workspace_root"])
+        except ValueError as exc:
+            raise HelperError("EPERM", "legacy target outside recorded root") from exc
+    if ".." in target.parts:
+        raise HelperError("EPERM", "intent traversal")
+    return _contained(root, root / target)
+
+
+def _append_classification(record: dict, final: bool = False, root: Path | None = None) -> str:
+    path = _record_target(root or Path(record["workspace_root"]), record)
+    if _state_matches(path, record["preimage"]):
+        return "not_appended"
+    data = path.read_bytes() if path.exists() else b""
+    pre = record["preimage"]
+    appended = base64.b64decode(record["append_bytes"], validate=True)
+    expected_length = pre["length"] + len(appended)
+    if len(appended) != record["append_length"] or _sha256_bytes(appended) != record["append_sha256"]:
+        raise HelperError("ERECOVERY", "intent append hash/length mismatch")
+    prefix_ok = (not pre["exists"] and pre["length"] == 0) or _sha256_bytes(data[:pre["length"]]) == pre["sha256"]
+    if prefix_ok and data[pre["length"]:expected_length] == appended and (len(data) == expected_length or (final and len(data) > expected_length)):
+        return "appended"
+    return "partial_or_conflicted"
+
+
+def _append_bytes(path: Path, data: bytes) -> None:
+    with path.open("ab") as stream:
+        if stream.write(data) != len(data):
+            raise OSError("short append")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _conditional_rollback(record: dict, pending: Path, root: Path) -> bool:
+    if _append_classification(record, root=root) != "appended":
+        return False
+    path = _record_target(root or Path(record["workspace_root"]), record)
+    if record["preimage"]["exists"]:
+        with path.open("r+b") as stream:
+            stream.truncate(record["preimage"]["length"])
+            stream.flush(); os.fsync(stream.fileno())
+    else:
+        path.unlink()
+        _fsync_dir(path.parent)
+    if not _state_matches(path, record["preimage"]):
+        return False
+    _move_record(pending, ".abandoned")
+    for path, child in _load_intents(root):
+        if child["kind"] == "remaining_intent" and child["draft_receipt_sha256"] == record["draft_receipt_sha256"] and path.suffix == ".pending":
+            _move_record(path, ".abandoned")
+    return True
+
+
+def _remaining_paths(root: Path, record: dict, records: list[tuple[Path, dict]]) -> list[dict]:
+    remaining = []
+    for name, operation in record.get("m2_operations", {}).items():
+        if name not in INDEX_NAMES:
+            continue  # legacy learning scopes no longer hold a parent close open
+        children = [(p, r) for p, r in records if r["kind"] == "remaining_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and r["relative_path"] == name]
+        writes = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and r["relative_path"] == name and p.suffix == ".done"]
+        if writes or (children and all(p.suffix in {".done", ".abandoned"} for p, r in children)):
+            continue
+        actual = _file_state(_contained(root, root / name))
+        remaining.append({"path": name, **operation, "state": "remaining_stale" if actual["sha256"] != operation["preimage"] else "remaining", "current_sha256": actual["sha256"]})
+    return remaining
+
+
+def _create_children(root: Path, parent_path: Path, record: dict, records: list[tuple[Path, dict]]) -> None:
+    for item in _remaining_paths(root, record, records):
+        if any(r["kind"] == "remaining_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and r["relative_path"] == item["path"] for p, r in records):
+            continue
+        name = item["path"]
+        child = {k: record[k] for k in ("workspace_root", "invocation_id", "draft_receipt_sha256", "approved_scope", "written_at", "approved_envelope", "approved_draft")}
+        child.update(kind="remaining_intent", target=name, relative_path=name, parent_intent=parent_path.relative_to(root).with_suffix(".done").as_posix(), preimage={"exists": item["preimage"] != "absent", "length": 0, "sha256": item["preimage"]})
+        _persist_intent(root, child)
+
+
+def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict | None = None) -> dict:
+    if envelope and envelope.get("skill") != "closingtime":
+        raise HelperError("ESKILL", "only closingtime appends")
+    root = _approved_context(envelope, approved_draft, entry_text)
+    if not envelope.get("skill_version"):
+        raise HelperError("EMISSINGVERSION", "skill_version required")
+    warnings = list(approved_draft.get("warnings", []))
+    try:
+        with _advisory_lock(root, envelope["invocation_id"]) as recovered:
+            if recovered:
+                warnings.append("ELOCK_STALE_RECOVERED")
+            _check_conflicts(root)
+            records = _load_intents(root)
+            for path, record in records:
+                if record["kind"] == "append_intent" and record["draft_receipt_sha256"] == approved_draft["receipt_sha256"] and path.suffix != ".abandoned":
+                    state = _append_classification(record, final=path.suffix != ".pending", root=root)
+                    if state == "appended":
+                        if path.suffix == ".pending":
+                            path = _move_record(path, ".done")
+                        return {"session_number": record["session_number"], "entry_sha256": record["entry_sha256"], "journal_record_path": str(path), "already_appended": True, "readback_ok": True, "warnings": warnings}
+                    raise HelperError("EUNFINISHED", "existing intent; run resume")
+            if _unfinished(root):
+                raise HelperError("EUNFINISHED", "run resume before another close")
+            _preflight(root, envelope, approved_draft["scope_operations"], approved_draft["m2_preimages"])
+            session_path = _session_path_from_envelope(root, envelope)
+            relative = session_path.relative_to(root).as_posix()
+            if {"class": "M2", "operation": "append", "path": relative} not in approved_draft["scope_operations"]:
+                raise HelperError(S.SCOPE_UNAPPROVED, "session append not in scope")
+            _, alternates = _named_observation(root, SESSION_NAMES)
+            current_text = _read_text(root, session_path if session_path.exists() else None)
+            history = _parse_warnings("", current_text)
+            if alternates or any(w in history for w in ("session_unparseable", "duplicate_session_number", "session_header_malformed")):
+                raise HelperError("EHISTORY", "ambiguous or malformed session history")
+            tail, latest = _last_session_entries(current_text, 2)
+            if _sha256_text(tail) != approved_draft["observed_tail_sha256"]:
+                raise HelperError("ESTALE", "session tail changed after draft")
+            chunk = _render_entry(entry_text, latest + 1)
+            date = dt.date.fromisoformat(SESSION_HEADER_RE.search(chunk).group("date"))
+            local_date = dt.date.fromisoformat(envelope["local_snapshot"]["local_date"])
+            if abs((date-local_date).days) > 1:
+                warnings.append("ENTRY_DATE_SKEW")
+            preimage = _file_state(session_path)
+            prefix = "# Session Log\n\n" if not preimage["exists"] else ("" if current_text.endswith("\n\n") else "\n" if current_text.endswith("\n") else "\n\n")
+            data = (prefix + chunk).encode("utf-8")
+            m2 = {name: {"preimage": expected, "payload_sha256": approved_draft["index_draft_sha256"] if name == _observed_targets(envelope)["index"] else (approved_draft.get("local_payload_hashes") or {}).get(name)} for name, expected in approved_draft["m2_preimages"].items() if any(op.get("path") == name for op in approved_draft["scope_operations"])}
+            record = {"schema_version": S.SCHEMA_VERSION, "kind": "append_intent", "workspace_root": str(root),
+                      "target": relative, "preimage": preimage, "session_number": latest + 1,
+                      "entry_sha256": _sha256_text(chunk), "append_sha256": _sha256_bytes(data), "append_length": len(data),
+                      "append_bytes": base64.b64encode(data).decode(), "invocation_id": envelope["invocation_id"],
+                      "draft_receipt_sha256": approved_draft["receipt_sha256"], "approved_scope": approved_draft["scope_lines"],
+                      "m2_operations": m2, "envelope_sha256": _sha256_bytes(_canonical_json(envelope)),
+                      "written_at": _utc_now(), "skill_version": envelope["skill_version"], "approved_at": approved_draft["approved_at"],
+                      "approved_envelope": envelope, "approved_draft": approved_draft}
+            try:
+                pending = _persist_intent(root, record)
+                _create_children(root, pending, record, records)
+            except OSError as exc:
+                raise HelperError("EJOURNAL", f"intent not durable; log untouched: {exc}") from exc
+            try:
+                # Recheck after intent I/O as well as under the shared lock.
+                if not _state_matches(session_path, preimage):
+                    raise HelperError("EPARTIAL_APPEND", f"preimage changed after intent: {pending}")
+                _append_bytes(session_path, data)
+                readback = _readback_entry(session_path, latest + 1)
+                if readback is None or _sha256_text(readback) != record["entry_sha256"] or _append_classification(record, root=root) != "appended":
+                    raise OSError("appended bytes did not read back")
+            except (OSError, UnicodeError) as exc:
+                try:
+                    rolled_back = _conditional_rollback(record, pending, root)
+                except (OSError, HelperError):
+                    rolled_back = False
+                raise HelperError("EREADBACK" if rolled_back else "EPARTIAL_APPEND", str(exc), rolled_back=rolled_back, pending_record=str(pending), session_number=latest + 1, entry_sha256=record["entry_sha256"], state="not_appended" if rolled_back else "partial_or_conflicted") from exc
+            try:
+                final = _move_record(pending, ".done")
+            except OSError as exc:
+                raise HelperError("EPARTIAL_APPEND", str(exc), pending_record=str(pending), session_number=latest + 1, entry_sha256=record["entry_sha256"], state="appended") from exc
+            result = {"session_number": latest + 1, "entry_sha256": record["entry_sha256"], "journal_record_path": str(final), "readback_ok": True, "warnings": warnings}
+        return result
+    except OSError as exc:
+        raise HelperError("EPARTIAL_APPEND", f"inspect retained intent via resume: {exc}") from exc
+
+
+def _writer_target(root: Path, envelope: dict, relative_path: str) -> tuple[Path, str]:
+    if envelope.get("skill") == "newbeginning" and relative_path not in INDEX_NAMES:
+        raise HelperError("ESKILL", "opening only writes the approved index")
+    if Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
+        raise HelperError("EPERM", "relative contained target required")
+    groups = {"index": INDEX_NAMES, "pending_learnings": ("pending_learnings.md",), "decisions_archive": ARCHIVE_NAMES}
+    field = next((key for key, names in groups.items() if relative_path in names), None)
+    if field is None:
+        raise HelperError("EPERM", "writer allows fixed index aliases, pending_learnings.md and project_decisions_archive.md only")
+    if envelope.get("skill") == "newbeginning" and field != "index":
+        raise HelperError("ESKILL", "opening only writes its index")
+    names = groups[field]
+    observed = _observed_targets(envelope)[field]
+    if observed not in names or observed != relative_path:
+        raise HelperError("EPERM", "snapshot labels cannot expand fixed target names")
+    resolved, alternates = _named_observation(root, names)
+    if alternates:
+        raise HelperError("EAMBIGUOUSNAME", "target has alternate continuity names")
+    target = _contained(root, root / relative_path)
+    if resolved is not None and resolved != target:
+        raise HelperError("ESOURCECHANGED", "observed target name changed")
+    if target.exists() and not target.is_file():
+        raise HelperError("EPERM", "target is not a file")
+    return target, field
+
+
+def _replace_mirror(index: str, rows: list[dict], local_date: str) -> str:
+    pattern = r"(?ms)(^## Active TODOs[^\n]*\n).*?(?=^## |\Z)"
+    if not re.search(pattern, index):
+        raise HelperError("EDRAFTMISMATCH", "index requires Active TODOs section for mirror")
+    return re.sub(pattern, lambda m: m.group(1) + render_task_mirror(rows, local_date) + "\n", index, count=1)
+
+
+def _stage_parent(root: Path, receipt_sha256: str, records: list[tuple[Path, dict]]) -> Path:
+    parents = [(p, r) for p, r in records if r["kind"] == "append_intent" and r["draft_receipt_sha256"] == receipt_sha256 and p.suffix == ".done"]
+    if len(parents) != 1 or _append_classification(parents[0][1], final=True, root=root) != "appended":
+        raise HelperError("EUNFINISHED", "verify the parent append before staging")
+    return parents[0][0]
+
+
+def _stage_payload(current: bytes, payload: bytes) -> None:
+    """Check only new block structure; existing v1 bytes are opaque and immutable."""
+    if not payload.startswith(current):
+        raise HelperError("ESTAGE", "stage cannot change any existing byte")
+    try:
+        suffix = payload[len(current):].decode("utf-8")
+    except UnicodeError as exc:
+        raise HelperError("ESTAGE", "new candidate blocks must be UTF-8") from exc
+    if current and not current.endswith(b"\n") and not suffix.startswith("\n"):
+        raise HelperError("ESTAGE", "new blocks must start on a new line")
+    blocks = re.split(r"(?m)^## Candidate [0-9]+[^\S\n]*\r?$", suffix)
+    if len(blocks) < 2 or blocks[0].strip():
+        raise HelperError("ESTAGE", "append one or more ## Candidate <number> blocks only")
+    for block in blocks[1:]:
+        if re.search(r"(?m)^#{1,6} ", block) or not all(re.search(pattern, block) for pattern in (
+                r"(?m)^\*\*Type:\*\*[^\S\n]*\S", r"(?m)^\*\*Insight:\*\*[^\S\n]*\S",
+                r"(?m)^\*\*(?:Connection|Connects to):\*\*[^\S\n]*\S")):
+            raise HelperError("ESTAGE", "new blocks need Type, Insight and Connection/Connects to")
+        statuses = re.findall(r"(?m)^\*\*Status:\*\*[^\S\n]*(.*?)\s*$", block)
+        if any(status != "pending" for status in statuses):
+            raise HelperError("ESTAGE", "stage cannot apply a disposition")
+
+
+def _resume_stage(root: Path, path: Path, record: dict, records: list[tuple[Path, dict]]) -> Path:
+    """Retry the exact durable stage child, without a second staging transition."""
+    parent = _stage_parent(root, record["draft_receipt_sha256"], records)
+    if parent.relative_to(root).as_posix() != record.get("parent_intent"):
+        raise HelperError("ERECOVERY", "stage parent binding differs")
+    target, _ = _writer_target(root, record["approved_envelope"], record["relative_path"])
+    payload = base64.b64decode(record["payload_bytes"], validate=True)
+    current = target.read_bytes() if target.exists() else b""
+    _stage_payload(current, payload)
+    temporary = target.with_name(target.name + "." + uuid.uuid4().hex + ".tmp")
+    with temporary.open("xb") as stream:
+        stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+    _check_conflicts(root)
+    _writer_target(root, record["approved_envelope"], record["relative_path"])
+    if not _state_matches(target, record["preimage"]):
+        raise HelperError("EPARTIAL_WRITE", "stage preimage changed; preserve child and foreign bytes")
+    os.replace(temporary, target)
+    _fsync_dir(target.parent)
+    if not _state_matches(target, record["postimage"]):
+        raise HelperError("EPARTIAL_WRITE", "stage readback failed; preserve child")
+    return _move_record(path, ".done")
+
+
+def write_approved_file(envelope: dict, receipt: dict, relative_path: str, content: str | None = None,
+                        operation: str = "replace", expect: str | None = None,
+                        mirror_rows: list[dict] | None = None, owner_reply: str = "") -> dict:
+    root = _approved_context(envelope, receipt)
+    if operation not in {"replace", "delete", "stage"} or expect is None or (expect != "absent" and not re.fullmatch(r"sha256:[a-f0-9]{64}", expect)):
+        raise HelperError("EINPUT", "replace/delete/stage and explicit --expect sha256|absent required")
+    if {"class": "M2", "operation": operation, "path": relative_path} not in receipt["scope_operations"]:
+        raise HelperError(S.SCOPE_UNAPPROVED, "target/operation not in approved scope")
+    if operation in {"replace", "stage"} and content is None or operation == "delete" and content is not None:
+        raise HelperError("EINPUT", "replace/stage needs payload; delete has none")
+    try:
+        with _advisory_lock(root, envelope["invocation_id"]) as recovered:
+            _check_conflicts(root)
+            current = capture_local_snapshot(root)
+            if any(w in S.HISTORY_ERRORS for w in current["parse_warnings"]):
+                raise HelperError("EHISTORY", "history changed or malformed")
+            target, field = _writer_target(root, envelope, relative_path)
+            records = _load_intents(root)
+            stage_parent = None
+            if operation == "stage":
+                if relative_path != "pending_learnings.md" or envelope.get("skill") != "closingtime":
+                    raise HelperError("ESTAGE", "only closingtime stages pending_learnings.md")
+                stage_parent = _stage_parent(root, receipt["receipt_sha256"], records)
+                if any(r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["operation"] == "stage" for p, r in records):
+                    raise HelperError("ESTAGE", "one staging transition per close; resume or abandon its child")
+            previous = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["relative_path"] == relative_path and p.suffix != ".abandoned"]
+            if any(p.suffix == ".pending" and r["kind"] != "remaining_intent" for p, r in records):
+                raise HelperError("EUNFINISHED", "resume pending intent before writing")
+            if field == "pending_learnings":
+                if operation != "stage" and not owner_reply.strip():
+                    raise HelperError(S.SCOPE_UNAPPROVED, "every pending revision needs --owner-reply")
+                if dt.datetime.now(dt.timezone.utc) - _parse_utc(receipt["approved_at"]) > dt.timedelta(hours=6):
+                    raise HelperError("ESTALEEVIDENCE", "pending approval older than six hours")
+            if field == "index":
+                if any(op["operation"] == "append" for op in receipt["scope_operations"]):
+                    parents = [(p, r) for p, r in records if r["kind"] == "append_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and p.suffix in {".done", ".json"}]
+                    if len(parents) != 1 or _append_classification(parents[0][1], final=True, root=root) != "appended":
+                        raise HelperError("EUNFINISHED", "verify the parent append before its index transition")
+                if previous:
+                    raise HelperError("EDRAFTMISMATCH", "index allows one transition per approved draft")
+                if operation != "replace" or receipt["index_draft_sha256"] != _sha256_text(content):
+                    raise HelperError("EDRAFTMISMATCH", "index payload differs from approved draft")
+                if mirror_rows is not None:
+                    if (envelope.get("capability_profile") or {}).get("external", {}).get("tasks_mcp") != "working":
+                        raise HelperError(S.MISSING_RECEIPT, "mirror rows require current Tasks evidence")
+                    # These are post-write rows; caller must supply the freshly
+                    # re-read validated envelope receipt, separately from frozen snapshot.
+                    mirror_receipt = envelope.get("mirror_receipt")
+                    if not mirror_receipt:
+                        raise HelperError(S.MISSING_RECEIPT, "post-Tasks mirror_receipt required")
+                    check = dict(envelope, mcp_receipts=[mirror_receipt], returned_rows_by_capability={"tasks_mcp": mirror_rows})
+                    external = dict(envelope["capability_profile"]["external"], open_brain="absent")
+                    check["capability_profile"] = dict(envelope["capability_profile"], external=external)
+                    verdict = S.validate_envelope(check, {"tasks_mcp": mirror_rows})
+                    if not verdict["valid"]:
+                        raise HelperError("EINVALIDENVELOPE", json.dumps(verdict["failures"]))
+                    content = _replace_mirror(content, mirror_rows, envelope["local_snapshot"]["local_date"])
+            elif mirror_rows is not None:
+                raise HelperError("EINPUT", "mirror rows are index-only")
+            if field == "decisions_archive" and operation == "replace" and receipt["local_payload_hashes"].get(relative_path) != _sha256_text(content):
+                raise HelperError("EDRAFTMISMATCH", "archive payload differs from approved hash")
+            if operation != "stage" and not previous and expect != receipt["m2_preimages"][relative_path]:
+                raise HelperError("ESOURCECHANGED", "first transition must use observed preimage")
+            if previous:
+                latest = max(previous, key=lambda pair: pair[1]["written_at"])[1]
+                if expect != latest["postimage"]["sha256"]:
+                    raise HelperError("ESOURCECHANGED", "revision must follow last verified transition")
+            preimage = _file_state(target)
+            if preimage["sha256"] != expect:
+                raise HelperError("ESOURCECHANGED", "current bytes differ from expected preimage")
+            payload = content.encode("utf-8") if content is not None else None
+            if operation == "stage":
+                _stage_payload(target.read_bytes() if target.exists() else b"", payload)
+            postimage = {"exists": True, "length": len(payload), "sha256": _sha256_bytes(payload)} if payload is not None else {"exists": False, "length": 0, "sha256": "absent"}
+            record = {"schema_version": S.SCHEMA_VERSION, "kind": "write_intent", "workspace_root": str(root),
+                      "target": relative_path, "relative_path": relative_path, "operation": operation,
+                      "preimage": preimage, "postimage": postimage, "payload_sha256": postimage["sha256"],
+                      "draft_receipt_sha256": receipt["receipt_sha256"], "invocation_id": envelope["invocation_id"],
+                      "approved_scope": receipt["scope_lines"], "owner_reply": owner_reply or (receipt.get("owner_reply", "") if operation == "stage" else ""),
+                      "transition_id": uuid.uuid4().hex, "written_at": _utc_now(),
+                      "payload_bytes": base64.b64encode(payload).decode() if payload is not None else None,
+                      "approved_envelope": envelope, "approved_draft": receipt}
+            if stage_parent is not None:
+                record["parent_intent"] = stage_parent.relative_to(root).as_posix()
+            pending = _persist_intent(root, record)
+            temporary = None
+            if payload is not None:
+                temporary = target.with_name(target.name + "." + uuid.uuid4().hex + ".tmp")
+                with temporary.open("xb") as stream:
+                    stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+            _check_conflicts(root)
+            _writer_target(root, envelope, relative_path)
+            if not _state_matches(target, preimage):
+                raise HelperError("EPARTIAL_WRITE", "preimage changed before replacement; preserve intent and foreign file")
+            if temporary is not None:
+                os.replace(temporary, target)
+            elif target.exists():
+                target.unlink()
+            _fsync_dir(target.parent)
+            if not _state_matches(target, postimage):
+                raise HelperError("EPARTIAL_WRITE", "postimage did not read back; resume")
+            final = _move_record(pending, ".done")
+            for child_path, child in _load_intents(root):
+                if child["kind"] == "remaining_intent" and child_path.suffix == ".pending" and child["relative_path"] == relative_path:
+                    if child["draft_receipt_sha256"] == receipt["receipt_sha256"] or child["parent_intent"] == receipt.get("continue_parent"):
+                        _move_record(child_path, ".done")
+            return {"path": relative_path, "operation": operation, "readback_sha256": postimage["sha256"], "bytes": postimage["length"], "readback_ok": True, "journal_record_path": str(final), "warnings": ["ELOCK_STALE_RECOVERED"] if recovered else []}
+
+    except OSError as exc:
+        raise HelperError("EPARTIAL_WRITE", f"inspect intent via resume: {exc}") from exc
+
+
+def _recovery_inputs(root: Path, path: Path, record: dict) -> dict:
+    envelope = copy.deepcopy(record["approved_envelope"])
+    envelope["workspace_root"] = str(root)
+    envelope["local_snapshot"]["workspace_root"] = str(root)
+    envelope["resume_intent"] = str(path)
+    return {"envelope": envelope, "approved_draft": record["approved_draft"],
+            "index_draft": record["approved_draft"].get("index_draft")}
+
+
+def resume_append(workspace_root: str | os.PathLike[str], receipt: dict | None = None,
+                  abandon: str | None = None, owner_reply: str = "") -> dict:
+    root = _resolve_root(workspace_root)
+    try:
+        with _advisory_lock(root, "resume") as recovered:
+            _check_conflicts(root)
+            records = _load_intents(root)
+            if receipt is not None:
+                _check_identity(root, receipt)
+                if receipt.get("receipt_sha256") != _receipt_digest(receipt):
+                    raise HelperError("ERECOVERY", "modified receipt")
+                if not any(r["draft_receipt_sha256"] == receipt["receipt_sha256"] for p, r in records):
+                    raise HelperError("ERECOVERY", "receipt has no durable intent")
+            if abandon:
+                if not owner_reply.strip():
+                    raise HelperError(S.SCOPE_UNAPPROVED, "abandon needs recorded explicit owner approval")
+                selected = _contained(root, root / abandon)
+                matches = [(p, r) for p, r in records if p == selected]
+                if len(matches) != 1 or selected.suffix != ".pending" or matches[0][1]["kind"] == "append_intent":
+                    raise HelperError("ERECOVERY", "only unfinished child intents can be abandoned; append receipts survive")
+                _move_record(selected, ".abandoned")
+                _atomic_record(selected.with_name(selected.name + ".abandon-note"), {"workspace_root": str(root), "intent": selected.relative_to(root).as_posix(), "owner_reply": owner_reply, "written_at": _utc_now()})
+                return {"state": "abandoned", "intent": str(selected), "freshness_exemption": "bound interrupted operation", "warnings": ["ELOCK_STALE_RECOVERED"] if recovered else []}
+            classified = {}
+            # Classify appends first. A read-back append is always final, regardless
+            # of unfinished index work. Legacy .json parents migrate by rename only.
+            for path, record in records:
+                if record["kind"] != "append_intent" or path.suffix == ".abandoned":
+                    continue
+                state = _append_classification(record, final=path.suffix != ".pending", root=root)
+                if path.suffix != ".pending" and state != "appended":
+                    raise HelperError("ERECOVERY", "final entry missing or edited: " + str(path))
+                if state == "appended":
+                    _create_children(root, path, record, records)
+                    if path.suffix != ".done":
+                        _move_record(path, ".done")
+                elif state == "not_appended":
+                    classified[path.with_suffix(".abandoned")] = state
+                    _move_record(path, ".abandoned")
+                    for child, r in records:
+                        if r["kind"] == "remaining_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and child.suffix == ".pending":
+                            _move_record(child, ".abandoned")
+            records = _load_intents(root)
+            # A rollback may have finalized before retiring its unstarted child.
+            for child, r in records:
+                if r["kind"] == "remaining_intent" and child.suffix == ".pending":
+                    abandoned = _contained(root, root / r["parent_intent"]).with_suffix(".abandoned")
+                    if any(p == abandoned and parent["kind"] == "append_intent" for p, parent in records):
+                        _move_record(child, ".abandoned")
+            records = _load_intents(root)
+            results = []
+            for path, record in records:
+                if (path.suffix == ".abandoned" and path not in classified) or receipt and record["draft_receipt_sha256"] != receipt["receipt_sha256"]:
+                    continue
+                if record["kind"] == "append_intent":
+                    state = classified.get(path) or _append_classification(record, final=path.suffix != ".pending", root=root)
+                    remaining = _remaining_paths(root, record, records)
+                    result = {"intent": str(path), "state": state, "session_number": record["session_number"], "remaining_paths": remaining}
+                    if remaining and state == "appended":
+                        child = next((p for p, r in records if r["kind"] == "remaining_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and p.suffix == ".pending"), None)
+                        if child:
+                            result["recovery_inputs"] = _recovery_inputs(root, child, record)
+                    results.append(result)
+                elif record["kind"] == "remaining_intent":
+                    if path.suffix != ".pending":
+                        continue
+                    writes = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and r["relative_path"] == record["relative_path"] and p.suffix == ".done"]
+                    if writes:
+                        _move_record(path, ".done")
+                        continue
+                    parent_path = _contained(root, root / record["parent_intent"])
+                    if not any(p == parent_path and parent["kind"] == "append_intent" and p.suffix == ".done" for p, parent in records):
+                        results.append({"intent": str(path), "state": "waiting_for_append", "path": record["relative_path"]})
+                        continue
+                    actual = _file_state(_record_target(root, record))
+                    state = "remaining" if actual["sha256"] == record["preimage"]["sha256"] else "remaining_stale"
+                    results.append({"intent": str(path), "state": state, "path": record["relative_path"], "current_sha256": actual["sha256"], "recovery_inputs": _recovery_inputs(root, path, record)})
+                else:
+                    actual = _file_state(_record_target(root, record))
+                    newer = [r for p, r in records if r["kind"] == "write_intent" and r["relative_path"] == record["relative_path"] and r["written_at"] > record["written_at"] and p.suffix != ".abandoned"]
+                    if newer:
+                        state = "superseded"
+                    elif actual == record["postimage"]:
+                        state = "applied"
+                        if path.suffix == ".pending":
+                            path = _move_record(path, ".done")
+                    elif actual == record["preimage"] and path.suffix == ".pending":
+                        if record["operation"] == "stage":
+                            path = _resume_stage(root, path, record, records)
+                            state = "applied"
+                        else:
+                            state = "not_applied"
+                            path = _move_record(path, ".abandoned")
+                    else:
+                        state = "partial_or_conflicted"
+                    results.append({"intent": str(path), "state": state, "path": record["relative_path"]})
+            partial = any(r["state"] == "partial_or_conflicted" for r in results)
+            return {"state": "partial_or_conflicted" if partial else (results[0]["state"] if len(results) == 1 else "inspected"), "operations": results,
+                    "unfinished_operations": _unfinished(root), "external_retry": "fresh preconditions and approval required",
+                    "freshness_exemption": "bound interrupted operation; no new approval authorized",
+                    "warnings": ["ELOCK_STALE_RECOVERED"] if recovered else []}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HelperError("ERECOVERY", f"preserve recovery evidence: {exc}") from exc
+
+
+def new_envelope(workspace_root: str | os.PathLike[str]) -> dict:
+    skill_md = Path(__file__).resolve().parent.parent / "SKILL.md"
+    if not skill_md.is_file():
+        raise HelperError("ESKILL", "new-envelope must run from a packaged skill")
+    frontmatter = skill_md.read_text().split("---", 2)[1]
+    name = re.search(r"(?m)^name:\s*([^\n]+)", frontmatter)
+    version = re.search(r'(?m)^\s*version:\s*["\']?([0-9.]+)', frontmatter)
+    if not name or name.group(1) not in {"newbeginning", "closingtime"} or not version:
+        raise HelperError("ESKILL", "unknown packaged skill identity")
+    snapshot = capture_local_snapshot(workspace_root)
+    try:
+        with tempfile.TemporaryFile():
+            temporary_available = True
+    except OSError:
+        temporary_available = False
+    return {"schema_version": S.SCHEMA_VERSION, "skill": name.group(1), "skill_version": version.group(1),
+            "invocation_id": str(uuid.uuid4()), "invocation_started_at": snapshot["observed_at"],
+            "workspace_root": snapshot["workspace_root"], "project": None, "local_snapshot": snapshot,
+            "capability_profile": {"schema_version": S.SCHEMA_VERSION,
+                "local": {"shell_available": True, "git_available": snapshot["git"]["available"],
+                          "temporary_workspace_available": temporary_available, "parallel_read_only_available": False},
+                "external": {"tasks_mcp": "unprobed", "open_brain": "unprobed"}},
+            "mcp_receipts": [], "returned_rows_by_capability": {}, "mutation_scope": {"M2": [], "M3": [], "M4": []},
+            "approval": {"granted": False, "scope_string": None}}
 
 
 def _parse_session_entries(text: str) -> list[dict]:
-    entries: list[dict] = []
-    for match in ENTRY_RE.finditer(text):
-        chunk = match.group(1).rstrip() + "\n"
-        entries.append(
-            {
-                "session_number": int(match.group("number")),
-                "entry_sha256": _sha256_text(chunk),
-            }
-        )
-    return entries
+    entries, _ = S.parse_history(text)
+    return [{"session_number": e["session_number"], "entry_sha256": _sha256_text(e["chunk"])} for e in entries]
 
 
 def _read_audit_policy(
@@ -787,7 +1583,7 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
     session_path = _resolve_named_file(root, SESSION_NAMES)
     session_text = _read_text(root, session_path)
     entries = _parse_session_entries(session_text)
-    journal_dir = root / "private-artifacts" / "session-journal"
+    journal_dir = _contained(root, root / "private-artifacts" / "session-journal")
 
     if not journal_dir.is_dir():
         return {
@@ -797,19 +1593,32 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
             "documented_unverified": [],
             "unjournaled": entries,
             "orphan_records": [],
-            "errors": ["ENOJOURNAL"],
+            "errors": ["ENOJOURNAL"] + (["EHISTORY"] if any(w in S.HISTORY_ERRORS for w in S.parse_history(session_text)[1]) else []), "pending_records": [], "pending_journal": [], "foreign_files": [], "legacy_records": [],
         }
 
     ceiling, exceptions, errors = _read_audit_policy(root, journal_dir)
+    if any(w in S.HISTORY_ERRORS for w in S.parse_history(session_text)[1]):
+        errors.append("EHISTORY")
     records: list[tuple[Path, dict]] = []
     orphan_records: list[dict] = []
-    for path in sorted(journal_dir.glob("*.json")):
-        if path.name == GRANDFATHER_POLICY:
+    for path in sorted(list(journal_dir.glob("*.json")) + list(journal_dir.glob("*.done"))):
+        if path.name in {GRANDFATHER_POLICY, "workspace.json"}:
             continue
         try:
+            _inside(root, path)
             record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, json.JSONDecodeError, HelperError) as exc:
             orphan_records.append({"path": str(path), "reason": f"unreadable:{exc}"})
+            continue
+        if not isinstance(record, dict):
+            orphan_records.append({"path": str(path), "reason": "record_not_object"})
+            continue
+        if record.get("kind") in {"write_intent", "remaining_intent"}:
+            if (record.get("workspace_id") and record.get("workspace_id") != _workspace_id(root)) or record.get("record_sha256") != _intent_digest(record):
+                orphan_records.append({"path": str(path), "reason": "foreign_or_modified_intent"})
+            continue
+        if record.get("kind") == "append_intent" and ((record.get("workspace_id") and record.get("workspace_id") != _workspace_id(root)) or record.get("record_sha256") != _intent_digest(record)):
+            orphan_records.append({"path": str(path), "reason": "foreign_or_modified_intent"})
             continue
         issues = S.validate_journal_record(record)
         if issues:
@@ -857,7 +1666,27 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
             }
         )
 
+    pending_records = []
+    pending_journal = []
+    for path in sorted(journal_dir.glob("*.pending")):
+        try:
+            _inside(root, path)
+            r = json.loads(path.read_text())
+            pending_records.append({"path": str(path), "kind": r.get("kind")})
+            if r.get("kind") == "append_intent" and (not r.get("workspace_id") or r.get("workspace_id") == _workspace_id(root)) and r.get("record_sha256") == _intent_digest(r):
+                for entry in unjournaled[:]:
+                    if entry["session_number"] == r.get("session_number") and entry["entry_sha256"] == r.get("entry_sha256"):
+                        pending_journal.append(entry); unjournaled.remove(entry)
+        except (OSError, ValueError, HelperError):
+            errors.append("ERECOVERY:" + str(path))
+    if _sync_conflicts(root):
+        errors.append(S.SYNC_CONFLICT)
+    known_suffixes = {".json", ".done", ".pending", ".abandoned", ".abandon-note"}
+    foreign_files = [str(p) for p in journal_dir.iterdir() if p.is_file() and p.name != ".lock" and p.suffix not in known_suffixes | {".approval"}]
+    legacy_records = [str(p) for p, r in records if r.get("kind") != "append_intent"]
     return {
+        "pending_records": pending_records, "pending_journal": pending_journal,
+        "foreign_files": foreign_files, "legacy_records": legacy_records,
         "entries": len(entries),
         "journaled": journaled,
         "grandfathered": grandfathered,

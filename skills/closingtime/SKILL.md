@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.9"
+  version: "3.2.2"
 ---
 
 # closingtime
@@ -10,15 +10,12 @@ metadata:
 > *"You don't have to go home, but you can't stay here."*
 > — Semisonic, 1998
 
-Close a project session through observation, draft, approval, verified
-persistence, learning review, and a receipt-backed ritual.
+Observe, draft, approve, verify, review learnings, and close from receipts.
 
 ## 1. Purpose & Scope
 
-Use this skill when the user ends a multi-session project session. Produce a
-v1-compatible session entry and current-state index, write only approved task
-changes to the Tasks DB, and preserve learning candidates before presenting
-them.
+Produce a v1-compatible entry and current index at session end, write only
+approved Tasks DB changes, and stage candidates before presenting them.
 
 Never mutate project truth, external truth, or repository state before explicit
 approval. An M1 scratch envelope outside the repository is permitted before the
@@ -29,14 +26,17 @@ a separate request in this invocation.
 
 - Run local evidence, validation, append, audit, and sync checks through
   `scripts/runtime_cli.py`.
+- Read `references/recovery.md` before persistence/recovery; use
+  `references/envelope_examples.md` for constructor and receipt recipes.
 - Read `references/runtime_contract.md` when constructing an envelope or
   handling a helper refusal.
 - Read `references/task_operations.md` only when Tasks DB work is in scope.
 - Read `references/candidate_quality_contract.md` only when generating,
   reviewing, or revising learning candidates.
 
-The bundled helper is the only sanctioned writer of `project_session.md`. A
-direct write is detectable later by `audit`; do not use that as a normal path.
+The bundled helper is the only sanctioned writer of `project_session.md`. Audit checks consistency,
+not provenance; a later snapshot can adopt an undetectable direct write. Use
+`write-approved` for index, pending-learnings and decisions-archive transitions.
 
 ## 2. Pre-flight Checklist
 
@@ -49,9 +49,8 @@ direct write is detectable later by `audit`; do not use that as a normal path.
    conflicting task specifications. Never name an instruction file as if its
    location were guaranteed. Record the state in the closing evidence line.
 3. **Observe capabilities.** Local capabilities are booleans. `tasks_mcp` and
-   `open_brain` each use `absent`, `present_unauthenticated`,
-   `present_wrong_scope`, or `working`. Only a read in this invocation establishes
-   `working`.
+   `open_brain` each use `absent` (tools not listed), `present_unauthenticated`,
+   `present_wrong_scope`, or `working` (a read in this invocation).
 4. **Choose depth and skips.** Default entry cap is 300 words; a short session may
    use three to five lines. Ask about ambiguous project scope, not routine facts.
    Record any `SKIP-tasks`, `SKIP-index`, `SKIP-learning`, `SKIP-openbrain`, or
@@ -61,8 +60,10 @@ direct write is detectable later by `audit`; do not use that as a normal path.
 
 ### `OBSERVATION_GATE`
 
-Run `snapshot <workspace-root>` after this skill is invoked. Use the complete
-index projection, latest session state, git result or explicit no-git result,
+Run `new-envelope <workspace-root>` after this skill is invoked; it captures
+start and `captured_at`. Use a new envelope for each later helper call chain;
+never copy start times. Replace `unprobed` states before validation. The helper reads whole files and emits a bounded projection. Use the
+index projection (name truncation), latest session state, git result or explicit no-git result,
 parse warnings, and sync-conflict scan. Add conversation and bounded transcript
 signals without treating memory as a file receipt. State the branch and changed
 files only from the snapshot's `git` fields.
@@ -98,11 +99,11 @@ Draft one complete mutation proposal containing:
 4. explicit pending operations and acknowledgements for every degraded/skip
    path.
 
-With a current task receipt, the index change regenerates `## Active TODOs`
-from its rows with `render-mirror`, even when no task changes are proposed;
-without one, the mirror stays untouched. The draft names the pending-learnings
-write in M2 scope but shows no candidate wording: candidates are written and
-shown only in `LEARNING_GATE`.
+A current receipt regenerates `## Active TODOs` with `render-mirror`, even
+without task changes;
+without one, the mirror stays untouched. Include optional M2 `stage` permission
+for `pending_learnings.md` unless learning is skipped; candidate wording waits
+for `LEARNING_GATE`. Edits, dispositions and deletion need separate scopes.
 
 Do not write project files, the DB, Open Brain, or repository state yet.
 
@@ -117,8 +118,8 @@ Do not write project files, the DB, Open Brain, or repository state yet.
 **Blockers:** [exact blocker or None]
 ```
 
-Use `Code`, `Research`, `Chat`, or `Cowork` for Mode and the current harness for
-Tool. Keep `Next:` populated even in a rushed close. Draft `Next:` and
+Mode is `Code`, `Research`, `Chat`, or `Cowork`; Tool is the current harness.
+Always populate `Next:`. Draft `Next:` and
 `Blockers:` for the state that remains after a successful closeout; this
 closeout's own approval and persistence steps belong in the live status, not in
 the entry. Write the entry and index
@@ -163,20 +164,23 @@ the oldest to Archived; an eleventh archived decision moves the oldest to
 
 Show the entire draft and itemize mutation scope by class:
 
-- M2: session log, index, pending learnings;
+- M2: session, index and optional pending `stage`; other learning/archive writes need separate approval;
 - M3: each task operation and Open Brain intent;
 - M4: normally empty unless separately requested.
 
 Obtain explicit approval for the stated scope. Corrections return to
 `DRAFT_GATE`. Approval for one class never implies another.
 
-Before showing the draft, save the entry and run `freeze-draft <draft-envelope>
-<entry>`; it binds the draft-time snapshot and reports `entry_words`, the only
-entry length you may state. After explicit approval, run
-`approve-draft <draft-receipt> "<exact scope>"`; the helper stamps the time.
-Never type approval or start times yourself. Copy the draft envelope, add the
-approved scope string and approval, keep its `local_snapshot` unchanged (never
-take a new snapshot), include returned rows, and run `validate` again.
+Before showing the draft, save the entry and index and run `freeze-draft
+<draft-envelope> <entry> <index-draft>` (omit skipped index). After the last edit,
+run `count-words` on the exact final entry sent; state only that word count.
+After explicit approval, run
+`approve-draft <draft-receipt> "<exact scope_lines>" --owner-reply "<owner words>"`; the helper stamps the time.
+Show helper-rendered `scope_lines` verbatim; an exclusion requires revise and
+freeze again. An exclusion or correction is not approval: after re-freezing,
+show the new `scope_lines` and stop until the owner approves them. Owner words are recorded, not authenticated. Never type approval/start times.
+Add approval/scope to the draft envelope; keep `local_snapshot` unchanged,
+include returned rows, and `validate` again.
 
 ### `CONCURRENCY_GATE` and persistence
 
@@ -189,15 +193,22 @@ approved. Then:
    allocates the next number, appends, reads back, and journals. Stop on any
    refusal; a changed draft returns to `DRAFT_GATE` and needs a new freeze and
    approval.
-2. Apply approved index narrative changes and read them back. Do not duplicate
-   session detail in the index.
-3. Apply approved Tasks DB operations with `returning`, then rerun the current
-   slice. Regenerate the read-only mirror with `render-mirror` from that result.
-4. Record verification receipts for every mutation. A partial failure remains
-   partial; list what verified and what did not.
+2. Apply approved Tasks DB operations with `returning`, then rerun the current
+   slice; uncertain inserts reuse their reserved UUID and need fresh approval.
+3. Run one `write-approved` index transition with the frozen index draft and
+   `--expect <observed-sha256|absent>`. Attach the fresh `mirror_receipt` and
+   `--mirror-rows <rows.json>`; the helper uses `render-mirror` for only the
+   Active TODOs body. Without a current receipt keep the mirror untouched.
+4. Record verification receipts for every mutation. List verified and failed writes.
 
-For a first session, the helper creates the v1 `# Session Log` header and Session
-#1. If the index is absent, its approved draft uses the template above.
+After any persistence error, inspect `resume <workspace-root>` and `audit`.
+Use `freeze-draft --continue <parent-intent>` for a stale remaining index,
+or approve child abandonment; the verified append stays journaled.
+All local writers share a lock; a residual cross-device check/replace window
+remains. Pending is never journaled. Read `references/recovery.md`.
+
+For a first session, the helper creates v1 `# Session Log` and Session #1; an
+absent index uses the template above.
 
 ### `VERIFICATION_GATE`
 
@@ -212,24 +223,30 @@ are empty. Never count them as journaled or claim their original append verified
 
 ### `LEARNING_GATE` — `PENDING_LEARNING_LIFECYCLE`
 
-Begin only after session/index/task persistence is verified. If
-`SKIP-learning`, acknowledge it and create no candidates. Otherwise:
+Learning is optional. Skips/zero candidates leave no child intent or unfinished
+close; existing pending bytes stay untouched. Begin after attempted writes verify.
+For `SKIP-learning`, acknowledge it and create no candidates. Otherwise:
 
-1. read `references/candidate_quality_contract.md`, then identify at least two
-   grounded candidates unless the session was pure execution and fewer are
-   honest; each candidate must be plain, standalone, and centered on one
-   transferable insight;
-2. search Open Brain per candidate, or record its exact non-working state; a
-   search is a read, so an instruction not to update or capture to Open Brain
-   does not skip it;
-3. write and verify `pending_learnings.md` before presenting candidates;
-4. present types, wording, and connections, quoting each candidate exactly as
-   read back from the file; never claim two texts match without comparing them;
-5. after owner edits, reapply the quality contract to the complete final
-   wording and obtain fresh approval for any repair; then capture only
-   explicitly approved items;
-6. delete the file after approved/discarded disposition, or retain unresolved
-   candidates exactly as requested.
+1. read `references/candidate_quality_contract.md`; identify at least two
+   grounded candidates unless pure execution makes fewer honest. Each is
+   plain, standalone, with one transferable insight;
+2. search Open Brain per candidate or name its non-working state. A search is
+   a read; an instruction not to update/capture does not skip it;
+3. preserve existing bytes and append new candidate blocks. Use the close's
+   optional `stage` permission with `write-approved ... pending_learnings.md
+   <content> --operation stage --expect <current-sha256|absent>`. It permits one
+   stage after the verified append; read back before presenting candidates. If
+   staging was excluded, show a separate replacement's frozen `scope_lines`
+   and obtain approval first. Failed staging is a resumable/abandonable child;
+4. present types, wording and connections exactly as read back. Keep needs no
+   write. When asking for edit/discard/delete, show that transition's frozen
+   `scope_lines` in the same message, so the reply can approve it;
+5. after owner edits, reapply the quality contract to the complete wording;
+   obtain fresh approval for repairs. Write/read back edits before capture;
+6. separately approve edits/mixed disposition with current `--expect` and
+   non-empty `--owner-reply`; retain unresolved blocks and unknown fields.
+   Delete only after all dispositions; approval expires after six hours.
+   Capture only explicitly approved items.
 
 Language precedence is explicit user preference, then the dominant session
 language when it is English or Spanish, then English. Keep volatile session
@@ -237,7 +254,8 @@ numbers, internal IDs/codes, model tokens, and absolute paths out of `Insight`;
 traceability belongs in separate metadata.
 
 `SKIP-openbrain` keeps candidate extraction and the pending file but performs no
-capture. Never write "New thread" unless a search actually found no match.
+search or capture. An instruction not to use Open Brain at all is
+`SKIP-openbrain`; a search sends candidate text to the service. Never write "New thread" unless a search actually found no match.
 
 ### `CLOSING_GATE`
 
@@ -254,16 +272,17 @@ Project index narrative + task mirror updated ✓
 Replace skipped, unavailable, partial, or saved lines with the exact observed
 state; never leave a false checkmark. Follow them with one evidence line:
 `Evidence: instructions <state>; instruction_bytes_loaded <n>`, where the bytes
-are the snapshot's `skill_md_bytes`, plus each reference you read, plus each
-resolved instruction file. A stop at `conflicted` still ends with that line.
-Order: status lines, then the evidence line, then, unless `SKIP-ritual`, the
+are `instruction_budget.skill_md_bytes`, plus each reference you read, plus each
+resolved instruction file. A blocked close ends there without "Session closed". Waiting only on learning
+dispositions is a complete close and includes the ritual line.
+Order: status lines, then the evidence line, then, unless blocked or `SKIP-ritual`, the
 ritual line as the very last line:
 
 > *"You don't have to go home, but you can't stay here. Session closed."*
 
 ### Skip and interruption paths
 
-Run `scripts/workflow.py` skip policy so each skip produces an acknowledgement.
+Run `scripts/workflow.py` for each skip acknowledgement.
 `SKIP-index` does not imply `SKIP-tasks`; clarify task intent separately.
 
 On interruption, claim only artifacts already verified, list everything not completed,
@@ -272,14 +291,15 @@ mutation. Post-approval interruption does not upgrade attempted writes to done.
 
 ## 4. Harness Adaptations
 
-**Required:** file write/readback and conversation. If file writing is
+**Required for helper paths:** Python 3, file write/readback and conversation.
+Without Python nothing is persisted; output entry, index and task drafts. If file writing is
 unavailable, output the proposed artifacts and state that no close was persisted.
 
 **Optional capabilities:**
 
 | Capability | Working path | Degraded path |
 |---|---|---|
-| Bundled Python runtime | Snapshot, validate, append, journal, audit | Do not directly append; output draft for manual save |
+| Bundled Python runtime | Snapshot, validate, append, journal, audit | Output drafts only; nothing persisted |
 | Git | Head, status, diff evidence | `git_available: false`; reconstruct from other evidence |
 | Tasks MCP | Current reads and approved verified writes | Named four-state warning; operations pending |
 | Open Brain | Search and approved capture | Pending file only, or skip as requested |
@@ -292,7 +312,7 @@ No model or harness name changes mutation authority, gates, or receipt rules.
 
 | Situation | Action |
 |---|---|
-| User corrects draft | Revise and show the complete scope again |
+| User corrects or excludes | Revise, re-freeze, show new scope; wait for approval |
 | User skips a branch | Emit its acknowledgement; preserve independent branches |
 | Task or tail precondition changed | Stop; reconcile and request new approval |
 | Sync-conflict artifact appears | Enter `conflicted`; no project mutation |
@@ -310,8 +330,8 @@ No model or harness name changes mutation authority, gates, or receipt rules.
   entry has a matching journal record and readback hash.
 - Every task claim has a current receipt; every mutation has a returned result
   or readback.
-- Entry is at most 300 words, index narrative at most 400 words, active/archive
-  limits hold, and file formats remain readable by v1.
+- Entry ≤300 words, index narrative at most 400 words; active/archive limits hold; formats
+  remain v1-readable.
 - Every skip is explicit. Interruption output distinguishes verified from
   incomplete state.
 - Pending learnings exist before presentation, the draft shows no candidate
@@ -320,13 +340,14 @@ No model or harness name changes mutation authority, gates, or receipt rules.
 - Replies follow the user's language; only the entry and index default to
   English. The Summary repeats no entry sentence; a current receipt
   regenerates the task mirror.
-- Every reported count, time, and git fact comes from a helper result.
+- Every word count uses `count-words` on exact final text sent after the last edit;
+  times and git facts use helper results.
 - Candidate wording passes the progressively loaded quality contract before
   presentation and again after owner edits: language is resolved, meaning is
   standalone, one central insight remains, and uncertainty is preserved.
 - The ritual reflects receipts rather than intent.
-- The closing message shows the status lines, then the evidence line reporting
-  the instruction state and `instruction_bytes_loaded`, then the ritual line
+- The closing message shows status lines, evidence with the instruction state
+  and `instruction_bytes_loaded`, then the ritual line
   last (a `conflicted` stop ends with the evidence line); total-token estimates
   are diagnostic only.
 
@@ -334,6 +355,31 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.2.2 — 2026-10-28 — candidate**
+
+- Legacy log headings readable. 3.2.0–3.2.1: optional staging, portable
+  recovery, preflight, project locks, bounded approvals.
+
+**v3.1.1 — 2026-10-28 — candidate**
+
+- An exclusion or correction reply is not approval of the revised scope: show
+  the re-frozen `scope_lines` and wait (repair check P4X-CT-C-S01).
+
+**v3.1.0 — 2026-10-27**
+
+- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
+  identity and parsed times; conflict/alias stops; read-only git evidence.
+- Atomic append intents, conditional rollback, resume and unfinished-operation
+  guard; approved local transitions share a lock and explicit preimages.
+- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
+- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
+  and independent recertification remain required. This is not deployment.
+
+**v3.0.10 — 2026-10-27 — candidate**
+
+- Documentation refresh for the Phase 4.5 review (HANDOFF and README); no
+  runtime or workflow change.
 
 **v3.0.9 — 2026-10-27 — candidate**
 
@@ -347,28 +393,15 @@ or a provenance/collision failure. Patch wording and length issues in place.
 
 **v3.0.7 — 2026-10-27 — candidate**
 
-- Phase 4 findings G-01 to G-03 and O-01 to O-04: replies follow the user's
-  language; the Summary repeats no entry sentence; a current receipt
-  regenerates the task mirror via `render-mirror`; candidates appear only after
-  they are written and are quoted from the file; counts, receipt times, and git
-  facts come from helpers (`count-words`, `entry_words`, `fingerprinted_at`,
-  snapshot `git.branch`/`changed_paths`); `validate` refuses future receipt times.
+- Helper-derived facts, mirror, counts and times; language and candidate-readback fixes.
 
 **v3.0.6 — 2026-10-27 — candidate**
 
-- `append` now requires an approved draft receipt (`freeze-draft`, then
-  `approve-draft`) and refuses a rebased snapshot, edited entry, tampered
-  receipt, or out-of-order times; approval time is helper-stamped.
-- `Next:`/`Blockers:` describe the state after the closeout; instruction files
-  are read explicitly and counted once.
+- Frozen receipts bind snapshot, entry and chronology; instruction reads are counted.
 
 **v3.0.5 — 2026-10-27 — candidate**
 
-- Phase 4 fixes: no current-task claim without a fingerprinted receipt;
-  `fingerprint-rows`/`validate` accept stdin; the snapshot resolves instruction
-  files; closing messages always show the four status lines and an evidence
-  line; entry and index default to English without asking; the Summary is
-  rewritten and Key Files rebuilt.
+- Fingerprinted task claims, stdin evidence, four status lines and refreshed index.
 
 **v3.0.4 — 2026-10-08 — candidate**
 
@@ -406,4 +439,4 @@ or a provenance/collision failure. Patch wording and length issues in place.
 - Preserved v1 continuity-file formats and all ten trigger semantics.
 
 Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phases 4 and 5.
+is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.

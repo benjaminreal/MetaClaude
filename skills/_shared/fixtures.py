@@ -19,15 +19,29 @@ must produce. A mutant that fails a different code is a scorer defect, not a pas
 from __future__ import annotations
 
 import copy
+import datetime as dt
+from contextlib import contextmanager
+from unittest import mock
 
 import schemas as S
 
 INVOCATION_START = "2026-08-03T22:00:00Z"
 
+@contextmanager
+def historical_clock():
+    real = dt.datetime
+    class Clock(real):
+        @classmethod
+        def now(cls, tz=None):
+            return real(2026, 8, 3, 23, 0, tzinfo=dt.timezone.utc)
+    with mock.patch.object(S._dt, "datetime", Clock):
+        yield
+
+
 TASK_ROWS = [  # synthetic; never real IDs (Session #36: assert by pattern)
 
-    {"id": "task-aaaa", "title": "First synthetic task", "priority": 1, "status": "open"},
-    {"id": "task-bbbb", "title": "Second synthetic task", "priority": 2, "status": "open"},
+    {"id": "task-aaaa", "title": "First synthetic task", "priority": 1, "status": "open", "project": "Synthetic"},
+    {"id": "task-bbbb", "title": "Second synthetic task", "priority": 2, "status": "open", "project": "Synthetic"},
 ]
 
 DEFERRED = {}
@@ -40,7 +54,7 @@ def base_profile(tasks_mcp="working", open_brain="absent") -> dict:
                   "temporary_workspace_available": True,
                   "parallel_read_only_available": True},
         "external": {"tasks_mcp": tasks_mcp, "open_brain": open_brain},
-        "external_detail": {"tasks_mcp": {"project_ref": "proj-ref-placeholder"},
+        "external_detail": {"tasks_mcp": {"project_ref": "proj-ref-placeholder" if tasks_mcp == "working" else None},
                             "open_brain": {"reason": "no capture_thought in tool list"}},
     }
 
@@ -50,7 +64,7 @@ def working_receipt(rows=None) -> dict:
     return {
         "schema_version": S.SCHEMA_VERSION,
         "capability": "tasks_mcp",
-        "identity": {"project_ref": "proj-ref-placeholder", "view": "task_urgency"},
+        "identity": {"project_ref": "proj-ref-placeholder", "view": "task_urgency", "project": "Synthetic"},
         "tool_result_id": "tr-0001",
         "observed_at": "2026-08-03T22:31:04Z",
         "operation_fingerprint": "sha256:query-task-urgency-open-project",
@@ -64,7 +78,7 @@ def unavailable_receipt(state="present_unauthenticated") -> dict:
     return {
         "schema_version": S.SCHEMA_VERSION,
         "capability": "tasks_mcp",
-        "identity": {"project_ref": None, "view": "task_urgency"},
+        "identity": {"project_ref": None, "view": "task_urgency", "project": "Synthetic"},
         "tool_result_id": None,
         "observed_at": "2026-08-03T22:31:04Z",
         "operation_fingerprint": "sha256:query-task-urgency-open-project",
@@ -82,8 +96,10 @@ def base_envelope(**over) -> dict:
         "invocation_started_at": INVOCATION_START,
         "skill": "closingtime",
         "workspace_root": "/w",
+        "project": "Synthetic",
         "capability_profile": base_profile(),
         "local_snapshot": {
+            "workspace_root": "/w", "observed_at": INVOCATION_START,
             "index": {"path": "project_index.md", "sha256": "aaa", "mtime": "...", "words": 412},
             "session": {"path": "project_session.md", "tail_sha256": "bbb",
                         "latest_session_number": 38},
@@ -128,6 +144,10 @@ def valid_fixtures() -> dict[str, tuple[dict, dict]]:
     # F14: Open Brain in each four-state value.
     f14 = {f"F14-ob-{s}": (base_envelope(capability_profile=base_profile(open_brain=s)), rows)
            for s in sorted(S.EXTERNAL_STATES)}
+
+    ob_receipt = dict(working_receipt([]), capability="open_brain", identity={"service": "open-brain"})
+    f14["F14-ob-working"][0]["mcp_receipts"].append(ob_receipt)
+    f14["F14-ob-working"] = (f14["F14-ob-working"][0], {**rows, "open_brain": []})
 
     # F1 read-only opening: no mutations, so no approval required.
     f1_open = base_envelope(skill="newbeginning",
