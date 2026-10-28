@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.7"
+  version: "3.0.8"
 ---
 
 # closingtime
@@ -219,7 +219,9 @@ Begin only after session/index/task persistence is verified. If
    grounded candidates unless the session was pure execution and fewer are
    honest; each candidate must be plain, standalone, and centered on one
    transferable insight;
-2. search Open Brain per candidate, or record its exact non-working state;
+2. search Open Brain per candidate, or record its exact non-working state; a
+   search is a read, so an instruction not to update or capture to Open Brain
+   does not skip it;
 3. write and verify `pending_learnings.md` before presenting candidates;
 4. present types, wording, and connections, quoting each candidate exactly as
    read back from the file; never claim two texts match without comparing them;
@@ -329,6 +331,11 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.0.8 — 2026-10-27 — candidate**
+
+- A search is a read: "do not update Open Brain" no longer skips the
+  per-candidate connection search (targeted check of 3.0.7, check 27).
 
 **v3.0.7 — 2026-10-27 — candidate**
 
