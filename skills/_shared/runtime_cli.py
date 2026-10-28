@@ -2,7 +2,9 @@
 """Command-line bridge for the session-skill runtime helpers.
 
 The CLI keeps fragile filesystem and hashing work out of model-authored scratch
-code. It has no network client and accepts evidence only as JSON files.
+code. It has no network client and accepts evidence only as JSON files, or as
+JSON on stdin when the file argument is "-" (for harnesses that block scratch
+writes).
 """
 
 from __future__ import annotations
@@ -20,7 +22,15 @@ import schemas  # noqa: E402
 
 
 def _json_file(path: str) -> object:
+    if path == "-":
+        return json.loads(sys.stdin.read())
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _text_file(path: str) -> str:
+    if path == "-":
+        return sys.stdin.read()
+    return Path(path).read_text(encoding="utf-8")
 
 
 def _emit(value: object) -> None:
@@ -37,9 +47,18 @@ def _parser() -> argparse.ArgumentParser:
     validate = commands.add_parser("validate", help="validate an evidence envelope")
     validate.add_argument("envelope_json")
 
+    freeze = commands.add_parser("freeze-draft", help="bind draft snapshot and entry before showing the draft")
+    freeze.add_argument("envelope_json")
+    freeze.add_argument("entry_markdown")
+
+    approve = commands.add_parser("approve-draft", help="stamp approval on a frozen draft (after explicit approval)")
+    approve.add_argument("draft_receipt_json")
+    approve.add_argument("scope_string")
+
     append = commands.add_parser("append", help="CAS append and journal a session entry")
     append.add_argument("envelope_json")
     append.add_argument("entry_markdown")
+    append.add_argument("approved_draft_json")
 
     audit = commands.add_parser("audit", help="audit session entries against the journal")
     audit.add_argument("workspace_root")
@@ -50,6 +69,13 @@ def _parser() -> argparse.ArgumentParser:
 
     rows = commands.add_parser("fingerprint-rows", help="fingerprint returned MCP rows")
     rows.add_argument("rows_json")
+
+    words = commands.add_parser("count-words", help="count words in a file or stdin (wc -w rule)")
+    words.add_argument("text_file")
+
+    mirror = commands.add_parser("render-mirror", help="render the Active TODOs mirror from receipt rows")
+    mirror.add_argument("rows_json")
+    mirror.add_argument("local_date")
 
     return parser
 
@@ -63,10 +89,16 @@ def main(argv: list[str] | None = None) -> int:
             envelope = _json_file(args.envelope_json)
             returned = envelope.get("returned_rows_by_capability") or {}
             result = schemas.validate_envelope(envelope, returned)
+        elif args.command == "freeze-draft":
+            envelope = _json_file(args.envelope_json)
+            entry = _text_file(args.entry_markdown)
+            result = helpers.freeze_draft(envelope, entry)
+        elif args.command == "approve-draft":
+            result = helpers.approve_draft(_json_file(args.draft_receipt_json), args.scope_string)
         elif args.command == "append":
             envelope = _json_file(args.envelope_json)
             entry = Path(args.entry_markdown).read_text(encoding="utf-8")
-            result = helpers.append_session_entry(envelope, entry)
+            result = helpers.append_session_entry(envelope, entry, _json_file(args.approved_draft_json))
         elif args.command == "audit":
             result = helpers.audit_session_log(args.workspace_root)
         elif args.command == "verify-sync":
@@ -78,7 +110,13 @@ def main(argv: list[str] | None = None) -> int:
             result = {
                 "row_count": len(rows),
                 "row_fingerprint": schemas.canonical_row_fingerprint(rows),
+                "fingerprinted_at": helpers._utc_now(),
             }
+        elif args.command == "count-words":
+            result = {"words": helpers.count_words(_text_file(args.text_file)), "rule": "whitespace-delimited"}
+        elif args.command == "render-mirror":
+            rows = _json_file(args.rows_json)
+            result = {"markdown": helpers.render_task_mirror(rows, args.local_date)}
         else:  # pragma: no cover - argparse prevents this branch
             raise AssertionError(args.command)
     except helpers.HelperError as exc:

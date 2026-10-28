@@ -24,7 +24,8 @@ snapshots current files, obtains current Tasks evidence or a named unavailable
 receipt, and validates a scratch envelope. It shows the complete session/index/
 task proposal before requesting approval of the exact mutation scope.
 
-After approval, it validates a fresh envelope, appends through the helper,
+After approval, it stamps the frozen draft with `approve-draft`, validates the
+approved copy of the draft envelope (same snapshot), appends through the helper,
 reads back index/task changes, and audits the journal. Learning review follows
 verified persistence: save candidates before presentation and obtain separate
 approval for capture.
@@ -34,8 +35,11 @@ Useful CLI entry points:
 ```text
 python /path/to/closingtime/scripts/runtime_cli.py snapshot /path/to/project
 python /path/to/closingtime/scripts/runtime_cli.py validate /scratch/envelope.json
-python /path/to/closingtime/scripts/runtime_cli.py append /scratch/envelope.json /scratch/entry.md
+python /path/to/closingtime/scripts/runtime_cli.py freeze-draft /scratch/draft-envelope.json /scratch/entry.md
+python /path/to/closingtime/scripts/runtime_cli.py approve-draft /scratch/draft-receipt.json "<exact scope>"
+python /path/to/closingtime/scripts/runtime_cli.py append /scratch/approved-envelope.json /scratch/entry.md /scratch/approved-receipt.json
 python /path/to/closingtime/scripts/runtime_cli.py audit /path/to/project
+python /path/to/closingtime/scripts/runtime_cli.py render-mirror /scratch/rows.json <local-date>
 ```
 
 See references/runtime_contract.md and scripts/schemas.py for envelope fields.

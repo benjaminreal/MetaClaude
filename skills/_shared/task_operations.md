@@ -47,12 +47,15 @@ returning id, project, title, status;
 ```
 
 After mutations, rerun the current project slice and rebuild the mirror from
-the returned rows. Never hand-edit task state in Markdown.
+the returned rows with `render-mirror <rows.json> <local-date>`. With no
+mutations, a current read rebuilds it the same way. Never hand-edit task state
+in Markdown.
 
 ## Receipt rule
 
 Save the returned rows to scratch JSON and run `fingerprint-rows`. Put the
-result, operation fingerprint, observed time, project identity, status, and row
+result, operation fingerprint, observed time (the helper's `fingerprinted_at`
+unless the tool result carries its own), project identity, status, and row
 count in the MCP receipt. Preserve the returned rows in the scratch envelope so
 `validate` can recompute the fingerprint. A write also needs its `returning`
 result or a follow-up current read before it is reported as verified.

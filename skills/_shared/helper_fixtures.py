@@ -21,6 +21,7 @@ from unittest import mock
 
 import fixtures
 import helpers as H
+import schemas as S
 
 
 INDEX_TEXT = """# Synthetic Project
@@ -54,6 +55,13 @@ ENTRY_DRAFT = """### Session #[N] | 2026-08-04 | Code (Test)
 **Done:** Wrote one synthetic entry through the validated path.
 **Next:** Verify the journal.
 **Blockers:** None."""
+
+
+def _append(envelope, entry_text):
+    """Freeze, approve, then append: the sanctioned closeout sequence (F-04)."""
+    receipt = H.freeze_draft(envelope, entry_text)
+    scope = ((envelope or {}).get("approval") or {}).get("scope_string") or "fixture-scope"
+    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, scope))
 
 
 @contextmanager
@@ -215,7 +223,7 @@ def check_f9_invalid_envelope_refusal() -> list[str]:
     issues: list[str] = []
     _expect_error(
         fixtures.S.MISSING_RECEIPT,
-        lambda: H.append_session_entry({}, ENTRY_DRAFT),
+        lambda: _append({}, ENTRY_DRAFT),
         issues,
         "F9-absent-envelope",
     )
@@ -224,7 +232,7 @@ def check_f9_invalid_envelope_refusal() -> list[str]:
         env["returned_rows_by_capability"] = rows
         _expect_error(
             "EINVALIDENVELOPE",
-            lambda env=env: H.append_session_entry(env, ENTRY_DRAFT),
+            lambda env=env: _append(env, ENTRY_DRAFT),
             issues,
             f"F9-{name}",
         )
@@ -239,7 +247,7 @@ def check_f9_invalid_envelope_refusal() -> list[str]:
             before = (root / "project_session.md").read_bytes()
             _expect_error(
                 fixtures.S.SCOPE_UNAPPROVED,
-                lambda: H.append_session_entry(env, ENTRY_DRAFT),
+                lambda: _append(env, ENTRY_DRAFT),
                 issues,
                 f"F9-unrelated-scope-{local_scope}",
             )
@@ -255,7 +263,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
 
     # A first close needs no historical exemptions or policy-file mutation.
     with workspace(index_name=None, session_name=None) as root:
-        result = H.append_session_entry(_envelope(root), ENTRY_DRAFT)
+        result = _append(_envelope(root), ENTRY_DRAFT)
         audit = H.audit_session_log(root)
         if result["session_number"] != 1 or audit["journaled"] != 1:
             issues.append(f"F10-first-close: {result}, {audit}")
@@ -267,7 +275,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         missing = H.audit_session_log(root)
         if missing["grandfathered"] or len(missing["unjournaled"]) != 2:
             issues.append(f"F10-no-journal-no-exemptions: {missing}")
-        H.append_session_entry(_envelope(root), ENTRY_DRAFT)
+        _append(_envelope(root), ENTRY_DRAFT)
         audit = H.audit_session_log(root)
         if audit["grandfathered"] or len(audit["unjournaled"]) != 2 or audit["journaled"] != 1:
             issues.append(f"F10-no-policy-no-exemptions: {audit}")
@@ -283,7 +291,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         )
         _expect_error(
             "ESTALE",
-            lambda: H.append_session_entry(env, ENTRY_DRAFT),
+            lambda: _append(env, ENTRY_DRAFT),
             issues,
             "F10-tail-changed",
         )
@@ -296,12 +304,12 @@ def check_f10_concurrency_and_audit() -> list[str]:
         first = _envelope(root, "fixture-duplicate-a")
         second = copy.deepcopy(first)
         second["invocation_id"] = "fixture-duplicate-b"
-        result = H.append_session_entry(first, ENTRY_DRAFT)
+        result = _append(first, ENTRY_DRAFT)
         if result["session_number"] != 3 or not result["readback_ok"]:
             issues.append(f"F10-first-append: unexpected result {result}")
         _expect_error(
             "ESTALE",
-            lambda: H.append_session_entry(second, ENTRY_DRAFT),
+            lambda: _append(second, ENTRY_DRAFT),
             issues,
             "F10-duplicate-number",
         )
@@ -331,7 +339,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         lock.write_text("dead-process", encoding="utf-8")
         old = time.time() - H.LOCK_STALE_SECONDS - 5
         os.utime(lock, (old, old))
-        result = H.append_session_entry(env, ENTRY_DRAFT)
+        result = _append(env, ENTRY_DRAFT)
         if "ESTALE" not in result["warnings"]:
             issues.append(f"F10-stale-lock: warnings={result['warnings']}")
 
@@ -342,7 +350,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         with mock.patch.object(H, "_readback_entry", return_value="corrupt\n"):
             _expect_error(
                 "EREADBACK",
-                lambda: H.append_session_entry(env, ENTRY_DRAFT),
+                lambda: _append(env, ENTRY_DRAFT),
                 issues,
                 "F10-readback-mismatch",
             )
@@ -364,7 +372,7 @@ def check_f10_audit_matching_order() -> list[str]:
     # receipt that matches no entry may remain as an orphan.
     with workspace() as root:
         _policy(root, ceiling=3)
-        result = H.append_session_entry(_envelope(root, "fixture-below-ceiling"), ENTRY_DRAFT)
+        result = _append(_envelope(root, "fixture-below-ceiling"), ENTRY_DRAFT)
         H._write_journal_record(
             root,
             {
@@ -495,6 +503,178 @@ def check_no_database_credentials() -> list[str]:
     return [f"credential boundary: helpers.py contains {token!r}" for token in found]
 
 
+def check_instruction_resolution() -> list[str]:
+    """CAP-8: root files win; else ancestors are walked; else instructions_absent."""
+    issues: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="session-helper-instr-") as raw:
+        parent = Path(raw) / "portfolio"
+        project = parent / "project"
+        project.mkdir(parents=True)
+        (project / "project_index.md").write_text(INDEX_TEXT, encoding="utf-8")
+        absent = H.capture_local_snapshot(project)["instructions"]
+        if absent["state"] != "instructions_absent" or absent["files"]:
+            issues.append(f"absent case: {absent}")
+        (parent / "CLAUDE.md").write_text("ancestor rules\n", encoding="utf-8")
+        ancestor = H.capture_local_snapshot(project)["instructions"]
+        if ancestor["state"] != "ancestor" or not any(
+            f["path"].endswith("portfolio/CLAUDE.md") and f["bytes"] == 15 for f in ancestor["files"]
+        ):
+            issues.append(f"ancestor case: {ancestor}")
+        (project / "AGENTS.md").write_text("root rules\n", encoding="utf-8")
+        rooted = H.capture_local_snapshot(project)["instructions"]
+        if rooted["state"] != "project_root" or [Path(f["path"]).name for f in rooted["files"]] != ["AGENTS.md"]:
+            issues.append(f"root case: {rooted}")
+        if not any(f["path"].endswith("portfolio/CLAUDE.md") for f in rooted["ancestor_files"]):
+            issues.append(f"root case hides ancestor files: {rooted}")
+    budget = H.capture_local_snapshot(Path(__file__).resolve().parent)["instruction_budget"]
+    if set(budget) != {"skill_md_bytes", "reference_bytes"}:
+        issues.append(f"instruction budget shape: {budget}")
+    return issues
+
+
+def check_cli_stdin_inputs() -> list[str]:
+    """fingerprint-rows and validate accept JSON on stdin via '-'."""
+    issues: list[str] = []
+    cli = Path(__file__).resolve().parent / "runtime_cli.py"
+    rows = [{"id": "a", "project": "p"}]
+    expected = S.canonical_row_fingerprint(rows)
+    done = subprocess.run(["python3", str(cli), "fingerprint-rows", "-"], input=json.dumps(rows),
+                          text=True, capture_output=True, check=False)
+    if done.returncode or json.loads(done.stdout or "{}").get("row_fingerprint") != expected:
+        issues.append(f"fingerprint-rows stdin: rc={done.returncode} out={done.stdout[:200]} err={done.stderr[:200]}")
+    done = subprocess.run(["python3", str(cli), "validate", "-"], input="{}",
+                          text=True, capture_output=True, check=False)
+    if "valid" not in (done.stdout or ""):
+        issues.append(f"validate stdin: rc={done.returncode} out={done.stdout[:200]} err={done.stderr[:200]}")
+    return issues
+
+
+def check_f04_frozen_draft() -> list[str]:
+    """A later snapshot, edited entry, missing or tampered receipt, or bad chronology refuses."""
+    issues: list[str] = []
+
+    def expect(code, call, label):
+        _expect_error(code, call, issues, label)
+
+    # Rebase: a foreign append between draft and approval, then a fresh snapshot.
+    with workspace() as root:
+        _policy(root)
+        draft_env = _envelope(root)
+        receipt = H.freeze_draft(draft_env, ENTRY_DRAFT)
+        with (root / "project_session.md").open("a", encoding="utf-8") as stream:
+            stream.write("\n---\n\n### Session #9 | 2026-08-04 | Foreign\n**Next:** x\n")
+        rebased = _envelope(root)
+        before = (root / "project_session.md").read_text(encoding="utf-8")
+        approved = H.approve_draft(receipt, rebased["approval"]["scope_string"])
+        expect("EDRAFTMISMATCH", lambda: H.append_session_entry(rebased, ENTRY_DRAFT, approved), "F04-rebased")
+        expect("ESTALE", lambda: H.append_session_entry(draft_env, ENTRY_DRAFT, approved), "F04-foreign-write")
+        if (root / "project_session.md").read_text(encoding="utf-8") != before:
+            issues.append("F04: refused append still mutated the session log")
+        journal = root / "private-artifacts" / "session-journal"
+        records = [p for p in journal.glob("*.json") if p.name != "_policy.json"] if journal.is_dir() else []
+        if records:
+            issues.append(f"F04: refused append journaled {records}")
+
+    with workspace() as root:
+        _policy(root)
+        env = _envelope(root)
+        scope = env["approval"]["scope_string"]
+        receipt = H.freeze_draft(env, ENTRY_DRAFT)
+        approved = H.approve_draft(receipt, scope)
+        expect("EDRAFTRECEIPT", lambda: H.append_session_entry(env, ENTRY_DRAFT, None), "F04-missing")
+        expect("EDRAFTRECEIPT", lambda: H.append_session_entry(env, ENTRY_DRAFT, receipt), "F04-unapproved-tampered")
+        expect("EDRAFTMISMATCH", lambda: H.append_session_entry(env, ENTRY_DRAFT + " edited", approved), "F04-entry")
+        tampered = dict(approved, approved_at="2026-10-28T00:20:00Z")
+        expect("EDRAFTRECEIPT", lambda: H.append_session_entry(env, ENTRY_DRAFT, tampered), "F04-tampered")
+        future = dict(approved, approved_at="2999-01-01T00:00:00Z")
+        future["receipt_sha256"] = H._receipt_digest(future)
+        expect("ECHRONOLOGY", lambda: H.append_session_entry(env, ENTRY_DRAFT, future), "F04-future")
+        early = dict(approved, approved_at="2000-01-01T00:00:00Z")
+        early["receipt_sha256"] = H._receipt_digest(early)
+        expect("ECHRONOLOGY", lambda: H.append_session_entry(env, ENTRY_DRAFT, early), "F04-before-draft")
+        expect("EDRAFTRECEIPT", lambda: H.approve_draft(approved, scope), "F04-double-approve")
+        result = H.append_session_entry(env, ENTRY_DRAFT, approved)
+        if not result.get("readback_ok"):
+            issues.append(f"F04-happy: {result}")
+    return issues
+
+
+def check_f01_local_date() -> list[str]:
+    """The snapshot carries the host's local calendar date and offset."""
+    issues: list[str] = []
+    with workspace() as root:
+        snap = H.capture_local_snapshot(root)
+    import datetime as _dt
+    expected = _dt.datetime.now(_dt.timezone.utc).astimezone().date().isoformat()
+    if snap.get("local_date") != expected or not str(snap.get("local_utc_offset", "")).count(":") == 1:
+        issues.append(f"local calendar fields: {snap.get('local_date')} {snap.get('local_utc_offset')}")
+    return issues
+
+
+def check_g_helper_computed_values() -> list[str]:
+    """Counts, receipt times, git branch and the task mirror come from the helper."""
+    issues: list[str] = []
+    cli = Path(__file__).resolve().parent / "runtime_cli.py"
+
+    def run(*args, stdin=""):
+        done = subprocess.run(["python3", str(cli), *args], input=stdin, text=True,
+                              capture_output=True, check=False)
+        return done.returncode, json.loads(done.stdout or "{}")
+
+    text = "Uno dos  tres\ncuatro\tcinco — seis"
+    rc, out = run("count-words", "-", stdin=text)
+    if rc or out.get("words") != len(text.split()) or out.get("words") != 7:
+        issues.append(f"count-words: rc={rc} out={out}")
+
+    rc, out = run("fingerprint-rows", "-", stdin=json.dumps([{"id": "a"}]))
+    stamped = H._parse_utc(out.get("fingerprinted_at"))
+    if rc or stamped is None:
+        issues.append(f"fingerprint-rows lacks fingerprinted_at: {out}")
+
+    future = copy.deepcopy(fixtures.base_envelope())
+    future["mcp_receipts"][0]["observed_at"] = "2999-01-01T00:00:00Z"
+    codes = {f["code"] for f in S.validate_envelope(future, future.get("returned_rows_by_capability") or
+                                                    {"tasks_mcp": fixtures.TASK_ROWS})["failures"]}
+    if S.FUTURE_RECEIPT not in codes:
+        issues.append(f"future receipt time not refused: {sorted(codes)}")
+    present = copy.deepcopy(fixtures.base_envelope())
+    codes = {f["code"] for f in S.validate_envelope(present, {"tasks_mcp": fixtures.TASK_ROWS})["failures"]}
+    if S.FUTURE_RECEIPT in codes:
+        issues.append("a past receipt time was refused as future")
+
+    rows = [{"id": "u1", "title": "First  task", "priority": 1, "due": "2026-11-01", "flagged": True},
+            {"id": "u2", "title": "Second", "priority": None, "review_on": "2026-10-30"}]
+    rc, out = run("render-mirror", "-", "2026-10-27", stdin=json.dumps(rows))
+    expected = ("_Read-only mirror regenerated from Supabase `task_urgency` on 2026-10-27. "
+                "Top 2 open tasks; bounded view. Do not hand-edit; DB wins._\n"
+                "- [P1] First task (id: `u1` ; due 2026-11-01 ; flagged)\n"
+                "- [P-] Second (id: `u2` ; review 2026-10-30)\n")
+    if rc or out.get("markdown") != expected:
+        issues.append(f"render-mirror: rc={rc} out={out}")
+    rc, out = run("render-mirror", "-", "2026-10-27", stdin=json.dumps([{"title": "no id"}]))
+    if rc == 0:
+        issues.append("render-mirror accepted a row without id")
+
+    with workspace() as root:
+        env = _envelope(root)
+        receipt = H.freeze_draft(env, ENTRY_DRAFT)
+        if receipt.get("entry_words") != len(ENTRY_DRAFT.split()):
+            issues.append(f"freeze-draft entry_words: {receipt.get('entry_words')}")
+
+    if shutil.which("git"):
+        with workspace() as root:
+            subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "fixture-branch"], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=f", "-c", "user.email=f@example.invalid",
+                            "commit", "-q", "-m", "fixture"], check=True)
+            (root / "project_index.md").write_text(INDEX_TEXT + "changed\n", encoding="utf-8")
+            git = H.capture_local_snapshot(root)["git"]
+            if git.get("branch") != "fixture-branch" or git.get("changed_paths") != ["project_index.md"] \
+                    or git.get("changed_path_count") != 1:
+                issues.append(f"git branch/changed paths: {git}")
+    return issues
+
+
 CHECKS = [
     ("F2 no-git", check_f2_no_git),
     ("F3 filename-variant", check_f3_filename_variants),
@@ -508,6 +688,11 @@ CHECKS = [
     ("F10 documented exception", check_f10_documented_unverified_exception),
     ("F15 deploy", check_f15_deploy),
     ("credential boundary", check_no_database_credentials),
+    ("CAP-8 instruction resolution", check_instruction_resolution),
+    ("CLI stdin inputs", check_cli_stdin_inputs),
+    ("F04 frozen draft", check_f04_frozen_draft),
+    ("F01 local date", check_f01_local_date),
+    ("G helper-computed values", check_g_helper_computed_values),
 ]
 
 

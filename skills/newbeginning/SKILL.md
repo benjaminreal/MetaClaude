@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.0.3"
+  version: "2.0.6"
 ---
 
 # newbeginning
@@ -48,12 +48,14 @@ projection, validation, or conflict checks ran.
 1. **Resolve workspace and scope.** Walk to the project root containing the
    continuity files or git root. At a portfolio root, confirm project versus
    cross-project scope before reading project notes.
-2. **Resolve instructions (`INSTRUCTION_RESOLUTION`).** Check, in order:
+2. **Resolve instructions (`INSTRUCTION_RESOLUTION`).** Use the snapshot's
+   `instructions` field, which applies this order:
    - instruction files at the project root — use them;
-   - instruction files in ancestor directories — resolve and read them
+   - instruction files in ancestor directories — read each listed file
      explicitly; do not assume the harness walks ancestors;
-   - no instruction file — state `instructions_absent` and continue.
-   If resolved task-tracking instructions conflict, enter `conflicted` and stop.
+   - no instruction file — `instructions_absent`; continue.
+   Explicitly read each unique path in `files` and `ancestor_files`, including files the harness may already have loaded; count each successfully read path once. If task-tracking rules conflict,
+   enter `conflicted` and stop. Record the state in the evidence line.
 3. **Observe capabilities.** Local capabilities are booleans:
    `shell_available`, `git_available`, `temporary_workspace_available`, and
    `parallel_read_only_available`. `tasks_mcp` and `open_brain` are each one of:
@@ -69,8 +71,8 @@ projection, validation, or conflict checks ran.
 ### `OBSERVATION_GATE` — snapshot and branch
 
 Run `snapshot <workspace-root>`. Treat its projection, hashes, filename
-resolution, parse warnings, and sync-conflict list as local evidence. Detect one
-branch:
+resolution, parse warnings, and sync-conflict list as local evidence. State the
+branch and changed files only from its `git` fields. Detect one branch:
 
 | Branch | Observed state | Action |
 |---|---|---|
@@ -98,8 +100,13 @@ verify it, and report that Session #1 will be logged by `closingtime`.
 ### Task evidence and envelope validation
 
 If `tasks_mcp` is available, read `references/task_operations.md`, run the
-appropriate current slice, save returned rows in scratch, and create a current
-receipt. If it is non-working, create a named unavailable receipt and say:
+appropriate current slice, save returned rows in scratch (or pass them on stdin
+with `fingerprint-rows -` when scratch writes are blocked), and create a current
+receipt whose time is the helper's `fingerprinted_at` unless the tool result
+carries its own; never type a time. If the rows cannot be fingerprinted or the envelope cannot be
+validated, there is no current receipt: do not present tasks as current, label
+any task list "unverified" with the reason, and name the gap. If it is
+non-working, create a named unavailable receipt and say:
 
 - `absent`: "Tasks DB isn't available in this harness."
 - `present_unauthenticated`: "The Tasks DB is present but not authorized —
@@ -136,10 +143,21 @@ The brief contains:
    exists;
 4. blockers, flagged/review-due work, dates, and a gap over fourteen days;
 5. the provenance/degraded state and honest gaps;
-6. one question offering pick up, create a task, or focus elsewhere; add
-   pending-learning review only when the file exists and Open Brain is working.
+6. one question offering exactly three options — pick up, create a task, or
+   focus elsewhere; add pending-learning review as a fourth only when the file
+   exists and Open Brain is working;
+7. a final evidence line: `Evidence: instructions <state>; instruction_bytes_loaded <n>; projection_bytes_emitted <n>; brief_words <n>`.
+   `instruction_bytes_loaded` is the snapshot's `skill_md_bytes`, plus the
+   bytes of each reference you read, plus each resolved instruction file.
 
-Do not begin a task after emitting the brief.
+Use absolute session dates. Resolve "today", "yesterday", and gaps only
+against the snapshot's `local_date`; never against the UTC date.
+
+The whole reply, including the question and the evidence line, stays within
+250 words; `brief_words` counts all of it. Draft the complete reply, run
+`count-words -` on it, and report that number; never estimate it. Write the
+brief in the user's explicitly requested language, otherwise in the language
+of their message. Do not begin a task after emitting the brief.
 
 ### Allowed post-brief actions
 
@@ -198,8 +216,10 @@ No model-name branch may change evidence, approval, or mutation rules.
 - The brief is at most 250 words, surfaces `Next:`, names gaps, and ends with one
   hand-off question.
 - The skill stops after the brief unless the user chooses an allowed action.
-- `instruction_bytes_loaded`, `projection_bytes_emitted`, and `brief_words` are
-  reported in release evidence; total-token guesses are not a gate.
+- Every brief ends with the evidence line reporting the instruction state,
+  `instruction_bytes_loaded`, `projection_bytes_emitted`, and `brief_words`;
+  total-token guesses are not a gate. Counts, receipt times, and git facts come
+  from helper results; the brief follows the user's language.
 - `project_index.md`, `project_session.md`, and `pending_learnings.md` remain
   byte-format compatible with v1 readers.
 - Pending-learning wording reviewed in this skill follows the candidate-quality
@@ -209,6 +229,26 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 `OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
+
+**v2.0.6 — 2026-10-27 — candidate**
+
+- Phase 4 findings O-01 to O-04: the brief follows the user's language;
+  `brief_words` comes from `count-words`; receipt times come from
+  `fingerprinted_at`; git facts come from snapshot `git.branch` and
+  `changed_paths`; `validate` refuses future receipt times.
+
+**v2.0.5 — 2026-10-27 — candidate**
+
+- Snapshot reports `local_date` and `local_utc_offset`; briefs use absolute
+  dates and resolve relative ones against the local date.
+- Instruction files are read explicitly and counted once.
+
+**v2.0.4 — 2026-10-27 — candidate**
+
+- Phase 4 fixes: no current-task claim when the receipt cannot be produced;
+  `fingerprint-rows`/`validate` accept stdin; the snapshot resolves
+  instruction files; every brief ends with an evidence line; the 250-word cap
+  covers the whole reply; the hand-off offers exactly three options.
 
 **v2.0.3 — 2026-10-08 — candidate**
 
