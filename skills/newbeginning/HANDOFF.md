@@ -1,8 +1,11 @@
-# newbeginning 2.0.3 — candidate handoff
+# newbeginning 2.0.7 — candidate handoff
 
-**Status:** Independent transferability review NOT RUN for this candidate.
-The July certificate applied to an earlier version; it does not certify this
-package. Local tests and real usage are different kinds of evidence.
+**Status:** candidate. This file does not certify the package. Phase 4
+behavioral validation passed on 2.0.5 (six fresh sessions in Claude Code and
+Codex, English and Spanish). The independent transferability record for this
+exact package is kept outside the package, bound to its version and tree hash,
+in the repository's `skills/_shared/validation/phase4_5/`. Production promotion
+is a separate decision.
 
 ## Prerequisites
 
@@ -14,33 +17,41 @@ package. Local tests and real usage are different kinds of evidence.
 - Optional Git, a compatible Tasks MCP SQL connector scoped by the owner's
   project instructions, and Open Brain tools. No credentials are bundled.
 
-Install the entire folder, including scripts and references, and start a fresh
-agent session. Authoritative tasks require a compatible task_urgency view.
+Install the entire folder, including scripts and references (for example into
+`~/.claude/skills/newbeginning` or `~/.codex/skills/newbeginning`), and start a
+fresh agent session. Authoritative tasks require a compatible `task_urgency`
+view.
 
 ## Normal use
 
-Invoke $newbeginning at the project root. The agent resolves project/ancestor
-instructions, snapshots bounded continuity evidence, reads current Tasks rows
-when available, and validates a scratch envelope. It emits at most 250 words
-with the last Next: and one handoff question, then stops.
+Invoke newbeginning (`/newbeginning` in Claude Code, `$newbeginning` in Codex)
+at the project root. The agent snapshots bounded continuity evidence, reads
+each project or ancestor instruction file the snapshot lists, reads current
+Tasks rows when available, and validates a scratch envelope. It replies in the
+owner's language with at most 250 words: project state, the last `Next:`, top
+tasks only with a current receipt, flags and gaps, one hand-off question with
+three options (a fourth for pending learnings when applicable), and a final
+evidence line. Then it stops.
 
 Useful CLI entry points:
 
 ```text
 python /path/to/newbeginning/scripts/runtime_cli.py snapshot /path/to/project
 python /path/to/newbeginning/scripts/runtime_cli.py fingerprint-rows /scratch/rows.json
-python /path/to/newbeginning/scripts/runtime_cli.py count-words /scratch/brief.md
 python /path/to/newbeginning/scripts/runtime_cli.py validate /scratch/envelope.json
+python /path/to/newbeginning/scripts/runtime_cli.py count-words /scratch/brief.md
 ```
 
-Read references/runtime_contract.md to assemble an envelope; executable
-validators are in scripts/schemas.py. Keep scratch evidence outside the
-project. Validation checks consistency, not the authenticity of supplied rows.
+Pass `-` instead of a JSON or text path to read it from stdin. Read
+references/runtime_contract.md to assemble an envelope; executable validators
+are in scripts/schemas.py. Keep scratch evidence outside the project.
+Validation checks consistency, not the authenticity of supplied rows.
 
 ## Degraded and recovery use
 
 - Tasks absent, unauthorized, or scoped elsewhere: name the exact state, treat
   the Markdown mirror as possibly stale, and make no current-task claim.
+- Rows that cannot be fingerprinted: label any task list "unverified".
 - Python unavailable: name the missing helper and unperformed checks.
 - Index absent: draft reconstruction/bootstrap, obtain approval, read back the
   saved index, and recapture before briefing.
@@ -57,8 +68,6 @@ UUID after an uncertain outcome. Task updates, completion, parking, and
 cancellation are outside opening scope.
 
 Local fixtures cover contracts, helper failure paths, packaging, and structure.
-They do not prove fresh model behavior, working external writes, third-language
-quality, recursive conflict discovery, or independent transferability.
-Current hashes and validation gates are recorded in the repository's
-skills/_shared/validation/README.md; normal invocation does not need that
-maintainer evidence. Production promotion remains a separate decision.
+Phase 4 covered fresh model behavior in two harnesses, English and Spanish
+only. Not validated: working external writes, nested or recursive conflict
+discovery, ambiguous filenames, and other languages.

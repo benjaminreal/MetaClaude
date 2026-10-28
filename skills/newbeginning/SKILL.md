@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.0.6"
+  version: "2.0.7"
 ---
 
 # newbeginning
@@ -229,6 +229,11 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 `OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
+
+**v2.0.7 — 2026-10-27 — candidate**
+
+- Documentation refresh for the Phase 4.5 review (HANDOFF and README); no
+  runtime or workflow change.
 
 **v2.0.6 — 2026-10-27 — candidate**
 
