@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.4"
+  version: "3.0.9"
 ---
 
 # closingtime
@@ -43,10 +43,11 @@ direct write is detectable later by `audit`; do not use that as a normal path.
 1. **Resolve workspace and project.** Find the project root containing
    continuity files or git root. Confirm one project when the conversation spans
    several.
-2. **Resolve instructions (`INSTRUCTION_RESOLUTION`).** Use project-root
-   instruction files when present; otherwise explicitly walk ancestors; if none
-   exist, record `instructions_absent`. Stop on conflicting task specifications.
-   Never name an instruction file as if its location were guaranteed.
+2. **Resolve instructions (`INSTRUCTION_RESOLUTION`).** Use the snapshot's
+   `instructions` field: project-root files when present, otherwise ancestor
+   files, otherwise `instructions_absent`. Explicitly read each unique path in `files` and `ancestor_files`, including files the harness may already have loaded; count each successfully read path once. Stop on
+   conflicting task specifications. Never name an instruction file as if its
+   location were guaranteed. Record the state in the closing evidence line.
 3. **Observe capabilities.** Local capabilities are booleans. `tasks_mcp` and
    `open_brain` each use `absent`, `present_unauthenticated`,
    `present_wrong_scope`, or `working`. Only a read in this invocation establishes
@@ -63,11 +64,16 @@ direct write is detectable later by `audit`; do not use that as a normal path.
 Run `snapshot <workspace-root>` after this skill is invoked. Use the complete
 index projection, latest session state, git result or explicit no-git result,
 parse warnings, and sync-conflict scan. Add conversation and bounded transcript
-signals without treating memory as a file receipt.
+signals without treating memory as a file receipt. State the branch and changed
+files only from the snapshot's `git` fields.
 
 Resolve Tasks DB state. When working, read `references/task_operations.md`, run
-the current project slice, and fingerprint returned rows. Otherwise record the
-exact state and wording:
+the current project slice, and fingerprint returned rows (use
+`fingerprint-rows -` on stdin when scratch writes are blocked). Use its
+`fingerprinted_at` as the receipt time unless the tool result carries its own;
+never type a time. Rows that cannot
+be fingerprinted give no current receipt: make no current task claim and keep
+task operations pending. Otherwise record the exact state and wording:
 
 - `absent`: "Tasks DB isn't available in this harness."
 - `present_unauthenticated`: "The Tasks DB is present but not authorized —
@@ -92,6 +98,12 @@ Draft one complete mutation proposal containing:
 4. explicit pending operations and acknowledgements for every degraded/skip
    path.
 
+With a current task receipt, the index change regenerates `## Active TODOs`
+from its rows with `render-mirror`, even when no task changes are proposed;
+without one, the mirror stays untouched. The draft names the pending-learnings
+write in M2 scope but shows no candidate wording: candidates are written and
+shown only in `LEARNING_GATE`.
+
 Do not write project files, the DB, Open Brain, or repository state yet.
 
 **Entry template — 300 words maximum:**
@@ -106,7 +118,19 @@ Do not write project files, the DB, Open Brain, or repository state yet.
 ```
 
 Use `Code`, `Research`, `Chat`, or `Cowork` for Mode and the current harness for
-Tool. Keep `Next:` populated even in a rushed close.
+Tool. Keep `Next:` populated even in a rushed close. Draft `Next:` and
+`Blockers:` for the state that remains after a successful closeout; this
+closeout's own approval and persistence steps belong in the live status, not in
+the entry. Write the entry and index
+in English unless the user explicitly asks for another language; never ask the
+user which language to use for them. That default covers only the files: reply
+to the user in every turn in their explicitly requested language, otherwise in
+the language of their latest message.
+
+Rewrite the index Summary to the current state: replace stale statements
+instead of appending history, and never copy a sentence from the entry's
+`Done:`, `Next:`, or `Blockers:` into it. Rebuild Key Files from the current session, and
+add the section when it is missing.
 
 The index remains v1-compatible:
 
@@ -146,21 +170,29 @@ Show the entire draft and itemize mutation scope by class:
 Obtain explicit approval for the stated scope. Corrections return to
 `DRAFT_GATE`. Approval for one class never implies another.
 
-Write the approved scope string and time into a fresh envelope; include returned
-rows so fingerprints can be recomputed. Run `validate` again.
+Before showing the draft, save the entry and run `freeze-draft <draft-envelope>
+<entry>`; it binds the draft-time snapshot and reports `entry_words`, the only
+entry length you may state. After explicit approval, run
+`approve-draft <draft-receipt> "<exact scope>"`; the helper stamps the time.
+Never type approval or start times yourself. Copy the draft envelope, add the
+approved scope string and approval, keep its `local_snapshot` unchanged (never
+take a new snapshot), include returned rows, and run `validate` again.
 
 ### `CONCURRENCY_GATE` and persistence
 
 Immediately before mutation, requery task preconditions when task writes are
 approved. Then:
 
-1. Save the approved entry draft in scratch and run `append`. The helper locks
-   locally, rechecks the observed tail hash and sync conflicts, allocates the
-   next number, appends, reads back, and journals. Stop on any refusal.
+1. Run `append <approved-envelope> <entry> <approved-draft-receipt>`. The
+   helper verifies the receipt, entry and draft-time snapshot, locks locally,
+   rechecks the observed tail hash (frozen at draft time) and sync conflicts,
+   allocates the next number, appends, reads back, and journals. Stop on any
+   refusal; a changed draft returns to `DRAFT_GATE` and needs a new freeze and
+   approval.
 2. Apply approved index narrative changes and read them back. Do not duplicate
    session detail in the index.
 3. Apply approved Tasks DB operations with `returning`, then rerun the current
-   slice. Rebuild the read-only mirror only from that result.
+   slice. Regenerate the read-only mirror with `render-mirror` from that result.
 4. Record verification receipts for every mutation. A partial failure remains
    partial; list what verified and what did not.
 
@@ -187,9 +219,12 @@ Begin only after session/index/task persistence is verified. If
    grounded candidates unless the session was pure execution and fewer are
    honest; each candidate must be plain, standalone, and centered on one
    transferable insight;
-2. search Open Brain per candidate, or record its exact non-working state;
+2. search Open Brain per candidate, or record its exact non-working state; a
+   search is a read, so an instruction not to update or capture to Open Brain
+   does not skip it;
 3. write and verify `pending_learnings.md` before presenting candidates;
-4. present types, wording, and connections;
+4. present types, wording, and connections, quoting each candidate exactly as
+   read back from the file; never claim two texts match without comparing them;
 5. after owner edits, reapply the quality contract to the complete final
    wording and obtain fresh approval for any repair; then capture only
    explicitly approved items;
@@ -206,7 +241,8 @@ capture. Never write "New thread" unless a search actually found no match.
 
 ### `CLOSING_GATE`
 
-Emit only lines supported by verified receipts. Normal form:
+Emit only lines supported by verified receipts. Always print these four status
+lines, in this order, as separate lines; normal form:
 
 ```text
 Session #N logged ✓
@@ -216,7 +252,12 @@ Project index narrative + task mirror updated ✓
 ```
 
 Replace skipped, unavailable, partial, or saved lines with the exact observed
-state; never leave a false checkmark. Unless `SKIP-ritual`, finish:
+state; never leave a false checkmark. Follow them with one evidence line:
+`Evidence: instructions <state>; instruction_bytes_loaded <n>`, where the bytes
+are the snapshot's `skill_md_bytes`, plus each reference you read, plus each
+resolved instruction file. A stop at `conflicted` still ends with that line.
+Order: status lines, then the evidence line, then, unless `SKIP-ritual`, the
+ritual line as the very last line:
 
 > *"You don't have to go home, but you can't stay here. Session closed."*
 
@@ -273,19 +314,61 @@ No model or harness name changes mutation authority, gates, or receipt rules.
   limits hold, and file formats remain readable by v1.
 - Every skip is explicit. Interruption output distinguishes verified from
   incomplete state.
-- Pending learnings exist before presentation; Open Brain capture has separate
-  approval.
+- Pending learnings exist before presentation, the draft shows no candidate
+  wording, and presented wording matches the file; Open Brain capture has
+  separate approval.
+- Replies follow the user's language; only the entry and index default to
+  English. The Summary repeats no entry sentence; a current receipt
+  regenerates the task mirror.
+- Every reported count, time, and git fact comes from a helper result.
 - Candidate wording passes the progressively loaded quality contract before
   presentation and again after owner edits: language is resolved, meaning is
   standalone, one central insight remains, and uncertainty is preserved.
 - The ritual reflects receipts rather than intent.
-- `instruction_bytes_loaded` is reported in release evidence; total-token
-  estimates are diagnostic only.
+- The closing message shows the status lines, then the evidence line reporting
+  the instruction state and `instruction_bytes_loaded`, then the ritual line
+  last (a `conflicted` stop ends with the evidence line); total-token estimates
+  are diagnostic only.
 
 Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.0.9 — 2026-10-27 — candidate**
+
+- One closing order: status lines, evidence line, ritual line last (the eval
+  criteria no longer say the message ends with the evidence line).
+
+**v3.0.8 — 2026-10-27 — candidate**
+
+- A search is a read: "do not update Open Brain" no longer skips the
+  per-candidate connection search (targeted check of 3.0.7, check 27).
+
+**v3.0.7 — 2026-10-27 — candidate**
+
+- Phase 4 findings G-01 to G-03 and O-01 to O-04: replies follow the user's
+  language; the Summary repeats no entry sentence; a current receipt
+  regenerates the task mirror via `render-mirror`; candidates appear only after
+  they are written and are quoted from the file; counts, receipt times, and git
+  facts come from helpers (`count-words`, `entry_words`, `fingerprinted_at`,
+  snapshot `git.branch`/`changed_paths`); `validate` refuses future receipt times.
+
+**v3.0.6 — 2026-10-27 — candidate**
+
+- `append` now requires an approved draft receipt (`freeze-draft`, then
+  `approve-draft`) and refuses a rebased snapshot, edited entry, tampered
+  receipt, or out-of-order times; approval time is helper-stamped.
+- `Next:`/`Blockers:` describe the state after the closeout; instruction files
+  are read explicitly and counted once.
+
+**v3.0.5 — 2026-10-27 — candidate**
+
+- Phase 4 fixes: no current-task claim without a fingerprinted receipt;
+  `fingerprint-rows`/`validate` accept stdin; the snapshot resolves instruction
+  files; closing messages always show the four status lines and an evidence
+  line; entry and index default to English without asking; the Summary is
+  rewritten and Key Files rebuilt.
 
 **v3.0.4 — 2026-10-08 — candidate**
 

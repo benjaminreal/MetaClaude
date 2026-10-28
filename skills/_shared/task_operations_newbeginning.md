@@ -38,7 +38,8 @@ Markdown.
 ## Receipt rule
 
 Save the returned rows to scratch JSON and run `fingerprint-rows`. Put the
-result, operation fingerprint, observed time, project identity, status, and row
+result, operation fingerprint, observed time (the helper's `fingerprinted_at`
+unless the tool result carries its own), project identity, status, and row
 count in the MCP receipt. Preserve the returned rows in the scratch envelope so
 `validate` can recompute the fingerprint. A write also needs its `returning`
 result or a follow-up current read before it is reported as verified.

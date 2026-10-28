@@ -29,6 +29,7 @@ Useful CLI entry points:
 ```text
 python /path/to/newbeginning/scripts/runtime_cli.py snapshot /path/to/project
 python /path/to/newbeginning/scripts/runtime_cli.py fingerprint-rows /scratch/rows.json
+python /path/to/newbeginning/scripts/runtime_cli.py count-words /scratch/brief.md
 python /path/to/newbeginning/scripts/runtime_cli.py validate /scratch/envelope.json
 ```
 

@@ -21,7 +21,8 @@ session, pending file, or connection metadata.
    become separate candidates.
 4. **Evidence fidelity.** Preserve uncertainty and transfer limits. Do not turn
    a tentative observation into a universal or causal rule, and do not invent
-   missing context.
+   missing context. Keep a rule's scope: a journal requirement applies to
+   workflows that require that journal, not to all local writes.
 5. **Stable wording.** Keep volatile traceability outside `Insight`. Exclude
    session numbers, internal IDs or codes, model/version tokens, and absolute
    file paths unless the user explicitly chooses to retain an essential term

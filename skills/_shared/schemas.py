@@ -12,6 +12,7 @@ claim and its cited evidence detectable.
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import json
 
@@ -30,6 +31,10 @@ CONTRADICTORY = "CONTRADICTORY"
 UNRECOGNIZED_SCHEMA = "UNRECOGNIZED_SCHEMA"
 SCOPE_UNAPPROVED = "SCOPE_UNAPPROVED"
 SYNC_CONFLICT = "SYNC_CONFLICT"
+FUTURE_RECEIPT = "FUTURE_RECEIPT"
+
+# Tolerance for clock skew between the local host and an MCP server.
+RECEIPT_CLOCK_SKEW_SECONDS = 120
 
 
 def canonical_row_fingerprint(rows: list[dict], primary_key: str = "id") -> str:
@@ -103,6 +108,16 @@ def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
         issues.append({"code": STALE_RECEIPT, "receipt": cap,
                        "detail": f"observed_at {observed} precedes invocation "
                                  f"start {invocation_started_at}"})
+    try:
+        parsed = _dt.datetime.fromisoformat(observed.replace("Z", "+00:00")) if observed else None
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.tzinfo is not None:
+        limit = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=RECEIPT_CLOCK_SKEW_SECONDS)
+        if parsed > limit:
+            issues.append({"code": FUTURE_RECEIPT, "receipt": cap,
+                           "detail": f"observed_at {observed} is later than the helper clock; "
+                                     "copy fingerprinted_at instead of typing a time"})
 
     if status == "current":
         if returned_rows is None:

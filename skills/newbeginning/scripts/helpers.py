@@ -44,6 +44,8 @@ SESSION_NAMES = (
     "sessions.md",
 )
 PENDING_NAMES = ("pending_learnings.md", "Pending_Learnings.md")
+INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md")
+GIT_CHANGED_PATHS_CAP = 20
 SYNC_PATTERNS = ("*(Conflicted copy*", "*.sync-conflict-*", "* (case conflict)*")
 
 SESSION_HEADER_RE = re.compile(
@@ -81,6 +83,22 @@ def _canonical_json(value: object) -> bytes:
 
 def _utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _observation_clock() -> dict:
+    """UTC observation time plus the host's local calendar date and offset.
+
+    Relative dates in briefs ("today", "yesterday", gaps) must be resolved
+    against `local_date`, never against the UTC date.
+    """
+    now = dt.datetime.now(dt.timezone.utc)
+    local = now.astimezone()
+    offset = local.strftime("%z")
+    return {
+        "observed_at": now.isoformat().replace("+00:00", "Z"),
+        "local_date": local.date().isoformat(),
+        "local_utc_offset": f"{offset[:3]}:{offset[3:]}" if offset else None,
+    }
 
 
 def _resolve_root(workspace_root: str | os.PathLike[str]) -> Path:
@@ -192,11 +210,16 @@ def _git_snapshot(root: Path) -> dict:
     for result in (head, status, diff):
         if result.returncode != 0:
             raise HelperError("EGITFAIL", result.stderr.strip() or "git command failed")
+    branch = run("symbolic-ref", "--short", "-q", "HEAD")
+    changed = [line[3:] for line in status.stdout.splitlines() if len(line) > 3]
 
     return {
         "available": True,
         "head": head.stdout.strip(),
+        "branch": branch.stdout.strip() if branch.returncode == 0 else None,
         "dirty": bool(status.stdout.strip()),
+        "changed_paths": changed[:GIT_CHANGED_PATHS_CAP],
+        "changed_path_count": len(changed),
         "diff_stat_sha256": _sha256_text(diff.stdout),
         "status_sha256": _sha256_text(status.stdout),
     }
@@ -276,6 +299,49 @@ def _truncate_projection(projection: dict, cap: int) -> tuple[dict, int, int]:
     return best, emitted, full_bytes
 
 
+def _instruction_resolution(root: Path) -> dict:
+    """Locate instruction files at the root, else in ancestors (contract INSTRUCTION_RESOLUTION).
+
+    Reports paths and sizes only; the model must still read each listed file
+    and decide whether task-tracking rules conflict.
+    """
+    def found(directory: Path) -> list[dict]:
+        out = []
+        for name in INSTRUCTION_NAMES:
+            path = directory / name
+            try:
+                if path.is_file():
+                    out.append({"path": str(path), "bytes": path.stat().st_size})
+            except OSError:
+                out.append({"path": str(path), "bytes": None, "unreadable": True})
+        return out
+
+    files = found(root)
+    ancestors: list[dict] = []
+    for directory in root.parents:
+        ancestors += found(directory)
+    if files:
+        # Root files take precedence, but ancestors are still listed so the
+        # model can read them and detect conflicting task-tracking rules.
+        return {"state": "project_root", "files": files, "ancestor_files": ancestors}
+    if ancestors:
+        return {"state": "ancestor", "files": ancestors, "ancestor_files": ancestors}
+    return {"state": "instructions_absent", "files": [], "ancestor_files": []}
+
+
+def _instruction_budget() -> dict:
+    """Byte sizes of the packaged skill instructions this runtime ships with."""
+    skill_dir = Path(__file__).resolve().parent.parent
+    skill_md = skill_dir / "SKILL.md"
+    references = skill_dir / "references"
+    return {
+        "skill_md_bytes": skill_md.stat().st_size if skill_md.is_file() else None,
+        "reference_bytes": {
+            path.name: path.stat().st_size for path in sorted(references.glob("*.md"))
+        } if references.is_dir() else {},
+    }
+
+
 def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
     """Return the bounded local snapshot defined by lifecycle contract D.1."""
     root = _resolve_root(workspace_root)
@@ -318,6 +384,8 @@ def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
             "path": pending_path.name if pending_path else None,
         },
         "git": _git_snapshot(root),
+        "instructions": _instruction_resolution(root),
+        "instruction_budget": _instruction_budget(),
         "sync_conflicts": _sync_conflicts(root),
         "parse_warnings": _parse_warnings(index_text, session_text),
         "projection": projection,
@@ -325,7 +393,7 @@ def capture_local_snapshot(workspace_root: str | os.PathLike[str]) -> dict:
         "projection_bytes_full": full,
         "projection_cap": PROJECTION_BYTE_CAP,
         "workspace_root": str(root),
-        "observed_at": _utc_now(),
+        **_observation_clock(),
     }
 
 
@@ -438,7 +506,127 @@ def _write_journal_record(root: Path, record: dict) -> Path:
     return path
 
 
-def append_session_entry(envelope: dict, entry_text: str) -> dict:
+DRAFT_RECEIPT_KIND = "closingtime_draft_receipt"
+
+
+def count_words(text: str) -> int:
+    """Whitespace-delimited word count, the same rule as `wc -w`."""
+    return len(text.split())
+
+
+def render_task_mirror(rows: list[dict], local_date: str) -> str:
+    """Render the read-only `## Active TODOs` body from current receipt rows.
+
+    Row order is preserved (the query already ranks rows); the caller replaces
+    the section body with this text and never edits task lines by hand.
+    """
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise HelperError("EBADROWS", "rows JSON must contain a list of objects")
+    lines = [
+        f"_Read-only mirror regenerated from Supabase `task_urgency` on {local_date}. "
+        f"Top {len(rows)} open tasks; bounded view. Do not hand-edit; DB wins._"
+    ]
+    for row in rows:
+        if not row.get("id") or not row.get("title"):
+            raise HelperError("EBADROWS", "each row needs id and title")
+        priority = row.get("priority")
+        label = f"P{priority}" if isinstance(priority, int) else "P-"
+        details = [f"id: `{row['id']}`"]
+        if row.get("due"):
+            details.append(f"due {row['due']}")
+        if row.get("review_on"):
+            details.append(f"review {row['review_on']}")
+        if row.get("flagged"):
+            details.append("flagged")
+        title = " ".join(str(row["title"]).split())
+        lines.append(f"- [{label}] {title} ({' ; '.join(details)})")
+    return "\n".join(lines) + "\n"
+
+
+def _parse_utc(value: object) -> dt.datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else None
+
+
+def _receipt_digest(receipt: dict) -> str:
+    return _sha256_bytes(_canonical_json({k: v for k, v in receipt.items() if k != "receipt_sha256"}))
+
+
+def freeze_draft(envelope: dict, entry_text: str) -> dict:
+    """Bind the draft-time snapshot, tail and exact entry before the draft is shown.
+
+    The receipt is the compare-and-swap baseline: a later snapshot cannot
+    replace it, so a change between draft and approval is detected at append.
+    """
+    snapshot = (envelope or {}).get("local_snapshot")
+    receipt = {
+        "schema_version": S.SCHEMA_VERSION,
+        "kind": DRAFT_RECEIPT_KIND,
+        "invocation_id": (envelope or {}).get("invocation_id"),
+        "workspace_root": (envelope or {}).get("workspace_root"),
+        "snapshot_sha256": _sha256_bytes(_canonical_json(snapshot)),
+        "snapshot_observed_at": (snapshot or {}).get("observed_at"),
+        "observed_tail_sha256": ((snapshot or {}).get("session") or {}).get("tail_sha256"),
+        "entry_sha256": _sha256_text(entry_text),
+        "entry_words": count_words(entry_text),
+        "drafted_at": _utc_now(),
+        "approved_at": None,
+        "scope_string": None,
+    }
+    receipt["receipt_sha256"] = _receipt_digest(receipt)
+    return receipt
+
+
+def approve_draft(receipt: dict, scope_string: str) -> dict:
+    """Stamp approval with the helper clock; call only after explicit approval."""
+    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND:
+        raise HelperError("EDRAFTRECEIPT", "not a draft receipt")
+    if receipt.get("receipt_sha256") != _receipt_digest(receipt):
+        raise HelperError("EDRAFTRECEIPT", "draft receipt was modified")
+    if receipt.get("approved_at"):
+        raise HelperError("EDRAFTRECEIPT", "draft is already approved; freeze a new draft")
+    if not scope_string:
+        raise HelperError(S.SCOPE_UNAPPROVED, "approval needs the exact scope string")
+    drafted = _parse_utc(receipt.get("drafted_at"))
+    now = dt.datetime.now(dt.timezone.utc)
+    while drafted is not None and now <= drafted:
+        time.sleep(0.001)
+        now = dt.datetime.now(dt.timezone.utc)
+    approved = dict(receipt, approved_at=now.isoformat().replace("+00:00", "Z"), scope_string=scope_string)
+    approved["receipt_sha256"] = _receipt_digest(approved)
+    return approved
+
+
+def _check_approved_draft(envelope: dict, entry_text: str, receipt: dict | None) -> None:
+    if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND:
+        raise HelperError("EDRAFTRECEIPT", "append requires the approved draft receipt")
+    if receipt.get("receipt_sha256") != _receipt_digest(receipt):
+        raise HelperError("EDRAFTRECEIPT", "draft receipt was modified")
+    if not receipt.get("approved_at"):
+        raise HelperError("EDRAFTRECEIPT", "draft receipt is not approved; run approve-draft after approval")
+    if receipt.get("invocation_id") != envelope.get("invocation_id") or \
+            receipt.get("workspace_root") != envelope.get("workspace_root"):
+        raise HelperError("EDRAFTMISMATCH", "receipt belongs to another invocation or workspace")
+    if receipt.get("snapshot_sha256") != _sha256_bytes(_canonical_json(envelope.get("local_snapshot"))):
+        raise HelperError("EDRAFTMISMATCH", "envelope snapshot differs from the draft-time snapshot")
+    if receipt.get("entry_sha256") != _sha256_text(entry_text):
+        raise HelperError("EDRAFTMISMATCH", "entry differs from the approved draft")
+    if receipt.get("scope_string") != (envelope.get("approval") or {}).get("scope_string"):
+        raise HelperError("EDRAFTMISMATCH", "envelope approval scope differs from the approved draft")
+    observed = _parse_utc(receipt.get("snapshot_observed_at"))
+    drafted = _parse_utc(receipt.get("drafted_at"))
+    approved = _parse_utc(receipt.get("approved_at"))
+    now = dt.datetime.now(dt.timezone.utc)
+    if not (observed and drafted and approved and observed <= drafted < approved <= now):
+        raise HelperError("ECHRONOLOGY", "require snapshot <= drafted < approved <= now")
+
+
+def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict | None = None) -> dict:
     """Validate, compare-and-swap append, read back, and journal one entry."""
     if not envelope:
         raise HelperError(S.MISSING_RECEIPT, "evidence envelope is absent")
@@ -456,6 +644,8 @@ def append_session_entry(envelope: dict, entry_text: str) -> dict:
     skill_version = envelope.get("skill_version")
     if not skill_version:
         raise HelperError("EMISSINGVERSION", "skill_version is required for the journal")
+
+    _check_approved_draft(envelope, entry_text, approved_draft)
 
     root = _resolve_root(envelope.get("workspace_root", ""))
     session_path = _session_path_from_envelope(root, envelope)
@@ -513,6 +703,8 @@ def append_session_entry(envelope: dict, entry_text: str) -> dict:
             "entry_sha256": expected_hash,
             "written_at": written_at,
             "skill_version": skill_version,
+            "draft_receipt_sha256": approved_draft["receipt_sha256"],
+            "approved_at": approved_draft["approved_at"],
         }
         journal_path = _write_journal_record(root, record)
 

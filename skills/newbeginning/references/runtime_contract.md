@@ -12,14 +12,45 @@ Use the bundled `scripts/runtime_cli.py` with Python 3:
 snapshot <workspace-root>
 fingerprint-rows <returned-rows.json>
 validate <envelope.json>
-append <envelope.json> <entry.md>
+freeze-draft <envelope.json> <entry.md>
+approve-draft <draft-receipt.json> "<exact scope>"
+append <envelope.json> <entry.md> <approved-draft-receipt.json>
 audit <workspace-root>
+count-words <text-file>
+render-mirror <returned-rows.json> <local-date>
 verify-sync <canonical-dir> <target-dir> [<target-dir> ...]
 ```
 
 Write envelopes, returned-row JSON, and draft entry files only under the
 harness scratch directory. A scratch file inside the repository is a project
-or repository mutation, not ephemeral computation.
+or repository mutation, not ephemeral computation. When the harness blocks
+scratch writes, pass JSON on stdin with `-` in place of the file path
+(`fingerprint-rows -`, `validate -`, `count-words -`, `render-mirror -`). If neither works, there is no current
+receipt: say so and make no current-state claim.
+
+`snapshot` also returns `instructions` (`state` is `project_root`, `ancestor`,
+or `instructions_absent`; `files` are the governing files and `ancestor_files`
+every instruction file above the root, each with path and bytes) and
+`instruction_budget` (bytes of this skill's `SKILL.md` and each reference),
+plus `local_date` and `local_utc_offset` for resolving relative dates. Its
+`git` field reports `branch`, `dirty`, and up to 20 `changed_paths` with
+`changed_path_count`; state git facts only from these fields.
+
+Take every count and time you report from a helper result, never from your own
+estimate: `count-words` for word counts, `freeze-draft`'s `entry_words` for the
+entry, and `fingerprint-rows`'s `fingerprinted_at` as a receipt's `observed_at`
+when the tool result shows no time of its own. `validate` refuses a receipt
+time later than the helper clock (`FUTURE_RECEIPT`). `render-mirror` turns
+current receipt rows into the `## Active TODOs` body; replace the section body
+with its output unchanged.
+
+`append` refuses without the approved draft receipt, or when the envelope's
+snapshot, the entry, or the approval scope differs from the frozen draft, or
+when times are not ordered snapshot <= drafted < approved <= now. This guards
+against accidental rebasing, not deliberate forgery.
+Explicitly read each unique file in `files` and `ancestor_files` before
+relying on them;
+conflicting task-tracking rules mean `conflicted`.
 
 ## Evidence envelope
 
