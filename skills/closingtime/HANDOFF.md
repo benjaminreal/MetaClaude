@@ -1,4 +1,4 @@
-# closingtime 3.1.0 — candidate
+# closingtime 3.1.1 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -23,7 +23,8 @@ errors and historical migration. At most one file argument per call may be
 
 All project writes need the displayed approval scope. Freeze returns canonical
 scope_lines, approve compares that exact text and records owner_reply
-separately. An exclusion requires a revised freeze. Hashes are consistency
+separately. An exclusion requires a revised freeze; the exclusion reply is not
+approval, so show the new scope_lines and wait. Hashes are consistency
 checks, not proof of conversation authority, provenance or authenticity.
 
 The helper reads whole continuity files and emits a bounded projection (16,384

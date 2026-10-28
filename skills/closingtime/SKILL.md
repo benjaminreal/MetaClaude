@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.1.0"
+  version: "3.1.1"
 ---
 
 # closingtime
@@ -180,7 +180,8 @@ Before showing the draft, save the entry and index and run `freeze-draft
 entry length you may state. After explicit approval, run
 `approve-draft <draft-receipt> "<exact scope_lines>" --owner-reply "<owner words>"`; the helper stamps the time.
 Show helper-rendered `scope_lines` verbatim; an exclusion requires revise and
-freeze again. Owner words are recorded separately, not interpreted or
+freeze again. An exclusion or correction is not approval: after re-freezing,
+show the new `scope_lines` and stop until the owner approves them. Owner words are recorded separately, not interpreted or
 authenticated. Never type approval or start times yourself. Copy the draft envelope, add the
 approved scope string and approval, keep its `local_snapshot` unchanged (never
 take a new snapshot), include returned rows, and run `validate` again.
@@ -311,7 +312,7 @@ No model or harness name changes mutation authority, gates, or receipt rules.
 
 | Situation | Action |
 |---|---|
-| User corrects draft | Revise and show the complete scope again |
+| User corrects or excludes | Revise, re-freeze, show new scope; wait for approval |
 | User skips a branch | Emit its acknowledgement; preserve independent branches |
 | Task or tail precondition changed | Stop; reconcile and request new approval |
 | Sync-conflict artifact appears | Enter `conflicted`; no project mutation |
@@ -354,7 +355,12 @@ or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
 
-**v3.1.0 — 2026-10-27 — candidate**
+**v3.1.1 — 2026-10-28 — candidate**
+
+- An exclusion or correction reply is not approval of the revised scope: show
+  the re-frozen `scope_lines` and wait (repair check P4X-CT-C-S01).
+
+**v3.1.0 — 2026-10-27**
 
 - Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
   identity and parsed times; conflict/alias stops; read-only git evidence.

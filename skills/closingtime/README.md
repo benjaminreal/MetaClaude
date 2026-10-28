@@ -8,7 +8,7 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.1.0 candidate
+**Version:** 3.1.1 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent
@@ -165,7 +165,11 @@ Output quality (entry ≤ 300 words, narrative index concise, no duplication bet
 
 ### 7. Version & Changelog
 
-**v3.1.0 candidate** — 2026-10-27
+**v3.1.1 candidate** — 2026-10-28
+- When you exclude something or correct the draft, that reply is not approval:
+  closingtime shows the revised scope and waits for you to approve it.
+
+**v3.1.0** — 2026-10-27
 - Phase 4.5 repairs: approval must match the exact scope shown; evidence is
   tied to one project folder; append checks the entry first, records its intent
   before writing, rolls back only its own bytes, and `resume` finishes an
