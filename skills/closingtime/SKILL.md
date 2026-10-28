@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.8"
+  version: "3.0.9"
 ---
 
 # closingtime
@@ -255,7 +255,9 @@ Replace skipped, unavailable, partial, or saved lines with the exact observed
 state; never leave a false checkmark. Follow them with one evidence line:
 `Evidence: instructions <state>; instruction_bytes_loaded <n>`, where the bytes
 are the snapshot's `skill_md_bytes`, plus each reference you read, plus each
-resolved instruction file. A stop at `conflicted` still ends with that line. Unless `SKIP-ritual`, finish:
+resolved instruction file. A stop at `conflicted` still ends with that line.
+Order: status lines, then the evidence line, then, unless `SKIP-ritual`, the
+ritual line as the very last line:
 
 > *"You don't have to go home, but you can't stay here. Session closed."*
 
@@ -323,14 +325,20 @@ No model or harness name changes mutation authority, gates, or receipt rules.
   presentation and again after owner edits: language is resolved, meaning is
   standalone, one central insight remains, and uncertainty is preserved.
 - The ritual reflects receipts rather than intent.
-- The closing message, including a `conflicted` stop, ends with the evidence
-  line reporting the instruction state and `instruction_bytes_loaded`;
-  total-token estimates are diagnostic only.
+- The closing message shows the status lines, then the evidence line reporting
+  the instruction state and `instruction_bytes_loaded`, then the ritual line
+  last (a `conflicted` stop ends with the evidence line); total-token estimates
+  are diagnostic only.
 
 Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.0.9 — 2026-10-27 — candidate**
+
+- One closing order: status lines, evidence line, ritual line last (the eval
+  criteria no longer say the message ends with the evidence line).
 
 **v3.0.8 — 2026-10-27 — candidate**
 
