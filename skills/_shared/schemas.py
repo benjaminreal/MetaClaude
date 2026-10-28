@@ -167,7 +167,86 @@ def _same_root(left: object, right: object) -> bool:
     return os.path.realpath(os.path.expanduser(left)) == os.path.realpath(os.path.expanduser(right))
 
 
-def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None = None) -> dict:
+HISTORY_ERRORS = {"session_unparseable", "duplicate_session_number", "session_header_malformed", "session_date_impossible"}
+
+
+def legacy_session_number(line: str) -> int | None:
+    """Number of a legacy, never-written-by-helper entry heading, else None.
+
+    Accepted: letter-suffixed supplements ("### Session #12A | ...",
+    "#### Session #12A (supplement) | ..."), v1 headings at another level or
+    without "#" ("## Session 5 — Title", "### Session 5 — Title"). A level-3
+    "### Session #N" heading that is not the strict format stays malformed.
+    """
+    import re
+    line = line.rstrip("\r")
+    m = re.match(r"#{2,6}[ \t]+Session[ \t]+#([0-9]+)[A-Za-z]{1,2}\b", line)
+    if m:
+        return int(m[1])
+    m = re.match(r"(#{2}|#{4,6})[ \t]+(?:Session|Sesi[oó]n)[ \t]+#?([0-9]+)\b", line) or re.match(r"(###)[ \t]+(?:Session|Sesi[oó]n)[ \t]+([0-9]+)\b", line)
+    if m:
+        return int(m[2])
+    # A legacy multi-day entry: "### Session #N | 2026-04-15–16 | ..." (date range).
+    m = re.match(r"###[ \t]+Session[ \t]+#([0-9]+)[ \t]*\|[ \t]*[0-9]{4}-[0-9]{2}-[0-9]{2}[–-][0-9]{2}(?:-[0-9]{2})?[ \t]*\|", line)
+    return int(m[1]) if m else None
+
+
+def legacy_session_numbers(text: str) -> list[int]:
+    import re
+    return [n for n in (legacy_session_number(m.group()) for m in re.finditer(r"(?m)^#{2,6}[ \t]+(?:Session|Sesi[oó]n)[ \t]+#?[0-9][^\n]*", text)) if n is not None]
+
+
+def parse_history(text: str) -> tuple[list[dict], list[str]]:
+    """Single grammar for projection, validation, audit and persistence.
+
+    A legacy first header may follow the title directly. Writers emit separators;
+    when present a separator belongs to the following entry's receipt bytes.
+    """
+    import re
+    # Entry-like headings only: level-1 titles ("# Session Log — X") and
+    # headings without a number ("## Session Context") are ordinary text.
+    candidates = list(re.finditer(r"(?m)^(?:###[ \t]+Session[ \t]+#|#{2,6}[ \t]+Session[ \t]+#?[0-9])[^\n]*", text))
+    header = re.compile(r"### Session #([0-9]+)[ \t]*\|[ \t]*([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*\|[ \t]*[^\s|][^\n|]*")
+    entries, warnings, numbers = [], [], []
+    starts = []
+    for m in candidates:
+        prefix = text[:m.start()]
+        separator = re.search(r"(?m)^---\n\n$", prefix)
+        starts.append(separator.start() if separator else m.start())
+    for i, m in enumerate(candidates):
+        parsed = header.fullmatch(m.group().rstrip("\r"))
+        if not parsed:
+            if legacy_session_number(m.group()) is None:
+                warnings.append("session_header_malformed")
+            continue
+        number = int(parsed[1]); numbers.append(number)
+        try:
+            _dt.date.fromisoformat(parsed[2])
+        except ValueError:
+            warnings.append("session_date_impossible")
+        chunk = text[starts[i]:starts[i+1] if i+1 < len(starts) else len(text)].rstrip() + "\n"
+        entries.append({"session_number": number, "date": parsed[2], "header_start": m.start(), "chunk": chunk})
+    if "### Session" in text and not entries:
+        warnings.append("session_unparseable")
+    if len(numbers) != len(set(numbers)):
+        warnings.append("duplicate_session_number")
+    if any(b <= a for a, b in zip(numbers, numbers[1:])):
+        warnings.append("session_non_monotonic")
+    return entries, sorted(set(warnings))
+
+
+def freshness_failures(snapshot: dict, invocation_started_at: object = None) -> list[dict]:
+    captured = _parse_instant(snapshot.get("captured_at", snapshot.get("observed_at")))
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if captured is None or now - captured > _dt.timedelta(hours=6) or captured - now > _dt.timedelta(seconds=120):
+        return [{"code": "ESTALEEVIDENCE", "detail": "snapshot must be at most six hours old and at most 120 seconds ahead of wall clock"}]
+    started = _parse_instant(invocation_started_at)
+    if started is not None and captured - started > _dt.timedelta(minutes=15):
+        return [{"code": "ESTALEEVIDENCE", "detail": "snapshot captured more than fifteen minutes after invocation start; use new-envelope"}]
+    return []
+
+
+def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None = None, *, resume_bound: bool = False) -> dict:
     """Returns {'valid': bool, 'failures': [...]}. No partial validity."""
     returned_rows_by_capability = returned_rows_by_capability or {}
     failures: list[dict] = []
@@ -179,13 +258,20 @@ def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None =
     failures += validate_capability_profile(envelope.get("capability_profile", {}))
 
     snap = envelope.get("local_snapshot") or {}
+    if not resume_bound:
+        failures += freshness_failures(snap, envelope.get("invocation_started_at"))
+    projected_tail = ((snap.get("projection") or {}).get("session") or {}).get("tail", "")
+    _, projected_warnings = parse_history(projected_tail)
+    history_warnings = set(snap.get("parse_warnings", [])) | set(projected_warnings)
+    if history_warnings & HISTORY_ERRORS or (snap.get("session") or {}).get("alternates"):
+        failures.append({"code": "EHISTORY", "detail": "ambiguous or malformed history"})
     if not snap:
         failures.append({"code": MISSING_RECEIPT, "detail": "local_snapshot absent"})
     if snap.get("sync_conflicts"):
         failures.append({"code": SYNC_CONFLICT,
                          "detail": ", ".join(snap["sync_conflicts"])})
 
-    if not _same_root(envelope.get("workspace_root"), snap.get("workspace_root")):
+    if not snap.get("workspace_id") and not _same_root(envelope.get("workspace_root"), snap.get("workspace_root")):
         failures.append({"code": WORKSPACE_MISMATCH, "detail": "snapshot and envelope roots must agree"})
     started = envelope.get("invocation_started_at")
     start_time = _parse_instant(started)

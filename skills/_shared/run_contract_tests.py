@@ -35,6 +35,8 @@ import mapping  # noqa: E402
 import schemas as S  # noqa: E402
 import workflow_fixtures  # noqa: E402
 import repair_fixtures
+import round3_fixtures
+import round3_1_fixtures
 import candidate_quality_fixtures  # noqa: E402
 
 SKILLS = Path(__file__).resolve().parent.parent
@@ -121,29 +123,30 @@ def run() -> int:
     failures += [f"mapping: {p}" for p in probs]
     print(f"  [{'PASS' if not probs else 'FAIL'}] checklist mapping table\n")
 
-    vf = fixtures.valid_fixtures()
-    bad = [f"{n}: {v['failures']}" for n, (e, r) in sorted(vf.items())
-           if not (v := S.validate_envelope(e, r))["valid"]]
-    failures += [f"fixture: {b}" for b in bad]
-    print(f"  [{'PASS' if not bad else 'FAIL'}] {len(vf)} valid fixtures validate cleanly")
-    for b in bad:
-        print(f"        └─ {b}")
+    with fixtures.historical_clock():
+        vf = fixtures.valid_fixtures()
+        bad = [f"{n}: {v['failures']}" for n, (e, r) in sorted(vf.items())
+               if not (v := S.validate_envelope(e, r))["valid"]]
+        failures += [f"fixture: {b}" for b in bad]
+        print(f"  [{'PASS' if not bad else 'FAIL'}] {len(vf)} valid fixtures validate cleanly")
+        for b in bad:
+            print(f"        └─ {b}")
 
-    ms = fixtures.mutants()
-    survived, wrong = [], []
-    for name, env, rows, expected in ms:
-        v = S.validate_envelope(env, rows)
-        if v["valid"]:
-            survived.append(name)
-        elif expected not in {f["code"] for f in v["failures"]}:
-            wrong.append(f"{name}: expected {expected}, got "
-                         f"{sorted({f['code'] for f in v['failures']})}")
-    failures += [f"mutant survived: {m}" for m in survived] + \
-                [f"mutant wrong code: {m}" for m in wrong]
-    print(f"  [{'PASS' if not survived and not wrong else 'FAIL'}] {len(ms)} mutants — "
-          f"each fails with its declared code")
-    for m in survived + wrong:
-        print(f"        └─ {m}")
+        ms = fixtures.mutants()
+        survived, wrong = [], []
+        for name, env, rows, expected in ms:
+            v = S.validate_envelope(env, rows)
+            if v["valid"]:
+                survived.append(name)
+            elif expected not in {f["code"] for f in v["failures"]}:
+                wrong.append(f"{name}: expected {expected}, got "
+                             f"{sorted({f['code'] for f in v['failures']})}")
+        failures += [f"mutant survived: {m}" for m in survived] + \
+                    [f"mutant wrong code: {m}" for m in wrong]
+        print(f"  [{'PASS' if not survived and not wrong else 'FAIL'}] {len(ms)} mutants — "
+              f"each fails with its declared code")
+        for m in survived + wrong:
+            print(f"        └─ {m}")
 
     act = check_activation()
     failures += [f"activation: {a}" for a in act]
@@ -175,6 +178,18 @@ def run() -> int:
     failures += [f"repair: {problem}" for problem in repair_bad]
     print(f"  [{'PASS' if not repair_bad else 'FAIL'}] {len(repair_fixtures.CHECKS)} Phase 4.5 repair groups")
     for problem in repair_bad:
+        print(f"        └─ {problem}")
+
+    round3_bad = round3_fixtures.run()
+    failures += [f"round3: {problem}" for problem in round3_bad]
+    print(f"  [{'PASS' if not round3_bad else 'FAIL'}] {len(round3_fixtures.CHECKS)} Round-3 regression groups")
+    for problem in round3_bad:
+        print(f"        └─ {problem}")
+
+    round3_1_bad = round3_1_fixtures.run()
+    failures += [f"round3.1: {problem}" for problem in round3_1_bad]
+    print(f"  [{'PASS' if not round3_1_bad else 'FAIL'}] {len(round3_1_fixtures.CHECKS)} Round-3.1 regression groups")
+    for problem in round3_1_bad:
         print(f"        └─ {problem}")
 
     workflow_bad = workflow_fixtures.run()

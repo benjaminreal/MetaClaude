@@ -1,4 +1,4 @@
-# Standalone envelope recipes
+# Standalone envelope recipes (2.2.2 / 3.2.2)
 
 Use `python3 scripts/runtime_cli.py new-envelope ROOT` from this package first.
 It derives skill/version and a helper-stamped start from the snapshot. The
@@ -14,7 +14,27 @@ Closing draft: add M2 paths and exact M3 operations; validate before scope is
 added, then freeze. A draft with unapproved scope correctly fails only
 SCOPE_UNAPPROVED. Closing approved: run approve-draft with exact scope_lines,
 copy that string into approval, retain the original snapshot and validate.
-For index-only recovery omit entry and pass `--index-draft INDEX`.
+For index-only opening omit entry and pass `--index-draft INDEX`. Opening has no
+task creation or pending/capture mutation scope. A close may include
+"pending_learnings.md" beside the session/index in M2; it renders optional stage
+permission (or use {"path":"pending_learnings.md","operation":"stage"}).
+Pending-only scopes default to replace. Explicit delete is never auto-added;
+archive scopes also render only requested operations. Each later independent
+chain uses new-envelope for both timestamps; capture over fifteen minutes after
+start refuses ESTALEEVIDENCE. Never copy an earlier start. Each pending
+edit/disposition/delete needs non-empty `write-approved --owner-reply "<words>"`
+and current `--expect`; approvals older than six hours cannot authorize a revision.
+Stage uses the close approval once after append verification:
+`write-approved ENVELOPE RECEIPT pending_learnings.md CONTENT --operation stage
+--expect <current-sha256|absent>`. Preserve all current bytes and append only
+new candidate blocks; read back before showing them. Keep needs no write.
+For other dispositions show their frozen scope_lines with the question.
+
+The static timestamps below demonstrate shapes and are stale for new work.
+Use constructor timestamps (including captured_at), actual observed receipts
+and helper approvals in a live invocation; new evidence has a six-hour lifetime.
+Only bound interrupted recovery reuses its original receipt; see recovery.md for
+`freeze-draft --continue <parent-intent>` and unfinished child abandonment.
 
 The four complete envelopes below demonstrate nesting: schema_version belongs
 at the envelope, capability_profile and every MCP receipt, not inside local
@@ -109,7 +129,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.1.0",
+  "skill_version": "2.2.2",
   "returned_rows_by_capability": {}
 }
 ```
@@ -201,7 +221,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.1.0",
+  "skill_version": "2.2.2",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -312,7 +332,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.1.0",
+  "skill_version": "3.2.2",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -423,7 +443,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.1.0",
+  "skill_version": "3.2.2",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {

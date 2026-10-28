@@ -105,7 +105,12 @@ def check_capability_and_budget() -> list[str]:
         "instruction_bytes_loaded", "projection_bytes_emitted", "brief_words",
         "16,384", "250 words",
     )
-    return [f"missing {item}" for item in required if item not in source]
+    issues = [f"missing {item}" for item in required if item not in source]
+    normalized = " ".join(source.split())
+    for phrase in ("After the last edit", "exact final reply sent", "new envelope", "never copy start times"):
+        if phrase not in normalized:
+            issues.append(f"round-3.1 rule absent: {phrase}")
+    return issues
 
 
 def check_write_and_task_boundaries() -> list[str]:
@@ -122,6 +127,8 @@ def check_compatibility_and_size() -> list[str]:
     source = text()
     body = source[source.find("\n---", 3) + 4 :]
     issues: list[str] = []
+    if len(body.encode("utf-8")) > 15154:
+        issues.append("body exceeds round-3 byte ceiling (15154)")
     for field in ("project_index.md", "project_session.md", "pending_learnings.md", "v1 readers"):
         if field not in source:
             issues.append(f"compatibility field absent: {field}")

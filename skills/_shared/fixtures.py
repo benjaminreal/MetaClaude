@@ -19,10 +19,24 @@ must produce. A mutant that fails a different code is a scorer defect, not a pas
 from __future__ import annotations
 
 import copy
+import datetime as dt
+from contextlib import contextmanager
+from unittest import mock
 
 import schemas as S
 
 INVOCATION_START = "2026-08-03T22:00:00Z"
+
+@contextmanager
+def historical_clock():
+    real = dt.datetime
+    class Clock(real):
+        @classmethod
+        def now(cls, tz=None):
+            return real(2026, 8, 3, 23, 0, tzinfo=dt.timezone.utc)
+    with mock.patch.object(S._dt, "datetime", Clock):
+        yield
+
 
 TASK_ROWS = [  # synthetic; never real IDs (Session #36: assert by pattern)
 

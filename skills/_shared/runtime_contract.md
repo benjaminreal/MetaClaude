@@ -1,4 +1,4 @@
-# Session runtime contract
+# Session runtime contract (2.2.2 / 3.2.2)
 
 Run the bundled `scripts/runtime_cli.py` with `python3` (standard library only).
 Python is required for every helper path. Without it, output entry, index and
@@ -11,10 +11,10 @@ fingerprint-rows <rows.json|->
 fingerprint-operation <query.sql|->
 validate <envelope.json|->
 freeze-draft <envelope.json> [<entry.md>] [<index.md>]
-freeze-draft <envelope.json> --index-draft <index.md>
+freeze-draft <envelope.json> --index-draft <index.md> [--continue <parent-intent>]
 approve-draft <draft-receipt.json> "<exact scope_lines>" --owner-reply "<owner words>"
 append <envelope.json> <entry.md|-> <approved-receipt.json>
-write-approved <envelope.json> <approved-receipt.json> <observed-relative-path> [<payload|->] --operation replace|delete --expect <sha256|absent>
+write-approved <envelope.json> <approved-receipt.json> <observed-relative-path> [<payload|->] --operation replace|delete|stage --expect <sha256|absent> --owner-reply "<owner words>"
 resume <workspace-root> [<approved-receipt.json>]
 audit <workspace-root>
 skip-plan tasks,index
@@ -36,13 +36,17 @@ corrected once; repeated failure is a named blocker.
 ## Evidence authority
 
 `new-envelope` derives its skill/version from its package, mints an invocation
-id, copies snapshot observed_at to invocation_started_at, and deliberately sets
+id and both invocation_started_at/snapshot captured_at, and deliberately sets
 services to `unprobed`. That is not evidence of absence. Discover services and
 record observed states: absent, present_unauthenticated, present_wrong_scope or
 working. Both working capabilities require current receipts. Receipt times and
 snapshot/start are timezone-aware instants; tolerance is 120 seconds in both
 directions. Copy observed times from the tool or fingerprinted_at, never type
-live times. `fingerprint-operation` normalizes only CRLF to LF and trailing
+live times. Each later independent helper chain starts with new-envelope; never
+copy start times. Capture more than fifteen minutes after start refuses
+ESTALEEVIDENCE. Keep the frozen envelope throughout its approval/write chain.
+Any word count shown to the owner comes from count-words on the exact final text
+sent, after the last edit. `fingerprint-operation` normalizes only CRLF to LF and trailing
 whitespace at the end of the entire text; quoted literals retain identity.
 
 Authoritative Tasks evidence requires envelope.project, receipt.identity.project
@@ -72,11 +76,18 @@ contradictions stop. A stale Updated date alone is a gap. Session-unparseable,
 duplicate numbers, malformed headers, alternate histories or sync conflicts
 stop persistence and the opening brief; reconcile only with separate approval.
 
-Freeze binds root/snapshot/entry/index, scope kinds and paths. Show scope_lines
+Freeze binds workspace identity, snapshot/entry/index, scope kinds and relative paths;
+absolute roots are informational. New evidence expires after six hours (future
+skew at most 120 seconds), except bound interrupted recovery. One draft approval
+per invocation; discard pre-approval superseded proposals in conversation. Show scope_lines
 verbatim. An exclusion requires a revised freeze; owner_reply is recorded
 separately, not interpreted or authenticated. Append is closingtime-only.
 write-approved is the sanctioned non-session writer and takes the same lock.
-Journal effects appear in the append scope line. Archive overflow must name
+Journal effects appear in local scope lines. The parent close covers session,
+index and optional stage permission for pending_learnings.md; edits, dispositions,
+deletion and archive writes need separate scopes. A plain pending M2 path defaults
+to stage beside the session, replace otherwise; delete is never added implicitly.
+Archive overflow must name
 project_decisions_archive.md in M2 and bind its payload SHA-256 in
 local_payload_hashes before freeze. Pending candidate payloads are approved
 in conversation at each revision and bound in each transition intent.
@@ -98,3 +109,17 @@ the original append. New receipt versions do not certify old drafts.
 Continuity headings, entry fields, Updated and Active TODOs remain v1-readable.
 Runtime metadata lives only in the journal. Hashes cannot reliably identify a
 direct write adopted by a later snapshot or authenticate supplied approvals.
+
+Opening is read-only except approved index setup/reconstruction. Requests for
+task creation, pending revisions or captures are routed to session work or
+closingtime. See recovery.md for fixed filename allowlists, delimiters, workspace
+identity, project lock/expiry, stale-index continuation and child abandonment.
+Skipping learning or finding no candidates leaves no obligation; pending files
+stay byte-identical unless a transition names them. Stage appends new candidate
+blocks only, once per close, after its verified append, with current --expect.
+It creates no child until attempted. Durable failures are resumable/abandonable
+children; the verified append stays journaled. Keep needs no write after readback.
+Show any edit/discard/delete transition's frozen scope_lines with its question.
+Pending edits/dispositions/deletion require non-empty --owner-reply and approval
+at most six hours old; stage uses the close's approved owner words. A close
+waiting only on learning dispositions ends with the ritual unless SKIP-ritual.

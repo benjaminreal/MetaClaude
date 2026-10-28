@@ -36,6 +36,7 @@ def refuses(code, fn):
 
 
 @case('D6-D8 identity, capability and parsed clock matrix')
+@F.historical_clock()
 def schema_matrix():
     def verdict(env, rows=None):
         return S.validate_envelope(env, rows or {'tasks_mcp': F.TASK_ROWS})
@@ -217,9 +218,8 @@ def entry_matrix():
             assert (root / 'project_session.md').read_bytes() == before
     for text in (HF.SESSION_TEXT.replace('### Session #2 |', '### Session #2 —'), HF.SESSION_TEXT.replace('### Session #1 |', '### Session #2 |'), HF.SESSION_TEXT.replace(' | ', ' — ')):
         with HF.workspace(session_text=text) as root:
-            e, r = approved(root)
             before = (root / 'project_session.md').read_bytes()
-            refuses('EHISTORY', lambda: H.append_session_entry(e, HF.ENTRY_DRAFT, r))
+            refuses('EHISTORY', lambda: approved(root))
             assert (root / 'project_session.md').read_bytes() == before
     for depth in (1, 2, 10):
         with HF.workspace() as root:
@@ -336,7 +336,8 @@ def recovery_matrix():
         with HF.workspace() as other:
             jd = other / 'private-artifacts/session-journal'; jd.mkdir(parents=True)
             (jd / record.name).write_bytes(record.read_bytes())
-            refuses('ERECOVERY', lambda: H.resume_append(other))
+            H._workspace_id(other, create=True)
+            refuses('EWORKSPACEMISMATCH', lambda: H.resume_append(other))
         log = root / 'project_session.md'; log.write_text('missing entry')
         refuses('ERECOVERY', lambda: H.resume_append(root))
     with HF.workspace() as root:
@@ -345,7 +346,8 @@ def recovery_matrix():
             refuses('EPARTIAL_APPEND', lambda: H.append_session_entry(e, HF.ENTRY_DRAFT, r))
         pending = next((root / 'private-artifacts/session-journal').glob('*.pending'))
         refuses('SCOPE_UNAPPROVED', lambda: H.resume_append(root, abandon=str(pending)))
-        assert H.resume_append(root, abandon=str(pending), owner_reply='Abandon this exact synthetic intent')['state'] == 'abandoned'
+        refuses('ERECOVERY', lambda: H.resume_append(root, abandon=str(pending), owner_reply='Do not abandon an append'))
+        H.resume_append(root)  # not_appended is classified, not manually unjournaled
 
 
 @case('D5 opening index, preimage existence, substitution, archive concurrency and paths')
@@ -367,7 +369,7 @@ def writer_matrix():
         H.write_approved_file(e, r, 'index.md', HF.INDEX_TEXT, expect=e['local_snapshot']['index']['sha256'])
         assert not (root / 'project_index.md').exists()
     with HF.workspace() as root:
-        e, r = approved(root, ['project_decisions_archive.md'])
+        e, r = approved(root, ['project_decisions_archive.md'], entry=None)
         (root / 'project_decisions_archive.md').write_text('foreign archive')
         refuses('ESOURCECHANGED', lambda: H.write_approved_file(e, r, 'project_decisions_archive.md', 'approved archive', expect='absent'))
         for name in ('../escape.md', '/private/tmp/escape.md', 'project_session.md', 'private-artifacts/session-journal/x.json', 'other.md'):
@@ -392,14 +394,15 @@ def learning_lifecycle():
         pending = root / 'pending_learnings.md'
         legacy = '## Candidate 1\n**Connection:** unknown\n**Custom:** retained\n'
         pending.write_text(legacy)
-        e, r = approved(root, ['project_session.md', 'pending_learnings.md'])
-        H.append_session_entry(e, HF.ENTRY_DRAFT, r)
-        initial = H.resume_append(root)
-        assert initial['operations'][0]['remaining_paths'][0]['path'] == 'pending_learnings.md'
+        close, close_r = approved(root)
+        H.append_session_entry(close, HF.ENTRY_DRAFT, close_r)
+        assert not H.resume_append(root)['unfinished_operations']
+        e, r = approved(root, ['pending_learnings.md'], entry=None)
         expected = H._sha256_text(legacy)
         for content, reply in ((legacy + '\n## Candidate 2\nstaged\n', 'Stage candidates'), (legacy + '\n## Candidate 2\nowner wording\n', 'Use this edit'), (legacy, 'Discard 2, retain 1')):
             result = H.write_approved_file(e, r, 'pending_learnings.md', content, expect=expected, owner_reply=reply)
             expected = result['readback_sha256']; assert pending.read_text() == content
+        e, r = approved(root, [{'path': 'pending_learnings.md', 'operation': 'delete'}], entry=None)
         result = H.write_approved_file(e, r, 'pending_learnings.md', operation='delete', expect=expected, owner_reply='Discard remaining candidate')
         assert result['readback_sha256'] == 'absent' and not pending.exists()
         resumed = H.resume_append(root)
@@ -413,6 +416,7 @@ def mirror_matrix():
         e, r = approved(root, ['project_session.md', 'project_index.md'], index=template)
         H.append_session_entry(e, HF.ENTRY_DRAFT, r)
         e['mirror_receipt'] = F.working_receipt()
+        e['mirror_receipt']['observed_at'] = H._utc_now()
         result = H.write_approved_file(e, r, 'project_index.md', template, expect=e['local_snapshot']['index']['sha256'], mirror_rows=F.TASK_ROWS)
         actual = (root / 'project_index.md').read_text()
         assert H.render_task_mirror(F.TASK_ROWS, e['local_snapshot']['local_date']) in actual and 'keep this' in actual
@@ -425,7 +429,7 @@ def writer_faults():
     for site in ('replace', 'fsync', 'unlink'):
         with HF.workspace() as root:
             pending = root / 'pending_learnings.md'; pending.write_text('old')
-            e, r = approved(root, ['pending_learnings.md'])
+            e, r = approved(root, [{'path': 'pending_learnings.md', 'operation': 'delete' if site == 'unlink' else 'replace'}], entry=None)
             real_replace, real_fsync, real_unlink = os.replace, os.fsync, Path.unlink
             def replace(src, dst):
                 if str(dst) == str(pending): raise OSError('replace fault')
@@ -443,16 +447,16 @@ def writer_faults():
                     return real_fsync(fd)
                 patch = mock.patch.object(H.os, 'fsync', side_effect=fsync)
             with patch:
-                refuses('EPARTIAL_WRITE', lambda: H.write_approved_file(e, r, 'pending_learnings.md', None if site == 'unlink' else 'new', operation='delete' if site == 'unlink' else 'replace', expect=H._sha256_text('old')))
+                refuses('EPARTIAL_WRITE', lambda: H.write_approved_file(e, r, 'pending_learnings.md', None if site == 'unlink' else 'new', owner_reply='Approve this synthetic revision', operation='delete' if site == 'unlink' else 'replace', expect=H._sha256_text('old')))
             assert pending.read_text() == 'old'
             H.resume_append(root)
     with HF.workspace() as root:
-        e, r = approved(root, ['pending_learnings.md'])
+        e, r = approved(root, ['pending_learnings.md'], entry=None)
         real = H._persist_intent
         def foreign(*a):
             path = real(*a); (root / 'pending_learnings.md').write_text('foreign'); return path
         with mock.patch.object(H, '_persist_intent', side_effect=foreign):
-            refuses('EPARTIAL_WRITE', lambda: H.write_approved_file(e, r, 'pending_learnings.md', 'approved', expect='absent'))
+            refuses('EPARTIAL_WRITE', lambda: H.write_approved_file(e, r, 'pending_learnings.md', 'approved', expect='absent', owner_reply='Approve synthetic revision'))
         assert (root / 'pending_learnings.md').read_text() == 'foreign'
 
 
@@ -462,7 +466,7 @@ def packaged_commands():
     source = Path(__file__).resolve().parent.parent
     for skill in ('newbeginning', 'closingtime'):
         with tempfile.TemporaryDirectory() as raw:
-            root = Path(raw); package = root / 'package'; project = root / 'project'; project.mkdir()
+            root = Path(raw).resolve(); package = root / 'package'; project = root / 'project'; project.mkdir()
             shutil.copytree(source / skill, package)
             cli = package / 'scripts/runtime_cli.py'
             def command(*args, data=None):
@@ -533,7 +537,7 @@ def late_write_controls():
                 refuses('SYNC_CONFLICT', lambda: H.write_approved_file(e, r, 'project_index.md', HF.INDEX_TEXT, expect=expect))
             assert (root / 'project_index.md').read_bytes() == before
     with HF.workspace() as root:
-        e, r = approved(root, ['project_decisions_archive.md'])
+        e, r = approved(root, ['project_decisions_archive.md'], entry=None)
         refuses('EDRAFTMISMATCH', lambda: H.write_approved_file(e, r, 'project_decisions_archive.md', 'substituted', expect='absent'))
         with H._advisory_lock(root, 'other writer'):
             refuses('ELOCK', lambda: H.write_approved_file(e, r, 'project_decisions_archive.md', 'approved archive', expect='absent'))
@@ -571,8 +575,7 @@ def remaining_snapshot_controls():
         assert H.append_session_entry(e, HF.ENTRY_DRAFT, r)['readback_ok']
     with HF.workspace() as root:
         (root / 'session_log.md').write_text(HF.SESSION_TEXT)
-        e, r = approved(root)
-        refuses('EHISTORY', lambda: H.append_session_entry(e, HF.ENTRY_DRAFT, r))
+        refuses('EHISTORY', lambda: approved(root))
     with HF.workspace(index_name=None) as root:
         p = root / 'Project_index.md'; q = root / 'PROJECT_INDEX.md'
         p.write_text('a'); q.write_text('b')

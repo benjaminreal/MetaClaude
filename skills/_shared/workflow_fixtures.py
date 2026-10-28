@@ -110,12 +110,12 @@ def check_packaged_runtime_matches_shared() -> list[str]:
 
 
 def check_sync_preserves_opening_scope() -> list[str]:
-    """Regeneration must retain creation-only, retry-safe opening guidance."""
+    """Regeneration must retain read-only opening guidance."""
     import shutil
 
     issues: list[str] = []
     with tempfile.TemporaryDirectory(prefix="session-skill-sync-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         shutil.copytree(HERE, root / "_shared", ignore=shutil.ignore_patterns("__pycache__"))
         sync_runtime_copies.sync(root)
         opening = root / "newbeginning/references/task_operations.md"
@@ -124,8 +124,8 @@ def check_sync_preserves_opening_scope() -> list[str]:
         source = first.decode("utf-8")
         if "update tasks" in source.lower():
             issues.append("regeneration expanded opening guidance to task updates")
-        if "<reserved-task-uuid>" not in source or "read that" not in source:
-            issues.append("regeneration lost reserved-ID retry protection")
+        if "insert into tasks" in source.lower() or "reads only" not in source:
+            issues.append("regeneration expanded opening beyond reads")
         if "update tasks" not in closing.read_text().lower():
             issues.append("regeneration removed closeout task operations")
         sync_runtime_copies.sync(root)

@@ -1,7 +1,6 @@
 # Tasks DB operations
 
-Read this reference only when a session invocation needs a Tasks DB read or an
-approved task creation. Resolve task-tracking instructions first; if resolved
+Read this reference only when a session invocation needs a Tasks DB read. Resolve task-tracking instructions first; if resolved
 instruction files disagree, stop and surface the conflict.
 
 Use angle-bracket placeholders. Never place a dollar sign followed by a digit
@@ -22,18 +21,10 @@ limit 8;
 For an explicitly requested portfolio brief, omit the project predicate and use
 `limit 20`.
 
-## Approved creation
+## Opening boundary
 
-```sql
-insert into tasks (id, project, title, details, priority, cluster, origin)
-values ('<reserved-task-uuid>'::uuid, '<project>', '<title>', '<details>', <priority>, '<cluster>', '<origin>')
-returning id, project, title, priority, status, origin;
-```
-
-Reserve the UUID before approval. If a call has an uncertain outcome, read that
-UUID before any retry and never substitute a fresh UUID. After creation, read
-the exact ID and rerun the current project slice. Never hand-edit task state in
-Markdown.
+Task creation and all other writes belong during the session or at closingtime.
+If requested at opening, say so and stop. This reference authorizes reads only.
 
 ## Receipt rule
 
@@ -41,8 +32,7 @@ Save the returned rows to scratch JSON and run `fingerprint-rows`. Put the
 result, operation fingerprint, observed time (the helper's `fingerprinted_at`
 unless the tool result carries its own), project identity, status, and row
 count in the MCP receipt. Preserve the returned rows in the scratch envelope so
-`validate` can recompute the fingerprint. A write also needs its `returning`
-result or a follow-up current read before it is reported as verified.
+`validate` can recompute the fingerprint.
 
 Every external retry needs fresh approval and fresh preconditions. An
 instruction not to use Open Brain at all is SKIP-openbrain; a search sends

@@ -30,7 +30,9 @@ def _json_file(path: str) -> object:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _text_file(path: str) -> str:
+def _text_file(path: str, preserve_newlines: bool = False) -> str:
+    if preserve_newlines:
+        return (sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()).decode("utf-8")
     if path == "-":
         return sys.stdin.read()
     return Path(path).read_text(encoding="utf-8")
@@ -63,7 +65,7 @@ def _parser() -> argparse.ArgumentParser:
     writer.add_argument("approved_draft_json")
     writer.add_argument("relative_path")
     writer.add_argument("content", nargs="?")
-    writer.add_argument("--operation", choices=("replace", "delete"), default="replace")
+    writer.add_argument("--operation", choices=("replace", "delete", "stage"), default="replace")
     writer.add_argument("--expect", required=True)
     writer.add_argument("--mirror-rows")
     writer.add_argument("--owner-reply", default="")
@@ -76,6 +78,7 @@ def _parser() -> argparse.ArgumentParser:
     freeze.add_argument("entry_markdown", nargs="?")
     freeze.add_argument("index_markdown", nargs="?")
     freeze.add_argument("--index-draft")
+    freeze.add_argument("--continue", dest="continue_parent")
 
     approve = commands.add_parser("approve-draft", help="stamp approval on a frozen draft (after explicit approval)")
     approve.add_argument("draft_receipt_json")
@@ -125,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             result = helpers.resume_append(args.workspace_root, _json_file(args.approved_draft_json) if args.approved_draft_json else None, args.abandon, args.owner_reply)
         elif args.command == "write-approved":
             result = helpers.write_approved_file(_json_file(args.envelope_json), _json_file(args.approved_draft_json), args.relative_path,
-                       _text_file(args.content) if args.content else None, args.operation, args.expect,
+                       _text_file(args.content, preserve_newlines=args.operation == "stage") if args.content else None, args.operation, args.expect,
                        _json_file(args.mirror_rows) if args.mirror_rows else None, args.owner_reply)
         elif args.command == "validate":
             envelope = _json_file(args.envelope_json)
@@ -135,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             envelope = _json_file(args.envelope_json)
             entry = _text_file(args.entry_markdown) if args.entry_markdown else None
             index_arg = args.index_draft or args.index_markdown
-            result = helpers.freeze_draft(envelope, entry, _text_file(index_arg) if index_arg else None)
+            result = helpers.freeze_draft(envelope, entry, _text_file(index_arg) if index_arg else None, args.continue_parent)
         elif args.command == "approve-draft":
             result = helpers.approve_draft(_json_file(args.draft_receipt_json), args.scope_string, args.owner_reply)
         elif args.command == "append":

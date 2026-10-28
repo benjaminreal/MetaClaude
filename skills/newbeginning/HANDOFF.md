@@ -1,4 +1,4 @@
-# newbeginning 2.1.0 — candidate
+# newbeginning 2.2.2 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -14,7 +14,10 @@ persisted. Optional Git, Tasks MCP and Open Brain are observed separately;
 no credentials or network client are bundled.
 
 Use `python3 /path/to/newbeginning/scripts/runtime_cli.py new-envelope ROOT` to
-start. It captures the snapshot and derives this package's name/version.
+start. It captures start/captured_at and derives this package's name/version. Later
+independent helper chains use new-envelope; never copy earlier start times.
+Capture more than fifteen minutes after start refuses ESTALEEVIDENCE. Word
+counts use count-words on exact final text sent, after the last edit.
 Discover services and replace both `unprobed` states before validation. Read
 `references/envelope_examples.md` for complete JSON recipes and
 `references/recovery.md` for exact command syntax, state tables, stdin support,
@@ -35,14 +38,16 @@ a stale index date alone is a gap.
 
 Conflict detection covers workspace root and journal directory only: conflicted
 copy, sync-conflict, case-conflict and continuity-specific numbered/copy names.
-Aliases are reported or refused when ambiguous. There is no recursive or
-OneDrive host-suffix reconciliation. Same-host writers share a lock; other
-devices can write in the residual precheck/replace or rollback window. No
+Aliases are reported or refused when ambiguous. There is no recursive/OneDrive host-suffix reconciliation or detection of
+iCloud numbered copies for non-continuity files; Finder continuity " copy 2" is detected. Writers share `private-artifacts/session-journal/.lock` across TMPDIR values.
+Same-host dead pids recover immediately; live pids block regardless of age.
+Other-host locks expire after ten minutes, even during a legitimate long write.
+Recovery warnings are reported. Other devices can write in the residual precheck/replace or rollback window. No
 absolute cross-device lost-update guarantee is made.
 
 Legacy v1 continuity layouts, journals and _policy.json stay readable and are
 never automatically rewritten. Legacy journal matching is limited consistency
-evidence, not crash recovery. Pending files have no runtime parser: preserve
+evidence, not crash recovery. Legacy pending blocks stay opaque: preserve
 Connection/Connects to, absent Status and unknown metadata without data loss.
 
 Not validated here: live Tasks writes, live Open Brain, real process kills,
@@ -60,19 +65,22 @@ explicitly degrades. Without a current Tasks receipt, tasks are unverified and
 the Markdown mirror is read-only.
 
 Approved bootstrap/reconstruction uses the shipped index_template.md,
-index-only freeze-draft, approve-draft and write-approved --expect. Approved
-post-brief actions include reserved-UUID task creation, Open Brain captures,
-and pending-file owner edits/dispositions/deletion. Task update/completion/
-parking/cancellation remain outside opening scope. A search is a read; an
-instruction not to capture does not skip it. SKIP-openbrain means no use at all
-and skips search and capture; search sends candidate text to the service.
+index-only freeze-draft, approve-draft and write-approved --expect. These are
+opening's only writes. Task creation, Open Brain captures and pending-file
+edits/dispositions/deletion belong during the session or at closingtime: route
+those requests there and stop. Searches remain reads; SKIP-openbrain means no
+search or capture, since searches send candidate text to the service.
 
-Report unfinished_operations and direct the operator to resume before a new
-close. Pending Tasks intent lives in the session Decisions/Next with exact
-operation, reserved UUID if applicable, and "needs fresh approval".
+Report unfinished_operations and direct the operator to resume. A verified
+append stays journaled; changed remaining indexes use a fresh index-only
+freeze-draft --continue <parent-intent> with new approval, or approved child
+abandonment. Opening never creates pending Tasks intent.
 
 Use the whole folder; runtime and references are bundled independently of its
-sibling. Do not copy an old draft receipt forward: freeze a new current receipt.
-For re-certification, freeze the exact tree hash and use README.md's checks,
+sibling. The original receipt survives a bound interrupted operation returned by resume;
+otherwise re-observe and freeze a current receipt. New evidence expires after
+six hours, with at most 120 seconds future skew. One draft approval per invocation;
+discard superseded proposals before approval (conversation duty).
+For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
 the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
 No installation into personal skill directories occurs during implementation.

@@ -124,11 +124,20 @@ def check_ritual_compatibility_size() -> list[str]:
     source = text()
     body = source[source.find("\n---", 3) + 4 :]
     issues: list[str] = []
+    if len(body.encode("utf-8")) > 21210:
+        issues.append("body exceeds round-3 byte ceiling (21210)")
+    normalized = " ".join(source.split())
+    for phrase in ("--operation stage", "read back before presenting candidates", "Keep needs no write",
+                   "in the same message", "Waiting only on learning dispositions is a complete close",
+                   "exact final text sent after the last edit", "new envelope", "never copy start times"):
+        if phrase not in normalized:
+            issues.append(f"round-3.1 rule absent: {phrase}")
     required = (
         "Session #N logged", "Tasks DB updated",
         "Project index narrative + task mirror updated",
         "You don't have to go home, but you can't stay here",
         "v1-compatible", "instruction_bytes_loaded",
+        "only sanctioned writer", "400 words",
     )
     issues.extend(f"missing {item}" for item in required if item not in source)
     if len(body.splitlines()) > 500:
