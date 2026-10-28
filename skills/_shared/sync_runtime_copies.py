@@ -14,10 +14,16 @@ REFERENCE_FILES = (
     "runtime_contract.md",
     "task_operations.md",
     "candidate_quality_contract.md",
+    "recovery.md",
+    "envelope_examples.md",
 )
 REFERENCE_OVERRIDES = {
     "newbeginning": {"task_operations.md": "task_operations_newbeginning.md"},
 }
+
+
+def reference_files(skill: str) -> tuple[str, ...]:
+    return REFERENCE_FILES + (("index_template.md",) if skill == "newbeginning" else ())
 
 
 def reference_source(skill: str, name: str, shared: Path = HERE) -> Path:
@@ -37,7 +43,7 @@ def sync(skills_root: Path = SKILLS) -> list[Path]:
             target = scripts / name
             shutil.copy2(shared / name, target)
             written.append(target)
-        for name in REFERENCE_FILES:
+        for name in reference_files(skill):
             target = references / name
             shutil.copy2(reference_source(skill, name, shared), target)
             written.append(target)

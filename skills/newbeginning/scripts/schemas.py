@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import os
 
 SCHEMA_VERSION = "1.0"
 
@@ -32,6 +33,9 @@ UNRECOGNIZED_SCHEMA = "UNRECOGNIZED_SCHEMA"
 SCOPE_UNAPPROVED = "SCOPE_UNAPPROVED"
 SYNC_CONFLICT = "SYNC_CONFLICT"
 FUTURE_RECEIPT = "FUTURE_RECEIPT"
+INVALID_TIME = "INVALID_TIME"
+WORKSPACE_MISMATCH = "WORKSPACE_MISMATCH"
+FOREIGN_ROWS = "FOREIGN_ROWS"
 
 # Tolerance for clock skew between the local host and an MCP server.
 RECEIPT_CLOCK_SKEW_SECONDS = 120
@@ -87,6 +91,20 @@ def validate_capability_profile(profile: dict) -> list[dict]:
 # C.2 MCP receipt
 # --------------------------------------------------------------------------
 
+def _parse_instant(value: object) -> _dt.datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        instant = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, OverflowError):
+        return None
+    return instant if instant.tzinfo is not None and instant.utcoffset() is not None else None
+
+
+def fingerprint_operation(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.replace("\r\n", "\n").rstrip().encode("utf-8")).hexdigest()
+
+
 def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
                      invocation_started_at: str) -> list[dict]:
     issues: list[dict] = []
@@ -103,21 +121,16 @@ def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
         if not receipt.get(field):
             issues.append({"code": MISSING_RECEIPT, "receipt": cap, "detail": field})
 
-    observed = receipt.get("observed_at", "")
-    if observed and observed < invocation_started_at:
-        issues.append({"code": STALE_RECEIPT, "receipt": cap,
-                       "detail": f"observed_at {observed} precedes invocation "
-                                 f"start {invocation_started_at}"})
-    try:
-        parsed = _dt.datetime.fromisoformat(observed.replace("Z", "+00:00")) if observed else None
-    except ValueError:
-        parsed = None
-    if parsed is not None and parsed.tzinfo is not None:
-        limit = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=RECEIPT_CLOCK_SKEW_SECONDS)
-        if parsed > limit:
-            issues.append({"code": FUTURE_RECEIPT, "receipt": cap,
-                           "detail": f"observed_at {observed} is later than the helper clock; "
-                                     "copy fingerprinted_at instead of typing a time"})
+    observed = _parse_instant(receipt.get("observed_at"))
+    started = _parse_instant(invocation_started_at)
+    skew = _dt.timedelta(seconds=RECEIPT_CLOCK_SKEW_SECONDS)
+    if observed is None or started is None:
+        issues.append({"code": INVALID_TIME, "receipt": cap, "detail": "timezone-aware observed_at and start required"})
+    else:
+        if observed < started - skew:
+            issues.append({"code": STALE_RECEIPT, "receipt": cap})
+        if observed > _dt.datetime.now(_dt.timezone.utc) + skew:
+            issues.append({"code": FUTURE_RECEIPT, "receipt": cap})
 
     if status == "current":
         if returned_rows is None:
@@ -147,6 +160,13 @@ def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
 # C.3 envelope
 # --------------------------------------------------------------------------
 
+def _same_root(left: object, right: object) -> bool:
+    """Roots agree after symlink resolution (e.g. macOS /var -> /private/var)."""
+    if not isinstance(left, str) or not isinstance(right, str) or not left or not right:
+        return False
+    return os.path.realpath(os.path.expanduser(left)) == os.path.realpath(os.path.expanduser(right))
+
+
 def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None = None) -> dict:
     """Returns {'valid': bool, 'failures': [...]}. No partial validity."""
     returned_rows_by_capability = returned_rows_by_capability or {}
@@ -165,22 +185,53 @@ def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None =
         failures.append({"code": SYNC_CONFLICT,
                          "detail": ", ".join(snap["sync_conflicts"])})
 
-    started = envelope.get("invocation_started_at", "")
-    receipts = envelope.get("mcp_receipts", [])
-    seen: dict[str, str] = {}
-    for r in receipts:
-        cap = r.get("capability")
-        failures += validate_receipt(r, returned_rows_by_capability.get(cap), started)
-        if cap in seen and seen[cap] != r.get("status"):
-            failures.append({"code": CONTRADICTORY, "receipt": cap,
-                             "detail": f"{seen[cap]} vs {r.get('status')}"})
-        seen[cap] = r.get("status")
-
-    # An authoritative task claim needs a working tasks_mcp receipt.
+    if not _same_root(envelope.get("workspace_root"), snap.get("workspace_root")):
+        failures.append({"code": WORKSPACE_MISMATCH, "detail": "snapshot and envelope roots must agree"})
+    started = envelope.get("invocation_started_at")
+    start_time = _parse_instant(started)
+    snap_time = _parse_instant(snap.get("observed_at"))
+    skew = _dt.timedelta(seconds=RECEIPT_CLOCK_SKEW_SECONDS)
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if start_time is None or snap_time is None or (start_time and snap_time and start_time > snap_time + skew):
+        failures.append({"code": INVALID_TIME, "detail": "valid start and snapshot times required; start <= snapshot + 120s"})
+    if (start_time and start_time > now + skew) or (snap_time and snap_time > now + skew):
+        failures.append({"code": FUTURE_RECEIPT, "detail": "start/snapshot later than helper clock + 120s"})
     external = (envelope.get("capability_profile") or {}).get("external", {})
-    if external.get("tasks_mcp") == "working" and "tasks_mcp" not in seen:
-        failures.append({"code": MISSING_RECEIPT,
-                         "detail": "tasks_mcp reported working with no receipt"})
+    details = (envelope.get("capability_profile") or {}).get("external_detail", {})
+    seen = {}
+    current = set()
+    for r in envelope.get("mcp_receipts", []):
+        cap = r.get("capability")
+        rows = returned_rows_by_capability.get(cap)
+        failures += validate_receipt(r, rows, started)
+        identity = r.get("identity") or {}
+        signature = (r.get("status"), json.dumps(identity, sort_keys=True))
+        if cap in seen and seen[cap] != signature:
+            failures.append({"code": CONTRADICTORY, "receipt": cap, "detail": "conflicting status or identity"})
+        seen[cap] = signature
+        profile_identity = details.get(cap) or {}
+        for key in ("project_ref", "service", "account"):
+            if profile_identity.get(key) is not None and identity.get(key) != profile_identity[key]:
+                failures.append({"code": CONTRADICTORY, "receipt": cap, "detail": "profile/receipt identity mismatch: " + key})
+        if r.get("status") == "current":
+            current.add(cap)
+            if external.get(cap) != "working":
+                failures.append({"code": CONTRADICTORY, "receipt": cap, "detail": "current requires working capability"})
+            if cap == "tasks_mcp":
+                if identity.get("scope") == "portfolio":
+                    if envelope.get("project") != "portfolio":
+                        failures.append({"code": FOREIGN_ROWS, "detail": "portfolio identity needs portfolio intent"})
+                    if rows is not None and any(not row.get("project") for row in rows):
+                        failures.append({"code": FOREIGN_ROWS, "detail": "row project missing"})
+                elif not envelope.get("project") or not identity.get("project"):
+                    failures.append({"code": MISSING_RECEIPT, "detail": "explicit intended project and receipt project required"})
+                elif identity["project"] != envelope["project"] or (rows is not None and any(row.get("project") != envelope["project"] for row in rows)):
+                    failures.append({"code": FOREIGN_ROWS, "detail": "task project identity/rows differ from intent"})
+        elif external.get(cap) == "working" or r.get("capability_state") != external.get(cap):
+            failures.append({"code": CONTRADICTORY, "receipt": cap, "detail": "profile and unavailable receipt disagree"})
+    for cap in ("tasks_mcp", "open_brain"):
+        if external.get(cap) == "working" and cap not in current:
+            failures.append({"code": MISSING_RECEIPT, "detail": cap + " working without current receipt"})
 
     scope = envelope.get("mutation_scope") or {}
     has_mutations = any(scope.get(cls) for cls in ("M2", "M3", "M4"))

@@ -43,3 +43,9 @@ unless the tool result carries its own), project identity, status, and row
 count in the MCP receipt. Preserve the returned rows in the scratch envelope so
 `validate` can recompute the fingerprint. A write also needs its `returning`
 result or a follow-up current read before it is reported as verified.
+
+Every external retry needs fresh approval and fresh preconditions. An
+instruction not to use Open Brain at all is SKIP-openbrain; a search sends
+candidate text to the service. Authoritative Tasks receipts need explicit
+project identity bound to envelope.project and every row.project (or explicit
+portfolio mode); use fingerprint-operation for exact query identity.

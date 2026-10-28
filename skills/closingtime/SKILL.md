@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.0.10"
+  version: "3.1.0"
 ---
 
 # closingtime
@@ -29,14 +29,17 @@ a separate request in this invocation.
 
 - Run local evidence, validation, append, audit, and sync checks through
   `scripts/runtime_cli.py`.
+- Read `references/recovery.md` before persistence/recovery; use
+  `references/envelope_examples.md` for constructor and receipt recipes.
 - Read `references/runtime_contract.md` when constructing an envelope or
   handling a helper refusal.
 - Read `references/task_operations.md` only when Tasks DB work is in scope.
 - Read `references/candidate_quality_contract.md` only when generating,
   reviewing, or revising learning candidates.
 
-The bundled helper is the only sanctioned writer of `project_session.md`. A
-direct write is detectable later by `audit`; do not use that as a normal path.
+The bundled helper is the only sanctioned writer of `project_session.md`. Audit is a consistency check, not proof of provenance or authenticity; a
+direct write is not reliably detectable after a new snapshot adopts it. Use
+`write-approved` for index, pending-learnings and decisions-archive transitions.
 
 ## 2. Pre-flight Checklist
 
@@ -61,8 +64,10 @@ direct write is detectable later by `audit`; do not use that as a normal path.
 
 ### `OBSERVATION_GATE`
 
-Run `snapshot <workspace-root>` after this skill is invoked. Use the complete
-index projection, latest session state, git result or explicit no-git result,
+Run `new-envelope <workspace-root>` after this skill is invoked; it captures
+a helper-stamped start. Discover services and replace `unprobed` states before
+validation. The helper reads whole files and emits a bounded projection. Use the
+index projection (name truncation), latest session state, git result or explicit no-git result,
 parse warnings, and sync-conflict scan. Add conversation and bounded transcript
 signals without treating memory as a file receipt. State the branch and changed
 files only from the snapshot's `git` fields.
@@ -170,11 +175,13 @@ Show the entire draft and itemize mutation scope by class:
 Obtain explicit approval for the stated scope. Corrections return to
 `DRAFT_GATE`. Approval for one class never implies another.
 
-Before showing the draft, save the entry and run `freeze-draft <draft-envelope>
-<entry>`; it binds the draft-time snapshot and reports `entry_words`, the only
+Before showing the draft, save the entry and index and run `freeze-draft
+<draft-envelope> <entry> <index-draft>` (omit index only when skipped); it binds the draft-time snapshot and reports `entry_words`, the only
 entry length you may state. After explicit approval, run
-`approve-draft <draft-receipt> "<exact scope>"`; the helper stamps the time.
-Never type approval or start times yourself. Copy the draft envelope, add the
+`approve-draft <draft-receipt> "<exact scope_lines>" --owner-reply "<owner words>"`; the helper stamps the time.
+Show helper-rendered `scope_lines` verbatim; an exclusion requires revise and
+freeze again. Owner words are recorded separately, not interpreted or
+authenticated. Never type approval or start times yourself. Copy the draft envelope, add the
 approved scope string and approval, keep its `local_snapshot` unchanged (never
 take a new snapshot), include returned rows, and run `validate` again.
 
@@ -189,12 +196,19 @@ approved. Then:
    allocates the next number, appends, reads back, and journals. Stop on any
    refusal; a changed draft returns to `DRAFT_GATE` and needs a new freeze and
    approval.
-2. Apply approved index narrative changes and read them back. Do not duplicate
-   session detail in the index.
-3. Apply approved Tasks DB operations with `returning`, then rerun the current
-   slice. Regenerate the read-only mirror with `render-mirror` from that result.
+2. Apply approved Tasks DB operations with `returning`, then rerun the current
+   slice; uncertain inserts reuse their reserved UUID and need fresh approval.
+3. Run one `write-approved` index transition with the frozen index draft and
+   `--expect <observed-sha256|absent>`. Attach the fresh `mirror_receipt` and
+   `--mirror-rows <rows.json>`; the helper uses `render-mirror` for only the
+   Active TODOs body. Without a current receipt keep the mirror untouched.
 4. Record verification receipts for every mutation. A partial failure remains
    partial; list what verified and what did not.
+
+After any persistence error, inspect `resume <workspace-root>` and `audit`.
+Never re-draft a close while `unfinished_operations` remain (`EUNFINISHED`).
+All local writers share a lock; a residual cross-device check/replace window
+remains. Pending is never journaled. Read `references/recovery.md`.
 
 For a first session, the helper creates the v1 `# Session Log` header and Session
 #1. If the index is absent, its approved draft uses the template above.
@@ -212,7 +226,8 @@ are empty. Never count them as journaled or claim their original append verified
 
 ### `LEARNING_GATE` — `PENDING_LEARNING_LIFECYCLE`
 
-Begin only after session/index/task persistence is verified. If
+Begin only after every attempted local write is read back and every external
+operation is verified or recorded as pending. If
 `SKIP-learning`, acknowledge it and create no candidates. Otherwise:
 
 1. read `references/candidate_quality_contract.md`, then identify at least two
@@ -222,14 +237,16 @@ Begin only after session/index/task persistence is verified. If
 2. search Open Brain per candidate, or record its exact non-working state; a
    search is a read, so an instruction not to update or capture to Open Brain
    does not skip it;
-3. write and verify `pending_learnings.md` before presenting candidates;
+3. merge unresolved existing blocks and use `write-approved` to write and
+   verify `pending_learnings.md` before presenting candidates;
 4. present types, wording, and connections, quoting each candidate exactly as
    read back from the file; never claim two texts match without comparing them;
 5. after owner edits, reapply the quality contract to the complete final
    wording and obtain fresh approval for any repair; then capture only
    explicitly approved items;
-6. delete the file after approved/discarded disposition, or retain unresolved
-   candidates exactly as requested.
+6. use `write-approved` with current `--expect` for edits/mixed disposition;
+   delete only after all items have disposition, retaining unresolved wording
+   and unknown fields. Record conversation approval for each revision.
 
 Language precedence is explicit user preference, then the dominant session
 language when it is English or Spanish, then English. Keep volatile session
@@ -237,7 +254,8 @@ numbers, internal IDs/codes, model tokens, and absolute paths out of `Insight`;
 traceability belongs in separate metadata.
 
 `SKIP-openbrain` keeps candidate extraction and the pending file but performs no
-capture. Never write "New thread" unless a search actually found no match.
+search or capture. An instruction not to use Open Brain at all is
+`SKIP-openbrain`; a search sends candidate text to the service. Never write "New thread" unless a search actually found no match.
 
 ### `CLOSING_GATE`
 
@@ -272,14 +290,15 @@ mutation. Post-approval interruption does not upgrade attempted writes to done.
 
 ## 4. Harness Adaptations
 
-**Required:** file write/readback and conversation. If file writing is
+**Required for helper paths:** Python 3, file write/readback and conversation.
+Without Python nothing is persisted; output entry, index and task drafts. If file writing is
 unavailable, output the proposed artifacts and state that no close was persisted.
 
 **Optional capabilities:**
 
 | Capability | Working path | Degraded path |
 |---|---|---|
-| Bundled Python runtime | Snapshot, validate, append, journal, audit | Do not directly append; output draft for manual save |
+| Bundled Python runtime | Snapshot, validate, append, journal, audit | Output drafts only; nothing persisted |
 | Git | Head, status, diff evidence | `git_available: false`; reconstruct from other evidence |
 | Tasks MCP | Current reads and approved verified writes | Named four-state warning; operations pending |
 | Open Brain | Search and approved capture | Pending file only, or skip as requested |
@@ -334,6 +353,16 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.1.0 — 2026-10-27 — candidate**
+
+- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
+  identity and parsed times; conflict/alias stops; read-only git evidence.
+- Atomic append intents, conditional rollback, resume and unfinished-operation
+  guard; approved local transitions share a lock and explicit preimages.
+- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
+- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
+  and independent recertification remain required. This is not deployment.
 
 **v3.0.10 — 2026-10-27 — candidate**
 
@@ -411,4 +440,4 @@ or a provenance/collision failure. Patch wording and length issues in place.
 - Preserved v1 continuity-file formats and all ten trigger semantics.
 
 Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phases 4 and 5.
+is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.

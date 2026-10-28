@@ -68,6 +68,7 @@ def check_runtime_package() -> list[str]:
         "scripts/runtime_cli.py", "scripts/helpers.py", "scripts/schemas.py",
         "scripts/workflow.py", "references/runtime_contract.md",
         "references/task_operations.md", "references/candidate_quality_contract.md",
+        "references/recovery.md", "references/envelope_examples.md",
     )
     return [f"missing {path}" for path in required if not (ROOT / path).is_file()]
 

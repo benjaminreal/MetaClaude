@@ -25,8 +25,8 @@ For an explicitly requested portfolio brief, omit the project predicate and use
 ## Approved mutations
 
 ```sql
-insert into tasks (project, title, details, priority, cluster, origin)
-values ('<project>', '<title>', '<details>', <priority>, '<cluster>', '<origin>')
+insert into tasks (id, project, title, details, priority, cluster, origin)
+values ('<reserved-task-uuid>'::uuid, '<project>', '<title>', '<details>', <priority>, '<cluster>', '<origin>')
 returning id, project, title, priority, status, origin;
 
 update tasks set status = 'done', completed_at = now(), updated_at = now()
@@ -59,3 +59,15 @@ unless the tool result carries its own), project identity, status, and row
 count in the MCP receipt. Preserve the returned rows in the scratch envelope so
 `validate` can recompute the fingerprint. A write also needs its `returning`
 result or a follow-up current read before it is reported as verified.
+
+Reserve the UUID before approval. After an uncertain insert, read that same
+UUID before any retry; never substitute a fresh UUID. Every external retry
+requires fresh approval and fresh preconditions. Updates use observed row
+preconditions (including updated_at when available) and returning; a zero-row
+result is a conflict, not success. If unavailable, retain the exact operation,
+reserved id and "needs fresh approval" in the entry's Decisions/Next.
+
+An authoritative receipt needs envelope.project = identity.project = every
+row.project, including an explicit project identity for empty rows. Portfolio
+mode is explicit (see runtime_contract.md). Fingerprint the exact query using
+fingerprint-operation; do not lowercase or collapse whitespace in literals.

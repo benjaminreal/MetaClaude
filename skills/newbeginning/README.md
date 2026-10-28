@@ -8,12 +8,14 @@ When you start a new session and ask an LLM "where did we leave off?" in a multi
 
 **newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief capped at 250 words, from a bounded set of reads. You get the same situational awareness in seconds, with a clean context window ready for actual work.
 
-**Version:** 2.0.7 candidate
+**Version:** 2.1.0 candidate
 
-Phase 4 behavioral validation passed on 2.0.5 (six fresh sessions in Claude
-Code and Codex). Independent transferability review is recorded outside the
-package. See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and
-validation status.
+Phase 4 behavioral validation passed on earlier candidates; the repairs in
+this version still need a fresh behavioral check and an independent
+transferability review (the previous review of 2.0.7 failed). It is not
+certified for deployment. A public summary of the review status is in
+[`skills/_shared/validation/phase4_5/`](../_shared/validation/phase4_5/README.md).
+See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and recovery.
 
 ---
 
@@ -76,7 +78,7 @@ Then it asks what you'd like to do:
 
 ### What it won't do
 
-newbeginning is read-mostly by design. It won't start working on your top task, won't log this session, and won't update narrative project state — those are `closingtime`'s jobs. It may write during first-time setup/index reconstruction or when you explicitly approve creating a task in the Tasks DB. Both require your confirmation first.
+newbeginning is read-mostly by design. It won't start working on your top task, won't log this session, and won't update narrative project state — those are `closingtime`'s jobs. It may write during first-time setup/index reconstruction, when you explicitly approve creating a task in the Tasks DB, or during pending-learning review (approved captures, edits, and deleting the reviewed file). All of these require your confirmation first.
 
 ---
 
@@ -91,7 +93,7 @@ Defines the boundary: brief and hand off, nothing more. All session logging and 
 Before reading project notes, the skill confirms it's in the right workspace, resolves instruction files, records which optional capabilities (Tasks DB, Open Brain) are working, and honors a request for a shorter brief. This prevents it from briefing the wrong project or referencing tools that aren't there.
 
 ### 3. Core Workflow
-The main logic. Adapts to four situations depending on which project files exist:
+The main logic. Adapts to five situations depending on which project files exist:
 
 | What's in your workspace | What happens |
 |---|---|
@@ -105,12 +107,19 @@ The main logic. Adapts to four situations depending on which project files exist
 The skill works across Claude Code, Cowork, and other environments. It only requires file reading and conversation — everything else (shell access, Supabase Tasks DB, Open Brain, skill-list introspection) is optional and degrades gracefully. If Supabase is unavailable, it names the exact state and treats any markdown TODO block as possibly stale, read-only context, not as current task state.
 
 ### 5. Decision Rules
-Behavioral guardrails: respects "skip" at any point, flags drift between the index and session log, works mid-session if you just want a refresh (not only at session start), and surfaces conflicts rather than guessing.
+Behavioral guardrails: respects "skip" at any point, stops when the index and session log contradict each other (a merely older index is reported as a gap), works mid-session if you just want a refresh (not only at session start), and surfaces conflicts rather than guessing. Conflict copies from Dropbox, iCloud and Syncthing in the project folder stop the brief; subfolders and OneDrive names are not covered.
 
 ### 6. Eval Criteria
 How the skill judges its own output — the brief is 250 words or fewer, the "Next" field is front and center, task claims come from a fingerprinted `task_urgency` read, counts and dates come from the helper, and it never fabricates information that isn't in your project files or the DB result.
 
 ### 7. Version & Changelog
+
+**v2.1.0 candidate** — 2026-10-27
+- Phase 4.5 repairs: Dropbox and iCloud conflict names; repositories without
+  commits; evidence tied to one project folder; stricter receipt times and
+  project identity; envelope constructor and recipes; its own index template
+  for first-time setup; the brief ends with the evidence line after the
+  hand-off question.
 
 **v2.0.2 – v2.0.7 candidates** — 2026-10-08 to 2026-10-27
 - Phase 4 fixes: no task claim without a fingerprinted receipt; instruction

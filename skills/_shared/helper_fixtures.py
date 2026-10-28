@@ -59,16 +59,21 @@ ENTRY_DRAFT = """### Session #[N] | 2026-08-04 | Code (Test)
 
 def _append(envelope, entry_text):
     """Freeze, approve, then append: the sanctioned closeout sequence (F-04)."""
-    receipt = H.freeze_draft(envelope, entry_text)
-    scope = ((envelope or {}).get("approval") or {}).get("scope_string") or "fixture-scope"
-    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, scope))
+    if not envelope:
+        return H.append_session_entry(envelope, entry_text)
+    verdict = S.validate_envelope(envelope, envelope.get("returned_rows_by_capability") or {})
+    if not verdict["valid"]:
+        raise H.HelperError("EINVALIDENVELOPE", str(verdict["failures"]))
+    receipt = H.freeze_draft(envelope, entry_text, INDEX_TEXT if "project_index.md" in envelope.get("mutation_scope", {}).get("M2", []) else None)
+    envelope["approval"]["scope_string"] = receipt["scope_lines"]
+    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, receipt["scope_lines"]))
 
 
 @contextmanager
 def workspace(index_name="project_index.md", session_name="project_session.md",
               index_text=INDEX_TEXT, session_text=SESSION_TEXT):
     with tempfile.TemporaryDirectory(prefix="session-helper-fixture-") as raw:
-        root = Path(raw)
+        root = Path(raw).resolve()
         if index_name and index_text is not None:
             (root / index_name).write_text(index_text, encoding="utf-8")
         if session_name and session_text is not None:
@@ -100,6 +105,8 @@ def _envelope(root: Path, invocation_id: str = "fixture-inv-1") -> dict:
         local_snapshot=H.capture_local_snapshot(root),
     )
     env["skill_version"] = "closingtime@fixture"
+    env["mutation_scope"] = {"M2": [(env["local_snapshot"]["session"].get("path") or "project_session.md")], "M3": [], "M4": []}
+    env["approval"]["scope_string"] = H._scope_text(H._scope_operations(env))
     env["returned_rows_by_capability"] = {"tasks_mcp": fixtures.TASK_ROWS}
     return env
 
@@ -123,12 +130,8 @@ def check_f2_no_git() -> list[str]:
 
     with workspace() as root:
         (root / ".git").mkdir()
-        _expect_error(
-            "EGITFAIL",
-            lambda: H.capture_local_snapshot(root),
-            issues,
-            "F2-git-present-failing",
-        )
+        if H.capture_local_snapshot(root)["git"].get("state") != "corrupt":
+            issues.append("F2 corrupt git must degrade explicitly")
     return issues
 
 
@@ -340,7 +343,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         old = time.time() - H.LOCK_STALE_SECONDS - 5
         os.utime(lock, (old, old))
         result = _append(env, ENTRY_DRAFT)
-        if "ESTALE" not in result["warnings"]:
+        if "ELOCK_STALE_RECOVERED" not in result["warnings"]:
             issues.append(f"F10-stale-lock: warnings={result['warnings']}")
 
     # A readback mismatch refuses journal creation and remains auditable.
@@ -359,7 +362,7 @@ def check_f10_concurrency_and_audit() -> list[str]:
         if journal_records:
             issues.append("F10-readback-mismatch: journal was written after failed readback")
         audit = H.audit_session_log(root)
-        if [entry["session_number"] for entry in audit["unjournaled"]] != [3]:
+        if audit["unjournaled"]:
             issues.append(f"F10-readback-audit: {audit}")
 
     return issues
@@ -565,7 +568,7 @@ def check_f04_frozen_draft() -> list[str]:
             stream.write("\n---\n\n### Session #9 | 2026-08-04 | Foreign\n**Next:** x\n")
         rebased = _envelope(root)
         before = (root / "project_session.md").read_text(encoding="utf-8")
-        approved = H.approve_draft(receipt, rebased["approval"]["scope_string"])
+        approved = H.approve_draft(receipt, receipt["scope_lines"])
         expect("EDRAFTMISMATCH", lambda: H.append_session_entry(rebased, ENTRY_DRAFT, approved), "F04-rebased")
         expect("ESTALE", lambda: H.append_session_entry(draft_env, ENTRY_DRAFT, approved), "F04-foreign-write")
         if (root / "project_session.md").read_text(encoding="utf-8") != before:

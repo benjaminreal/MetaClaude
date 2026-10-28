@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.0.7"
+  version: "2.1.0"
 ---
 
 # newbeginning
@@ -24,7 +24,8 @@ Permitted writes are limited to:
 
 - an explicitly approved `RECOVERY_BOOTSTRAP` or `RECOVERY_RECONSTRUCT` index;
 - an explicitly approved post-brief Tasks DB task creation;
-- approved Open Brain captures during pending-learning review.
+- approved Open Brain captures and pending-file revisions/deletion during
+  pending-learning review.
 
 Do not log the session, rewrite routine narrative state, select a task for the
 user, or begin executing the hand-off. Those belong to `closingtime` or the
@@ -33,6 +34,8 @@ user's next instruction.
 ### Runtime resources
 
 - Run deterministic local work through `scripts/runtime_cli.py`.
+- Read `references/recovery.md` before persistence/recovery; use
+  `references/envelope_examples.md` for constructor and receipt recipes.
 - Read `references/runtime_contract.md` when building or diagnosing an evidence
   envelope.
 - Read `references/task_operations.md` only when querying or changing tasks.
@@ -70,7 +73,9 @@ projection, validation, or conflict checks ran.
 
 ### `OBSERVATION_GATE` — snapshot and branch
 
-Run `snapshot <workspace-root>`. Treat its projection, hashes, filename
+Run `new-envelope <workspace-root>` to capture evidence and helper-stamped
+start; discover services and replace both `unprobed` states before validation.
+Use `snapshot <workspace-root> --entries 10` for reconstruction. Treat its projection, hashes, filename
 resolution, parse warnings, and sync-conflict list as local evidence. State the
 branch and changed files only from its `git` fields. Detect one branch:
 
@@ -84,10 +89,13 @@ branch and changed files only from its `git` fields. Detect one branch:
 
 #### `RECOVERY_RECONSTRUCT`
 
-Use the most recent five to ten entries plus observed git/file evidence to draft
+Use `snapshot --entries 10` for the most recent five to ten entries plus observed git/file evidence to draft
 `project_index.md`. Preserve unknown people or purpose fields as unknown. Show
-the entire proposed file and obtain explicit approval before writing. Verify
-the saved content, then run a fresh snapshot before continuing.
+the entire proposed file after index-only `freeze-draft`; obtain explicit approval
+before writing through exact-scope `approve-draft` and
+`write-approved --expect <sha256|absent>`. Use the shipped
+`references/index_template.md`, verify the saved content, then recapture with
+a fresh snapshot before continuing.
 
 #### `RECOVERY_BOOTSTRAP`
 
@@ -95,7 +103,9 @@ If the workspace has a commit, README, or at least three source files, scan
 those bounded signals and draft the index; ask the user to confirm name, people,
 and purpose. If the workspace is empty, confirm it is the intended directory and
 interview only. Write a minimal English `project_index.md` after approval,
-verify it, and report that Session #1 will be logged by `closingtime`.
+use index-only freeze/approve/write-approved from `references/recovery.md`,
+verify it, and report that Session #1 will be logged by `closingtime`. An unborn
+git branch (no commits) is normal; corrupt git explicitly degrades.
 
 ### Task evidence and envelope validation
 
@@ -124,11 +134,14 @@ code. A sync conflict always stops.
 
 ### Opening projection and brief
 
-Use only the validated bounded projection:
+The helper reads whole files and emits a bounded projection. Report
+`unfinished_operations` and direct recovery to `resume`; do not start another
+close. Parse ambiguity or semantic narrative contradictions stop; a stale index
+date alone is a gap. Use only the validated bounded projection:
 
 | Measure | Bound |
 |---|---:|
-| Project index | Full index within the helper projection |
+| Project index | Bounded text; explicitly report truncation |
 | Session log | Last two entries |
 | Project task slice | 8 rows |
 | Portfolio task slice | 20 rows |
@@ -174,11 +187,16 @@ the user's explicit disposition. Read and apply
 candidate and again after owner edits; show the complete repaired wording and
 obtain fresh approval before capture. Language precedence is explicit user
 preference, then the dominant session language when it is English or Spanish,
-then English. Never cite `closingtime` by step number.
+then English. Use `write-approved` for every pending-file transition with an
+explicit preimage; preserve unresolved legacy blocks as the reference describes.
+A search is a read: an instruction not to capture does not skip it. An instruction
+not to use Open Brain at all is `SKIP-openbrain`; a search sends candidate text
+to the service. Never cite `closingtime` by step number.
 
 ## 4. Harness Adaptations
 
-**Required:** file reading and conversation. If file reading is unavailable,
+**Required for helper paths:** Python 3, file reading and conversation.
+Without Python nothing is persisted; output index and task drafts only. If file reading is unavailable,
 ask the user to paste the index and last two session entries and label the local
 snapshot helper unavailable.
 
@@ -213,8 +231,8 @@ No model-name branch may change evidence, approval, or mutation rules.
   new snapshot.
 - Every authoritative task claim traces to a current receipt whose returned-row
   fingerprint validates.
-- The brief is at most 250 words, surfaces `Next:`, names gaps, and ends with one
-  hand-off question.
+- The brief is at most 250 words, surfaces `Next:`, names gaps, and places one
+  hand-off question immediately before the final evidence line.
 - The skill stops after the brief unless the user chooses an allowed action.
 - Every brief ends with the evidence line reporting the instruction state,
   `instruction_bytes_loaded`, `projection_bytes_emitted`, and `brief_words`;
@@ -229,6 +247,16 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 `OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
+
+**v2.1.0 — 2026-10-27 — candidate**
+
+- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
+  identity and parsed times; conflict/alias stops; read-only git evidence.
+- Atomic append intents, conditional rollback, resume and unfinished-operation
+  guard; approved local transitions share a lock and explicit preimages.
+- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
+- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
+  and independent recertification remain required. This is not deployment.
 
 **v2.0.7 — 2026-10-27 — candidate**
 
@@ -281,4 +309,4 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 - Preserved the v1 continuity-file formats and all eleven trigger semantics.
 
 Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phases 4 and 5.
+is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.

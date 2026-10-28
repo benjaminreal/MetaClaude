@@ -21,10 +21,12 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import fixtures  # noqa: E402
@@ -32,6 +34,7 @@ import helper_fixtures  # noqa: E402
 import mapping  # noqa: E402
 import schemas as S  # noqa: E402
 import workflow_fixtures  # noqa: E402
+import repair_fixtures
 import candidate_quality_fixtures  # noqa: E402
 
 SKILLS = Path(__file__).resolve().parent.parent
@@ -166,6 +169,12 @@ def run() -> int:
     print(f"  [{'PASS' if not helper_bad else 'FAIL'}] "
           f"{len(helper_fixtures.CHECKS)} Phase 2 helper fixture groups")
     for problem in helper_bad:
+        print(f"        └─ {problem}")
+
+    repair_bad = repair_fixtures.run()
+    failures += [f"repair: {problem}" for problem in repair_bad]
+    print(f"  [{'PASS' if not repair_bad else 'FAIL'}] {len(repair_fixtures.CHECKS)} Phase 4.5 repair groups")
+    for problem in repair_bad:
         print(f"        └─ {problem}")
 
     workflow_bad = workflow_fixtures.run()

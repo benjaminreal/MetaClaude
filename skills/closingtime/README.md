@@ -8,12 +8,14 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.0.10 candidate
+**Version:** 3.1.0 candidate
 
-Phase 4 behavioral validation passed on 3.0.6 (six fresh sessions in Claude
-Code and Codex), with targeted checks of later fixes. Independent
-transferability review is recorded outside the package. See
-[HANDOFF.md](HANDOFF.md) for prerequisites, limits, and validation status.
+Phase 4 behavioral validation passed on earlier candidates; the repairs in
+this version still need a fresh behavioral check and an independent
+transferability review (the previous review of 3.0.10 failed). It is not
+certified for deployment. A public summary of the review status is in
+[`skills/_shared/validation/phase4_5/`](../_shared/validation/phase4_5/README.md).
+See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and recovery.
 
 ---
 
@@ -112,7 +114,7 @@ false checkmark. An evidence line follows, then the closing line:
 
 - Start without showing you the draft first — you always review before it writes
 - Save insights to Open Brain without your explicit approval
-- Read the full session history — the helper reads a bounded projection (index and last two entries)
+- Put the whole session history in front of the model — the helper reads the files but hands over only a bounded projection (index and last two entries)
 - Write `project_session.md` directly — only the bundled helper appends, after your approval
 - Replace `newbeginning` — it doesn't brief you on past state or pick the next task
 
@@ -135,11 +137,22 @@ Seven named gates:
 |---|---|
 | Observation | Helper snapshot, current Tasks receipt or named unavailable state, validated evidence envelope |
 | Draft | Session entry, index changes and task operations; frozen with `freeze-draft` before you see it |
-| Approval | You approve the exact scope; the helper stamps the approval time |
-| Concurrency + persistence | Helper append with tail-hash check, readback and journal; index and task writes read back |
+| Approval | You approve the exact scope lines the helper shows; excluding anything means a revised draft |
+| Concurrency + persistence | Helper append with tail-hash check, readback and journal; then task writes; then one checked index write that refuses if the index changed since the draft |
 | Verification | Every write has a returned result or readback; journal audit |
-| Learning | Candidates saved to `pending_learnings.md`, searched in Open Brain, shown as saved; capture needs separate approval |
+| Learning | Candidates searched in Open Brain, saved to `pending_learnings.md`, shown as saved; capture needs separate approval |
 | Closing | Status lines, evidence line, closing line |
+
+### Interrupted closes and limits
+
+If a close stops partway (a crash, a closed laptop), the helper has already
+recorded what it intended to write. The next attempt is refused until you run
+`resume`, which finishes the recorded step or reports exactly what is left,
+without logging the session twice. Conflict copies from Dropbox, iCloud and
+Syncthing in the project folder stop the close. Not covered: conflict copies in
+subfolders, OneDrive's naming, and edits from another device in the instant
+between the final check and the write. Details are in HANDOFF.md and
+`references/recovery.md`.
 
 ### 4. Harness Adaptations
 The skill works across Claude Code, Cowork, and other environments. It requires file writing and conversation — everything else (git access, transcript tools, Supabase Tasks DB, Open Brain) is optional and degrades gracefully. If Supabase is unavailable, it names the exact state, logs the session, and keeps task changes pending without editing the markdown mirror.
@@ -151,6 +164,14 @@ Behavioral guardrails: respects "skip" at any point, handles first-ever sessions
 Output quality (entry ≤ 300 words, narrative index concise, no duplication between entry and index, candidates that pass the quality contract), workflow correctness (draft shown and frozen before writing, every write verified, Open Brain capture gated on approval, counts and times taken from the helper), and failure response (restart from observation on boundary violations, edit in place on length/wording).
 
 ### 7. Version & Changelog
+
+**v3.1.0 candidate** — 2026-10-27
+- Phase 4.5 repairs: approval must match the exact scope shown; evidence is
+  tied to one project folder; append checks the entry first, records its intent
+  before writing, rolls back only its own bytes, and `resume` finishes an
+  interrupted close; a checked writer for the index and learnings file;
+  Dropbox and iCloud conflict names; repositories without commits; stricter
+  receipt times and project identity; envelope constructor and recipes.
 
 **v3.0.3 – v3.0.10 candidates** — 2026-10-08 to 2026-10-27
 - Phase 4 fixes: no task claim without a fingerprinted receipt; frozen,

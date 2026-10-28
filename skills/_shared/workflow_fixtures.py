@@ -101,7 +101,7 @@ def check_packaged_runtime_matches_shared() -> list[str]:
             target = SKILLS / skill / "scripts" / name
             if not target.is_file() or _digest(target) != _digest(source):
                 issues.append(f"{skill}/scripts/{name} differs from shared source")
-        for name in references:
+        for name in sync_runtime_copies.reference_files(skill):
             source = sync_runtime_copies.reference_source(skill, name)
             target = SKILLS / skill / "references" / name
             if not target.is_file() or _digest(target) != _digest(source):

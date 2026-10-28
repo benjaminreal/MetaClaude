@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "invocation_id": "inv-1",
+  "invocation_started_at": "2026-10-28T03:25:20.928345Z",
+  "skill": "closingtime",
+  "skill_version": "3.0.10",
+  "workspace_root": "/private/tmp/phase45/adversarial/cases/B5/proj",
+  "local_snapshot": {
+    "git": {
+      "available": false
+    },
+    "index": {
+      "path": null,
+      "present": false,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "instruction_budget": {
+      "reference_bytes": {
+        "candidate_quality_contract.md": 2388,
+        "runtime_contract.md": 5636,
+        "task_operations.md": 2384
+      },
+      "skill_md_bytes": 19593
+    },
+    "instructions": {
+      "ancestor_files": [],
+      "files": [],
+      "state": "instructions_absent"
+    },
+    "local_date": "2026-10-27",
+    "local_utc_offset": "-06:00",
+    "observed_at": "2026-10-28T03:25:20.928345Z",
+    "parse_warnings": [],
+    "pending_learnings": {
+      "path": null,
+      "present": false
+    },
+    "projection": {
+      "index": {
+        "path": null,
+        "text": ""
+      },
+      "pending_learnings": {
+        "present": false
+      },
+      "session": {
+        "path": null,
+        "tail": ""
+      },
+      "truncated": false
+    },
+    "projection_bytes_emitted": 123,
+    "projection_bytes_full": 123,
+    "projection_cap": 16384,
+    "session": {
+      "latest_session_number": 0,
+      "path": null,
+      "present": false,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tail_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "sync_conflicts": [],
+    "workspace_root": "/private/tmp/phase45/adversarial/cases/B5/proj"
+  },
+  "capability_profile": {
+    "schema_version": "1.0",
+    "local": {
+      "shell_available": true,
+      "git_available": false,
+      "temporary_workspace_available": true,
+      "parallel_read_only_available": false
+    },
+    "external": {
+      "tasks_mcp": "working",
+      "open_brain": "absent"
+    }
+  },
+  "mcp_receipts": [
+    {
+      "schema_version": "1.0",
+      "capability": "tasks_mcp",
+      "observed_at": "2026-10-28T03:25:20.971483Z",
+      "operation_fingerprint": "slice:project=fixture",
+      "status": "current",
+      "row_fingerprint": "sha256:a581fbcbf5cd7f09dae8debd9d00bdeb43fa9df9cc650b0e7e07c1b6df434115",
+      "row_count": 1
+    }
+  ],
+  "returned_rows_by_capability": {
+    "tasks_mcp": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "urgency": 10,
+        "priority": 1,
+        "project": "SomeoneElsesProject",
+        "title": "Ship thing",
+        "flagged": false,
+        "due": null,
+        "review_on": null,
+        "status": "open"
+      }
+    ]
+  },
+  "mutation_scope": {
+    "M2": [],
+    "M3": [],
+    "M4": []
+  },
+  "approval": {
+    "granted": false,
+    "scope_string": null
+  },
+  "source_hashes": {}
+}

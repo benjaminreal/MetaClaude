@@ -1,91 +1,88 @@
-# closingtime 3.0.10 — candidate handoff
+# closingtime 3.1.0 — candidate
 
-**Status:** candidate. This file does not certify the package. Phase 4
-behavioral validation passed on 3.0.6 (six fresh sessions in Claude Code and
-Codex, English and Spanish) with targeted checks of 3.0.7 and 3.0.8. The
-independent transferability record for this exact package is kept outside the
-package, bound to its version and tree hash, in the repository's
-`skills/_shared/validation/phase4_5/`. Production promotion is a separate
-decision.
+This package is canonical source, not installed or certified for deployment.
+Prior Phase 4 behavior results apply to earlier hashes only. The previous
+Phase 4.5 decision was FAIL; the full record is in the maintainers' private
+evaluation archive, and a public summary is in the repository's
+`skills/_shared/validation/phase4_5/README.md`.
+A fresh Phase 4 eligibility determination precedes the next Phase 4.5;
+deployment waits for Phase 4.5 PASS and Phase 5.
 
-## Prerequisites
+Python 3 and shell access are required for every bundled helper; only the
+standard library is used. Without Python, output drafts and say nothing was
+persisted. Optional Git, Tasks MCP and Open Brain are observed separately;
+no credentials or network client are bundled.
 
-- An agent with project read/write access and owner conversation.
-- Python 3 and shell access for the bundled CLI, which uses only the standard
-  library. Follow workspace runner instructions when present.
-- One intended project root; continuity files may be absent for a first close.
-- Optional Git, compatible Tasks MCP SQL access scoped by the owner's project
-  instructions, Open Brain, and bounded transcript access. No credentials are
-  bundled. Tasks and Open Brain have separate authorization boundaries.
+Use `python3 /path/to/closingtime/scripts/runtime_cli.py new-envelope ROOT` to
+start. It captures the snapshot and derives this package's name/version.
+Discover services and replace both `unprobed` states before validation. Read
+`references/envelope_examples.md` for complete JSON recipes and
+`references/recovery.md` for exact command syntax, state tables, stdin support,
+errors and historical migration. At most one file argument per call may be
+`-`; do not assume every literal argument supports stdin.
 
-Install the complete folder (for example into `~/.claude/skills/closingtime`
-or `~/.codex/skills/closingtime`) and start a fresh session. The helper owns
-session appends; a direct write is not the normal fallback.
+All project writes need the displayed approval scope. Freeze returns canonical
+scope_lines, approve compares that exact text and records owner_reply
+separately. An exclusion requires a revised freeze. Hashes are consistency
+checks, not proof of conversation authority, provenance or authenticity.
 
-## Normal use
+The helper reads whole continuity files and emits a bounded projection (16,384
+bytes); it does not bound filesystem bytes read. It explicitly reports index
+or latest-entry truncation. Snapshot --entries 1..10 changes projection only;
+the concurrency digest always covers two entries. Ancestor instruction
+files still need explicit reading. Semantic narrative contradictions stop;
+a stale index date alone is a gap.
 
-Invoke closingtime (`/closingtime` in Claude Code, `$closingtime` in Codex)
-with verified outcomes and a concrete next step. The agent:
+Conflict detection covers workspace root and journal directory only: conflicted
+copy, sync-conflict, case-conflict and continuity-specific numbered/copy names.
+Aliases are reported or refused when ambiguous. There is no recursive or
+OneDrive host-suffix reconciliation. Same-host writers share a lock; other
+devices can write in the residual precheck/replace or rollback window. No
+absolute cross-device lost-update guarantee is made.
 
-1. snapshots current files, obtains current Tasks evidence or a named
-   unavailable receipt, and validates a scratch envelope;
-2. drafts the session entry, index changes and task operations, runs
-   `freeze-draft`, and shows the complete proposal with its exact mutation
-   scope (no learning-candidate wording yet);
-3. after explicit approval, runs `approve-draft`, validates the approved copy
-   of the draft envelope (same snapshot), appends through the helper, applies
-   and reads back index and task changes, and audits the journal;
-4. writes learning candidates to `pending_learnings.md`, searches Open Brain
-   for connections, and quotes the saved wording for review; capture needs
-   separate approval;
-5. closes with status lines, an evidence line, and the ritual line last.
+Legacy v1 continuity layouts, journals and _policy.json stay readable and are
+never automatically rewritten. Legacy journal matching is limited consistency
+evidence, not crash recovery. Pending files have no runtime parser: preserve
+Connection/Connects to, absent Status and unknown metadata without data loss.
 
-The entry and index default to English; replies follow the owner's language.
+Not validated here: live Tasks writes, live Open Brain, real process kills,
+power loss, actual Dropbox races, other languages or fresh behavior in both
+harnesses. Deterministic faults and seeded crash states are synthetic.
 
-Useful CLI entry points:
+## Operator handoff
 
-```text
-python /path/to/closingtime/scripts/runtime_cli.py snapshot /path/to/project
-python /path/to/closingtime/scripts/runtime_cli.py fingerprint-rows /scratch/rows.json
-python /path/to/closingtime/scripts/runtime_cli.py validate /scratch/envelope.json
-python /path/to/closingtime/scripts/runtime_cli.py freeze-draft /scratch/draft-envelope.json /scratch/entry.md
-python /path/to/closingtime/scripts/runtime_cli.py approve-draft /scratch/draft-receipt.json "<exact scope>"
-python /path/to/closingtime/scripts/runtime_cli.py append /scratch/approved-envelope.json /scratch/entry.md /scratch/approved-receipt.json
-python /path/to/closingtime/scripts/runtime_cli.py audit /path/to/project
-python /path/to/closingtime/scripts/runtime_cli.py render-mirror /scratch/rows.json <local-date>
-python /path/to/closingtime/scripts/runtime_cli.py count-words /scratch/text.md
-```
 
-Pass `-` instead of a JSON or text path to read it from stdin. See
-references/runtime_contract.md and scripts/schemas.py for envelope fields.
-Keep envelopes and entry drafts outside the project. Validation checks
-consistency, not the authenticity of supplied MCP rows.
+Close order: observe → draft entry/index/operations → freeze → show exact scope
+→ approve → append → Tasks writes and fresh read → one write-approved index
+transition with mirror_receipt/--mirror-rows → verify/audit → learnings.
+Index content is bound before approval; only Active TODOs is regenerated from
+fresh receipt rows. Archive overflow names project_decisions_archive.md in M2
+and binds its exact payload in local_payload_hashes. Pending revisions each
+use --expect current SHA-256 and record conversation-approved wording.
 
-## Degraded, skip, and interruption use
+Search candidate connections (or name unavailability), then merge/stage and
+read back pending_learnings.md before presenting candidates. Owner edits are
+written/read back before approved capture. Mixed disposition retains unresolved
+blocks, deletion follows complete disposition. Capture requires separate
+approval. SKIP-openbrain skips search and capture but retains separately
+approved extraction/storage; an instruction not to capture alone does not skip
+search. Search sends candidate text to the service.
 
-- Tasks non-working: preserve task changes as pending and leave the mirror
-  untouched. Approved local closeout can proceed.
-- Open Brain non-working: retain candidates for later review; do not capture.
-- Python unavailable: provide a draft for manual save and say no helper append
-  or audit ran.
-- Changed tail or root-level sync conflict: stop before the affected mutation.
-  A local advisory lock cannot protect another machine; the tail hash is the
-  cross-device check. A changed draft needs a new freeze and approval.
-- Skips remain independent: skipping index does not skip tasks; skipping capture
-  does not skip extraction or the Open Brain search.
-- Interruption: distinguish verified, attempted, and pending actions and retain
-  Next:. Never emit false completion checkmarks.
+Append writes a durable intent before any log bytes. On error use resume ROOT
+and audit, not another logical close. Unfinished intents block fresh freezes.
+Resume inspects actual bytes even for final records and needs no scratch file;
+it never retries external calls. Fresh retries need preconditions and approval.
+Intent records are renamed, never deleted. Consider ignoring
+private-artifacts/session-journal/ in git according to project policy.
 
-## Authority and limits
+Degraded Tasks operations remain in entry Decisions/Next, with exact operation,
+reserved insert UUID and "needs fresh approval"; the mirror stays untouched.
+Learning may proceed once attempted local writes read back and each external
+operation is verified or recorded pending. Status lines must describe actual
+verified, partial, skipped or pending state; evidence then ritual line last.
 
-Write only the approved scope. Git operations and external captures need their
-own authority. Historical exceptions remain unverified; they are not journal
-receipts. The draft receipt guards against accidental rebasing, not deliberate
-forgery.
-
-Local fixtures cover envelope rejection, frozen-draft and chronology refusals,
-changed-tail refusal, journal audit, skip/interruption policy, packaging, and
-structure. Phase 4 covered fresh model behavior in two harnesses, English and
-Spanish only. Not validated: working Tasks DB writes, live Open Brain capture,
-nested or recursive conflict discovery, ambiguous filenames, and other
-languages.
+Use the whole folder; runtime and references are bundled independently of its
+sibling. Do not copy an old draft receipt forward: freeze a new current receipt.
+For re-certification, freeze the exact tree hash and use README.md's checks,
+the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
+No installation into personal skill directories occurs during implementation.

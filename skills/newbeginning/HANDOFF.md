@@ -1,73 +1,78 @@
-# newbeginning 2.0.7 — candidate handoff
+# newbeginning 2.1.0 — candidate
 
-**Status:** candidate. This file does not certify the package. Phase 4
-behavioral validation passed on 2.0.5 (six fresh sessions in Claude Code and
-Codex, English and Spanish). The independent transferability record for this
-exact package is kept outside the package, bound to its version and tree hash,
-in the repository's `skills/_shared/validation/phase4_5/`. Production promotion
-is a separate decision.
+This package is canonical source, not installed or certified for deployment.
+Prior Phase 4 behavior results apply to earlier hashes only. The previous
+Phase 4.5 decision was FAIL; the full record is in the maintainers' private
+evaluation archive, and a public summary is in the repository's
+`skills/_shared/validation/phase4_5/README.md`.
+A fresh Phase 4 eligibility determination precedes the next Phase 4.5;
+deployment waits for Phase 4.5 PASS and Phase 5.
 
-## Prerequisites
+Python 3 and shell access are required for every bundled helper; only the
+standard library is used. Without Python, output drafts and say nothing was
+persisted. Optional Git, Tasks MCP and Open Brain are observed separately;
+no credentials or network client are bundled.
 
-- An agent that can read the whole skill folder and converse with the owner.
-- Python 3 and shell access for the bundled CLI, which uses only the standard
-  library. Follow workspace runner instructions when present.
-- One intended project root with continuity files, or an owner-confirmed
-  location for approved bootstrap.
-- Optional Git, a compatible Tasks MCP SQL connector scoped by the owner's
-  project instructions, and Open Brain tools. No credentials are bundled.
+Use `python3 /path/to/newbeginning/scripts/runtime_cli.py new-envelope ROOT` to
+start. It captures the snapshot and derives this package's name/version.
+Discover services and replace both `unprobed` states before validation. Read
+`references/envelope_examples.md` for complete JSON recipes and
+`references/recovery.md` for exact command syntax, state tables, stdin support,
+errors and historical migration. At most one file argument per call may be
+`-`; do not assume every literal argument supports stdin.
 
-Install the entire folder, including scripts and references (for example into
-`~/.claude/skills/newbeginning` or `~/.codex/skills/newbeginning`), and start a
-fresh agent session. Authoritative tasks require a compatible `task_urgency`
-view.
+All project writes need the displayed approval scope. Freeze returns canonical
+scope_lines, approve compares that exact text and records owner_reply
+separately. An exclusion requires a revised freeze. Hashes are consistency
+checks, not proof of conversation authority, provenance or authenticity.
 
-## Normal use
+The helper reads whole continuity files and emits a bounded projection (16,384
+bytes); it does not bound filesystem bytes read. It explicitly reports index
+or latest-entry truncation. Snapshot --entries 1..10 changes projection only;
+the concurrency digest always covers two entries. Ancestor instruction
+files still need explicit reading. Semantic narrative contradictions stop;
+a stale index date alone is a gap.
 
-Invoke newbeginning (`/newbeginning` in Claude Code, `$newbeginning` in Codex)
-at the project root. The agent snapshots bounded continuity evidence, reads
-each project or ancestor instruction file the snapshot lists, reads current
-Tasks rows when available, and validates a scratch envelope. It replies in the
-owner's language with at most 250 words: project state, the last `Next:`, top
-tasks only with a current receipt, flags and gaps, one hand-off question with
-three options (a fourth for pending learnings when applicable), and a final
-evidence line. Then it stops.
+Conflict detection covers workspace root and journal directory only: conflicted
+copy, sync-conflict, case-conflict and continuity-specific numbered/copy names.
+Aliases are reported or refused when ambiguous. There is no recursive or
+OneDrive host-suffix reconciliation. Same-host writers share a lock; other
+devices can write in the residual precheck/replace or rollback window. No
+absolute cross-device lost-update guarantee is made.
 
-Useful CLI entry points:
+Legacy v1 continuity layouts, journals and _policy.json stay readable and are
+never automatically rewritten. Legacy journal matching is limited consistency
+evidence, not crash recovery. Pending files have no runtime parser: preserve
+Connection/Connects to, absent Status and unknown metadata without data loss.
 
-```text
-python /path/to/newbeginning/scripts/runtime_cli.py snapshot /path/to/project
-python /path/to/newbeginning/scripts/runtime_cli.py fingerprint-rows /scratch/rows.json
-python /path/to/newbeginning/scripts/runtime_cli.py validate /scratch/envelope.json
-python /path/to/newbeginning/scripts/runtime_cli.py count-words /scratch/brief.md
-```
+Not validated here: live Tasks writes, live Open Brain, real process kills,
+power loss, actual Dropbox races, other languages or fresh behavior in both
+harnesses. Deterministic faults and seeded crash states are synthetic.
 
-Pass `-` instead of a JSON or text path to read it from stdin. Read
-references/runtime_contract.md to assemble an envelope; executable validators
-are in scripts/schemas.py. Keep scratch evidence outside the project.
-Validation checks consistency, not the authenticity of supplied rows.
+## Operator handoff
 
-## Degraded and recovery use
 
-- Tasks absent, unauthorized, or scoped elsewhere: name the exact state, treat
-  the Markdown mirror as possibly stale, and make no current-task claim.
-- Rows that cannot be fingerprinted: label any task list "unverified".
-- Python unavailable: name the missing helper and unperformed checks.
-- Index absent: draft reconstruction/bootstrap, obtain approval, read back the
-  saved index, and recapture before briefing.
-- Source contradiction or root-level sync conflict: stop and name it; separate
-  approval is required for reconciliation.
-- Open Brain unavailable: leave pending-learning content unread and defer
-  review. Ordinary opening does not require Open Brain.
+Routine use returns an evidence-backed brief of at most 250 words and stops.
+The hand-off question precedes the final evidence line. It does not begin work
+or append a session. Five branches: normal, index-only, reconstruction,
+bootstrap and conflicted (stop). An unborn branch is normal; corrupt git
+explicitly degrades. Without a current Tasks receipt, tasks are unverified and
+the Markdown mirror is read-only.
 
-## Authority and limits
+Approved bootstrap/reconstruction uses the shipped index_template.md,
+index-only freeze-draft, approve-draft and write-approved --expect. Approved
+post-brief actions include reserved-UUID task creation, Open Brain captures,
+and pending-file owner edits/dispositions/deletion. Task update/completion/
+parking/cancellation remain outside opening scope. A search is a read; an
+instruction not to capture does not skip it. SKIP-openbrain means no use at all
+and skips search and capture; search sends candidate text to the service.
 
-Routine opening writes nothing to the project or external systems. Approved
-post-brief task creation reserves its UUID before writing and reads that same
-UUID after an uncertain outcome. Task updates, completion, parking, and
-cancellation are outside opening scope.
+Report unfinished_operations and direct the operator to resume before a new
+close. Pending Tasks intent lives in the session Decisions/Next with exact
+operation, reserved UUID if applicable, and "needs fresh approval".
 
-Local fixtures cover contracts, helper failure paths, packaging, and structure.
-Phase 4 covered fresh model behavior in two harnesses, English and Spanish
-only. Not validated: working external writes, nested or recursive conflict
-discovery, ambiguous filenames, and other languages.
+Use the whole folder; runtime and references are bundled independently of its
+sibling. Do not copy an old draft receipt forward: freeze a new current receipt.
+For re-certification, freeze the exact tree hash and use README.md's checks,
+the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
+No installation into personal skill directories occurs during implementation.
