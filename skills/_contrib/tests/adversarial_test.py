@@ -199,6 +199,17 @@ def main() -> int:
         rc, out = lab.tool_run("register", "calibre", "--commit", w2, "--target", str(S))
         expect("S7 symlinked target is refused", rc == 1 and "symlink" in out, out)
 
+        # S7b snapshot entries lock and detect drift but refuse install
+        N = lab.target("targetN", "calibre", lab.base)
+        (N / "calibre/evals").exists() and shutil.rmtree(N / "calibre/evals")
+        rc, out = lab.tool_run("register", "calibre", "--snapshot", "lean install", "--target", str(N))
+        expect("S7b snapshot registration accepts a lean copy", rc == 0, out)
+        cid7 = lab.records("2026-10-31_test_calibre_seven", w6, ["calibre"])
+        rc, out = lab.tool_run("install", "calibre", "--commit", w6, "--change-id", cid7, "--target", str(N))
+        expect("S7b install refuses a snapshot entry", rc == 1 and "snapshot entry" in out, out)
+        rc, out = lab.tool_run("register", "calibre", "--target", str(N))
+        expect("S7b register needs --commit or --snapshot", rc == 1, out)
+
         # S8 gate from an unrelated repository
         other = root / "other"
         other.mkdir()

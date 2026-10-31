@@ -451,9 +451,12 @@ def target_dir(name: str, skill: str) -> Path:
 
 
 def cmd_register(args) -> int:
-    sha = git(MAIN, "rev-parse", args.commit)
+    if bool(args.commit) == bool(args.snapshot):
+        print("REFUSED: pass exactly one of --commit <sha> or --snapshot \"<reason>\"")
+        return 1
+    sha = git(MAIN, "rev-parse", args.commit) if args.commit else None
     reg = load_registry()
-    expected = tree_hash_at(sha, args.skill)
+    expected = tree_hash_at(sha, args.skill) if sha else None
     for name in args.target:
         tdir = target_dir(name, args.skill)
         problem = unsafe_target(tdir)
@@ -461,15 +464,19 @@ def cmd_register(args) -> int:
             print(f"REFUSED {args.skill}@{name}: {problem}")
             return 1
         actual = tree_hash(tdir)
-        if actual != expected:
+        if actual is None:
+            print(f"REFUSED {args.skill}@{name}: {tdir} is not an installed folder")
+            return 1
+        if sha and actual != expected:
             print(f"REFUSED {args.skill}@{name}: installed tree {actual} != commit tree {expected}")
             return 1
         reg["entries"][f"{args.skill}@{name}"] = {
             "skill": args.skill, "target": name, "path": str(tdir), "commit": sha,
-            "version": skill_version((tdir / "SKILL.md").read_text())[0], "tree_sha256": actual,
+            "snapshot_reason": args.snapshot, "tree_sha256": actual,
+            "version": skill_version((tdir / "SKILL.md").read_text())[0],
             "change_id": args.change_id, "recorded_at": now(),
         }
-        print(f"registered {args.skill}@{name} @ {sha[:12]}")
+        print(f"registered {args.skill}@{name} " + (f"@ {sha[:12]}" if sha else "as snapshot (install refused)"))
     save_registry(reg)
     return 0
 
@@ -480,10 +487,10 @@ def installed_report() -> list[dict]:
         path = Path(e["path"])
         actual = tree_hash(path)
         rows.append({
-            "entry": key, "version": e.get("version"), "commit": e["commit"][:12],
+            "entry": key, "version": e.get("version"), "commit": (e["commit"] or "snapshot")[:12],
             "state": "MISSING" if actual is None else ("OK" if actual == e["tree_sha256"] else "DRIFT"),
             "locked": is_locked(path),
-            "merged": git_ok(MAIN, "merge-base", "--is-ancestor", e["commit"], "HEAD"),
+            "merged": not e["commit"] or git_ok(MAIN, "merge-base", "--is-ancestor", e["commit"], "HEAD"),
         })
     return rows
 
@@ -608,6 +615,10 @@ def cmd_install(args) -> int:
             if not entry:
                 print(f"REFUSED: {skill}@{target} is not registered")
                 return 1
+            if not entry.get("commit"):
+                print(f"REFUSED: {skill}@{target} is a snapshot entry ({entry.get('snapshot_reason')}); "
+                      "the tool cannot rebuild that copy from a commit, so a MetaClaude session installs it")
+                return 1
             dst = Path(entry["path"])
             problem = unsafe_target(dst)
             if problem:
@@ -695,7 +706,8 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--out", help="write the JSON result here (the change folder's GATE.json)")
     r = sub.add_parser("register")
     r.add_argument("skill")
-    r.add_argument("--commit", required=True)
+    r.add_argument("--commit", help="commit whose skill tree the installed copy matches exactly")
+    r.add_argument("--snapshot", help="reason the copy cannot match a commit (lean or harness-specific build)")
     r.add_argument("--target", action="append", required=True, help="claude, codex or a skills directory")
     r.add_argument("--change-id", default="baseline")
     sub.add_parser("check-installed")

@@ -175,6 +175,13 @@ These rules exist already. This section collects them; it does not invent any.
 - Harness overlays (OpenCode's added `references/opencode_connections.md`) are
   not handled by the tool. OpenCode copies are updated only by a MetaClaude
   session.
+- Installed copies that are lean or harness-specific builds (no `evals/`, a
+  private profile, a generated install tree) are registered as snapshots. The
+  tool locks them and reports drift, but refuses to install over them. A
+  MetaClaude session installs those.
+- `research-triangulation` stays writable: it appends its run log to
+  `references/platform-tracker.md` in the installed copy. That file is runtime
+  data, not source; do not overwrite it.
 
 ### G. Approvals and safety
 - Before any external model run, follow the global "Agents and external models"
