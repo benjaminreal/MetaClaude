@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bosshunt_dossier_v2.schema.json",
+  "title": "BossHuntResearchDossierV2",
+  "description": "Read-only, role-linked BossHunt route research dossier. Structural schema; policy gates are implemented by scripts/validate_dossier.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "researcher_id",
+    "role",
+    "guards",
+    "search",
+    "recipient",
+    "hook",
+    "hook_search",
+    "channel",
+    "decision",
+    "disconfirmers",
+    "quality_review"
+  ],
+  "properties": {
+    "schema_version": {"const": "BossHuntResearchDossierV2"},
+    "run_id": {"type": "string", "minLength": 1},
+    "researcher_id": {"type": "string", "minLength": 1},
+    "role": {"$ref": "#/$defs/role"},
+    "guards": {"$ref": "#/$defs/guards"},
+    "search": {"$ref": "#/$defs/search"},
+    "recipient": {"$ref": "#/$defs/recipient"},
+    "hook": {"$ref": "#/$defs/hook"},
+    "hook_search": {"$ref": "#/$defs/hookSearch"},
+    "channel": {"$ref": "#/$defs/channel"},
+    "decision": {"$ref": "#/$defs/decision"},
+    "quality_review": {"$ref": "#/$defs/qualityReview"},
+    "migration": {"$ref": "#/$defs/migration"},
+    "disconfirmers": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/disconfirmer"}
+    },
+    "notes": {"type": ["string", "null"]}
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_id",
+        "intake_mode",
+        "company",
+        "role_title",
+        "jd_source",
+        "posting_status",
+        "geography",
+        "explicit_boss_titles"
+      ],
+      "properties": {
+        "target_id": {"type": "string", "minLength": 1},
+        "intake_mode": {"enum": ["LIVE_REQUISITION", "POST_APPLICATION", "PROACTIVE_COMPANY", "UNKNOWN"]},
+        "company": {"type": "string", "minLength": 1},
+        "role_title": {"type": "string", "minLength": 1},
+        "job_url": {"type": ["string", "null"]},
+        "jd_source": {"type": "string", "minLength": 1},
+        "posting_status": {"enum": ["OPEN", "CLOSED", "UNKNOWN", "NOT_APPLICABLE"]},
+        "geography": {"type": ["string", "null"]},
+        "explicit_boss_titles": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidential_or_agency_no_bypass",
+        "terminal_outreach",
+        "owner_closed",
+        "company_collision",
+        "disconfirmation"
+      ],
+      "properties": {
+        "confidential_or_agency_no_bypass": {"type": ["boolean", "null"]},
+        "terminal_outreach": {"type": ["boolean", "null"]},
+        "owner_closed": {"type": ["boolean", "null"]},
+        "company_collision": {
+          "enum": ["CLEAR", "CONSOLIDATED", "SEQUENCED", "CONFLICT", "AMBIGUOUS_DUPLICATE", "BLOCKED", "UNKNOWN"]
+        },
+        "disconfirmation": {"enum": ["CLEAR", "DISCONFIRMED", "UNKNOWN"]}
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reporting_hypotheses",
+        "literal_seat_result",
+        "queries_run",
+        "authenticated_currentness_checked"
+      ],
+      "properties": {
+        "reporting_hypotheses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/hypothesis"}
+        },
+        "literal_seat_result": {"enum": ["HIT", "MISS", "BLOCKED"]},
+        "queries_run": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/queryTrace"}
+        },
+        "authenticated_currentness_checked": {"type": "boolean"}
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "basis", "would_support", "would_refute"],
+      "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "basis": {"type": "string", "minLength": 1},
+        "would_support": {"type": "string", "minLength": 1},
+        "would_refute": {"type": "string", "minLength": 1}
+      }
+    },
+    "queryTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "surface", "query", "observed_at", "outcome"],
+      "properties": {
+        "stage": {"type": "string", "minLength": 1},
+        "surface": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "outcome": {"enum": ["HIT", "MISS", "BLOCKED"]},
+        "result_url": {"type": ["string", "null"]},
+        "note": {"type": ["string", "null"]}
+      }
+    },
+    "recipient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "current_title",
+        "route_class",
+        "requisition_linkage",
+        "profile_url",
+        "currentness_observed_at",
+        "currentness_sources"
+      ],
+      "properties": {
+        "name": {"type": ["string", "null"]},
+        "current_title": {"type": ["string", "null"]},
+        "route_class": {
+          "enum": [
+            "CONFIRMED_HM",
+            "LIKELY_HM",
+            "RECRUITER_JOB_POSTER",
+            "RECRUITER_OWNER_CHECK",
+            "SPONSOR_AUTHORITY",
+            "POTENTIAL_COWORKER",
+            "WARM_CONNECTOR",
+            "APEX_CONTEXT",
+            "NOT_PUBLIC",
+            "NO_SAFE_ROUTE",
+            "DISCONFIRMED",
+            "UNRESOLVED"
+          ]
+        },
+        "requisition_linkage": {"enum": ["EXPLICIT", "ADJACENT", "INFERRED", "NONE"]},
+        "profile_url": {"type": ["string", "null"]},
+        "currentness_observed_at": {"type": ["string", "null"]},
+        "currentness_sources": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/currentnessSource"}
+        }
+      }
+    },
+    "currentnessSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "observed_at", "run_id", "supports", "source_family", "independence_key"],
+      "properties": {
+        "url": {"type": "string"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "run_id": {"type": "string", "minLength": 1},
+        "supports": {"enum": ["CURRENT_TITLE_AND_EMPLOYER", "PARTIAL", "NOT_SUPPORTED", "UNREADABLE"]},
+        "source_family": {"enum": ["AUTHENTICATED_PROFILE", "EMPLOYER", "RECIPIENT_ARTIFACT", "INDEPENDENT_DURABLE", "AGGREGATOR", "MIGRATED_V1"]},
+        "independence_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "attribution",
+        "artifact_url",
+        "artifact_date",
+        "observed_at",
+        "support_excerpt",
+        "support_state",
+        "run_id"
+      ],
+      "properties": {
+        "text": {"type": ["string", "null"]},
+        "attribution": {"enum": ["PERSON", "COMPANY", "JD", "NONE"]},
+        "artifact_url": {"type": ["string", "null"]},
+        "artifact_date": {"type": ["string", "null"]},
+        "observed_at": {"type": ["string", "null"]},
+        "support_excerpt": {"type": ["string", "null"]},
+        "support_state": {"enum": ["SUPPORTED", "NOT_SUPPORTED", "UNREADABLE", "ABSENT"]},
+        "run_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "hookSearch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "intents", "fallback_kind", "coverage_claim"],
+      "properties": {
+        "policy_version": {"const": "BossHuntHookSearchV1"},
+        "intents": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/hookIntent"}
+        },
+        "fallback_kind": {"enum": ["RECIPIENT_SPECIFIC", "GENERIC_COMPANY", "GENERIC_JD", "NONE"]},
+        "coverage_claim": {"enum": ["COMPLETE", "INCOMPLETE"]}
+      }
+    },
+    "hookIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intent_id",
+        "family",
+        "hypothesis",
+        "surface",
+        "query_or_action",
+        "observed_at",
+        "run_id",
+        "outcome",
+        "result_url",
+        "supports_selected_hook"
+      ],
+      "properties": {
+        "intent_id": {"type": "string", "minLength": 1},
+        "family": {
+          "enum": [
+            "RECIPIENT_AUTHORED",
+            "RECIPIENT_SPEAKING",
+            "EMPLOYER_PERSON_ATTRIBUTION",
+            "COMPANY_MANDATE",
+            "JD_CONTEXT",
+            "ATTRIBUTION_REFUTATION",
+            "MIGRATION_IMPORT"
+          ]
+        },
+        "hypothesis": {"type": "string", "minLength": 1},
+        "surface": {"type": "string", "minLength": 1},
+        "query_or_action": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "run_id": {"type": "string", "minLength": 1},
+        "outcome": {"enum": ["HIT", "MISS", "BLOCKED", "NOT_APPLICABLE"]},
+        "result_url": {"type": ["string", "null"]},
+        "supports_selected_hook": {"type": "boolean"}
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "address", "state", "basis", "source_url", "hunter_usage"],
+      "properties": {
+        "kind": {"enum": ["EMAIL", "PROFESSIONAL_PLATFORM", "RECRUITER_ROUTE", "NONE"]},
+        "address": {"type": ["string", "null"]},
+        "state": {"enum": ["VERIFIED", "VERIFY_CHANNEL", "UNKNOWN", "UNAVAILABLE"]},
+        "basis": {"enum": ["PUBLISHED_FIRST_PARTY", "PATTERN_CONCRETE_COLLEAGUE", "HUNTER_EMAIL_FINDER", "HUNTER_DOMAIN_SEARCH", "PROFESSIONAL_PLATFORM", "RECRUITER_ROUTE", "MIGRATED_V1", "NONE"]},
+        "source_url": {"type": ["string", "null"]},
+        "hunter_usage": {"$ref": "#/$defs/hunterUsage"}
+      }
+    },
+    "hunterUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_snapshot_at", "search_credits_remaining_at_snapshot", "method", "result", "domain_search_limit", "discovery_connector_calls", "search_credits_used", "verification_credits_used"],
+      "properties": {
+        "account_snapshot_at": {"type": ["string", "null"], "format": "date-time"},
+        "search_credits_remaining_at_snapshot": {"type": ["integer", "null"], "minimum": 0},
+        "method": {"enum": ["EMAIL_FINDER", "DOMAIN_SEARCH", "NONE"]},
+        "result": {"enum": ["HIT", "MISS", "BLOCKED", "NOT_USED"]},
+        "domain_search_limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 10},
+        "discovery_connector_calls": {"type": "integer", "minimum": 0, "maximum": 1},
+        "search_credits_used": {"type": "integer", "minimum": 0, "maximum": 1},
+        "verification_credits_used": {"type": "integer", "minimum": 0, "maximum": 0}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readiness", "permitted_response", "requires_owner_decision", "reason"],
+      "properties": {
+        "readiness": {"enum": ["DRAFT_READY_VERIFY_CHANNEL", "OWNER_DECISION", "PROFILE_CHECK", "BLOCKED", "RESEARCH_MORE"]},
+        "permitted_response": {"enum": ["CONVERSATION", "ROUTE", "RECRUITER_ASSESSMENT", "PROCESS_CLARIFICATION", "INFORMATIONAL_GUIDANCE", "NONE"]},
+        "requires_owner_decision": {"type": "boolean"},
+        "reason": {"type": "string", "minLength": 1},
+        "next_bounded_search": {"type": ["string", "null"]}
+      }
+    },
+    "disconfirmer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "finding", "observed_at", "source_urls", "supersedes"],
+      "properties": {
+        "subject": {"type": "string", "minLength": 1},
+        "finding": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "source_urls": {"type": "array", "items": {"type": "string"}},
+        "supersedes": {"type": ["string", "null"]}
+      }
+    },
+    "qualityReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewer_id", "verdict", "checks", "reviewed_at"],
+      "properties": {
+        "reviewer_id": {"type": "string", "minLength": 1},
+        "verdict": {"enum": ["PASS", "FAIL", "PENDING"]},
+        "checks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "RESOURCE_COVERAGE",
+              "ROUTE_HONESTY",
+              "CURRENT_ROLE",
+              "HOOK_ATTRIBUTION",
+              "CHANNEL_SEPARATION",
+              "COLLISION_LIFECYCLE"
+            ]
+          }
+        },
+        "reviewed_at": {"type": ["string", "null"]},
+        "note": {"type": ["string", "null"]}
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_schema", "source_path", "source_sha256", "source_refetched", "migrated_at", "unmapped_fields"],
+      "properties": {
+        "source_schema": {"const": "BossHuntDossierV1"},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "source_refetched": {"const": false},
+        "migrated_at": {"type": "string", "format": "date-time"},
+        "unmapped_fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    }
+  }
+}

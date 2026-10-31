@@ -1,0 +1,144 @@
+{
+  "schema_version": "BossHuntResearchDossierV2",
+  "run_id": "run-invalid",
+  "researcher_id": "same-agent",
+  "role": {
+    "target_id": "J-000999",
+    "intake_mode": "LIVE_REQUISITION",
+    "company": "Example Company",
+    "role_title": "Director of Product Design",
+    "job_url": "https://careers.example.com/jobs/director-product-design",
+    "jd_source": "JobPostings/postings/example.md",
+    "posting_status": "OPEN",
+    "geography": "Mexico",
+    "explicit_boss_titles": ["VP Product"]
+  },
+  "guards": {
+    "confidential_or_agency_no_bypass": false,
+    "terminal_outreach": false,
+    "owner_closed": false,
+    "company_collision": "CONFLICT",
+    "disconfirmation": "CLEAR"
+  },
+  "search": {
+    "reporting_hypotheses": [
+      {
+        "title": "VP Product",
+        "basis": "JD title hypothesis.",
+        "would_support": "Current functional owner.",
+        "would_refute": "Different reporting line."
+      }
+    ],
+    "literal_seat_result": "MISS",
+    "queries_run": [
+      {
+        "stage": "LITERAL_SEAT",
+        "surface": "public-web",
+        "query": "\"Example Company\" \"VP Product\"",
+        "observed_at": "2026-08-21T10:00:00-06:00",
+        "outcome": "MISS",
+        "result_url": null,
+        "note": "Apex substituted despite miss."
+      }
+    ],
+    "authenticated_currentness_checked": true
+  },
+  "recipient": {
+    "name": "Alex Apex",
+    "current_title": "Chief Executive Officer",
+    "route_class": "APEX_CONTEXT",
+    "requisition_linkage": "NONE",
+    "profile_url": "https://www.linkedin.com/in/alex-apex",
+    "currentness_observed_at": "2026-08-21T10:20:00-06:00",
+    "currentness_sources": [
+      {
+        "url": "https://www.linkedin.com/in/alex-apex",
+        "observed_at": "2026-08-21T10:20:00-06:00",
+        "run_id": "run-invalid",
+        "supports": "CURRENT_TITLE_AND_EMPLOYER",
+        "source_family": "AUTHENTICATED_PROFILE",
+        "independence_key": "same-profile"
+      }
+    ]
+  },
+  "hook": {
+    "text": "Generic profile used as a hook.",
+    "attribution": "PERSON",
+    "artifact_url": "https://www.linkedin.com/in/alex-apex",
+    "artifact_date": null,
+    "observed_at": "2026-08-21T10:30:00-06:00",
+    "support_excerpt": "Chief Executive Officer",
+    "support_state": "SUPPORTED",
+    "run_id": "run-invalid"
+  },
+  "hook_search": {
+    "policy_version": "BossHuntHookSearchV1",
+    "intents": [
+      {
+        "intent_id": "bad-hook-1",
+        "family": "RECIPIENT_AUTHORED",
+        "hypothesis": "The profile is incorrectly treated as authored content.",
+        "surface": "professional-profile",
+        "query_or_action": "Open generic profile.",
+        "observed_at": "2026-08-21T10:30:00-06:00",
+        "run_id": "run-invalid",
+        "outcome": "HIT",
+        "result_url": "https://www.linkedin.com/in/alex-apex",
+        "supports_selected_hook": true
+      },
+      {
+        "intent_id": "bad-refutation-1",
+        "family": "ATTRIBUTION_REFUTATION",
+        "hypothesis": "The generic profile may not be a hook artifact.",
+        "surface": "profile-readback",
+        "query_or_action": "Inspect the profile URL.",
+        "observed_at": "2026-08-21T10:31:00-06:00",
+        "run_id": "run-invalid",
+        "outcome": "HIT",
+        "result_url": "https://www.linkedin.com/in/alex-apex",
+        "supports_selected_hook": false
+      }
+    ],
+    "fallback_kind": "RECIPIENT_SPECIFIC",
+    "coverage_claim": "COMPLETE"
+  },
+  "channel": {
+    "kind": "EMAIL",
+    "address": "alex.apex@example.com",
+    "state": "VERIFIED",
+    "basis": "PATTERN_CONCRETE_COLLEAGUE",
+    "source_url": "https://example.com/contact/leadership",
+    "hunter_usage": {
+      "account_snapshot_at": null,
+      "search_credits_remaining_at_snapshot": null,
+      "method": "NONE",
+      "result": "NOT_USED",
+      "domain_search_limit": null,
+      "discovery_connector_calls": 0,
+      "search_credits_used": 0,
+      "verification_credits_used": 0
+    }
+  },
+  "decision": {
+    "readiness": "DRAFT_READY_VERIFY_CHANNEL",
+    "permitted_response": "CONVERSATION",
+    "requires_owner_decision": false,
+    "reason": "Incorrectly treated apex as the hiring manager.",
+    "next_bounded_search": null
+  },
+  "disconfirmers": [],
+  "quality_review": {
+    "reviewer_id": "same-agent",
+    "verdict": "PASS",
+    "checks": [
+      "RESOURCE_COVERAGE",
+      "ROUTE_HONESTY",
+      "CURRENT_ROLE",
+      "HOOK_ATTRIBUTION",
+      "CHANNEL_SEPARATION",
+      "COLLISION_LIFECYCLE"
+    ],
+    "reviewed_at": "2026-08-21T10:45:00-06:00",
+    "note": "Invalid because review is not independent."
+  }
+}

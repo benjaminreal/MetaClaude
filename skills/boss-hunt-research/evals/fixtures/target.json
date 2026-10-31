@@ -1,0 +1,43 @@
+{
+  "schema_version": "BossHuntTargetV2",
+  "target_id": "J-000123",
+  "source_tracker_id": "J-000123",
+  "company": "Example Company",
+  "company_domain": "example.com",
+  "role_title": "Director of Product Design",
+  "intake_mode": "LIVE_REQUISITION",
+  "job_url": "https://careers.example.com/jobs/director-product-design",
+  "jd_source": "JobPostings/postings/example-company-director-product-design.md",
+  "posting_status": "OPEN",
+  "geography": "Mexico",
+  "function": "Product Design",
+  "explicit_boss_titles": ["VP Product"],
+  "reporting_hypotheses": [
+    {
+      "title": "VP Product",
+      "basis": "The synthetic JD states that the role reports to the VP Product.",
+      "would_support": "A current VP Product with matching geography and function.",
+      "would_refute": "A current organization source assigning design elsewhere."
+    }
+  ],
+  "authority_sources": [
+    {
+      "authority_type": "LOCAL_ROLE_RECORD",
+      "source_ref": "synthetic/role-record-J-000123.json",
+      "observed_at": "2026-08-21T09:00:00-06:00",
+      "authority_scope": "J-000123 role identity and owner-approved research scope",
+      "evidence_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "owner_scope": "Read-only synthetic route research; zero live connectors and zero credits.",
+  "capabilities": {
+    "local_role_authority": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic target", "receipt_ref": "receipt:local-role", "evidence_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+    "public_web": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic permitted evidence only", "receipt_ref": "receipt:public-web", "evidence_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222"},
+    "authenticated_profile": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "synthetic profile fixture", "receipt_ref": "receipt:auth-profile", "evidence_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+    "hunter_account_details": {"state": "UNAVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "offline evaluation", "receipt_ref": "receipt:hunter-account-unavailable", "evidence_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"},
+    "hunter_email_finder": {"state": "UNAVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "offline evaluation", "receipt_ref": "receipt:hunter-finder-unavailable", "evidence_sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"},
+    "hunter_domain_search": {"state": "NOT_APPLICABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "named route resolved", "receipt_ref": "receipt:hunter-domain-na", "evidence_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"},
+    "local_python": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "local planner and validator", "receipt_ref": "receipt:python", "evidence_sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"},
+    "schema_validation": {"state": "AVAILABLE", "observed_at": "2026-08-21T09:00:00-06:00", "scope": "BossHuntTargetV2 and BossHuntResearchDossierV3", "receipt_ref": "receipt:schema", "evidence_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888"}
+  }
+}
