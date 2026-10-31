@@ -1,16 +1,16 @@
 {
   "schema_version": "BossHuntTargetV2",
-  "target_id": "J-000123",
-  "source_tracker_id": "J-000123",
+  "target_id": "J-SYN123",
+  "source_tracker_id": "J-SYN123",
   "company": "Example Company",
   "company_domain": "example.com",
-  "role_title": "Director of Product Design",
+  "role_title": "Director of Example Operations",
   "intake_mode": "LIVE_REQUISITION",
-  "job_url": "https://careers.example.com/jobs/director-product-design",
-  "jd_source": "JobPostings/postings/example-company-director-product-design.md",
+  "job_url": "https://careers.example.com/jobs/director-example-operations",
+  "jd_source": "synthetic/postings/example-company-director-example-operations.md",
   "posting_status": "OPEN",
-  "geography": "Mexico",
-  "function": "Product Design",
+  "geography": "Exampleland",
+  "function": "Example Operations",
   "explicit_boss_titles": ["VP Product"],
   "reporting_hypotheses": [
     {
@@ -23,9 +23,9 @@
   "authority_sources": [
     {
       "authority_type": "LOCAL_ROLE_RECORD",
-      "source_ref": "synthetic/role-record-J-000123.json",
+      "source_ref": "synthetic/role-record-J-SYN123.json",
       "observed_at": "2026-08-21T09:00:00-06:00",
-      "authority_scope": "J-000123 role identity and owner-approved research scope",
+      "authority_scope": "J-SYN123 role identity and owner-approved research scope",
       "evidence_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],

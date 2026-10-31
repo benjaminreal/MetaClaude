@@ -48,7 +48,7 @@ def recruiter_route(validator: Any) -> dict[str, Any]:
     )
     linkage_query.update({
         "outcome": "HIT",
-        "result_url": "https://careers.example.com/jobs/director-product-design/recruiter",
+        "result_url": "https://careers.example.com/jobs/director-example-operations/recruiter",
         "note": "Synthetic requisition page explicitly identifies the current recruiter.",
     })
     dossier["recipient"].update({"current_title": "Senior Recruiter", "route_class": "RECRUITER_JOB_POSTER", "requisition_linkage": "EXPLICIT"})
@@ -79,11 +79,11 @@ def generic_fallback(validator: Any) -> dict[str, Any]:
                                                   "content_sha256": content_hash, "run_id": run_id}})
     dossier["hook_search"] = {"policy_version": "BossHuntHookSearchV2", "fallback_kind": "GENERIC_COMPANY", "coverage_claim": "COMPLETE", "intents": [
         intent("authored-1", "RECIPIENT_AUTHORED", "jordan example", "authored operating model article", "public articles", "MISS", None, None, False),
-        intent("authored-2", "RECIPIENT_AUTHORED", "jordan example", "authored product design post", "professional posts", "MISS", None, None, False),
+        intent("authored-2", "RECIPIENT_AUTHORED", "jordan example", "authored operations post", "professional posts", "MISS", None, None, False),
         intent("speaking-1", "RECIPIENT_SPEAKING", "jordan example", "operating model talk or interview", "events and podcasts", "MISS", None, None, False),
         intent("employer-attribution-1", "EMPLOYER_PERSON_ATTRIBUTION", "jordan example", "employer attributed statement", "employer newsroom", "MISS", None, None, False),
         intent("company-mandate", "COMPANY_MANDATE", "example company", "dated operating model mandate", "employer insights", "HIT", artifact, content_hash, True),
-        intent("jd-context", "JD_CONTEXT", "director product design role", "exact role objective", "job description", "HIT", "https://careers.example.com/jobs/director-product-design", "sha256:1212121212121212121212121212121212121212121212121212121212121212", False),
+        intent("jd-context", "JD_CONTEXT", "director example operations role", "exact role objective", "job description", "HIT", "https://careers.example.com/jobs/director-example-operations", "sha256:1212121212121212121212121212121212121212121212121212121212121212", False),
         intent("refute-company", "ATTRIBUTION_REFUTATION", "example company", "refute mandate freshness and attribution", "exact artifact readback", "HIT", artifact, content_hash, False)
     ]}
     return rebind_review(dossier, validator)

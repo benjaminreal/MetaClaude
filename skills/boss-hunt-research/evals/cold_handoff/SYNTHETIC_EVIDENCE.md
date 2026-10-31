@@ -4,7 +4,7 @@ All identities, domains, hashes, and events are fictional. This pack permits off
 
 ## Local authority and lifecycle
 
-- Target: `J-000123`, Example Company, Director of Product Design, Mexico, live requisition.
+- Target: `J-SYN123`, Example Company, Director of Example Operations, Exampleland, live requisition.
 - Owner scope: read-only route research; no drafting or external actions.
 - Synthetic role record observed 2026-08-21 09:00 -06:00 states the role reports to VP Product.
 - Company-wide synthetic history observed 09:05 records: no confidential/agency no-bypass restriction; no terminal outreach; owner has not closed the route; no company collision; no prior recipient disconfirmation.
@@ -19,7 +19,7 @@ All identities, domains, hashes, and events are fictional. This pack permits off
 
 ## Organization and role evidence
 
-- Synthetic employer role page: `https://careers.example.com/jobs/director-product-design`; exact role and reporting statement supported.
+- Synthetic employer role page: `https://careers.example.com/jobs/director-example-operations`; exact role and reporting statement supported.
 - Synthetic employer team page: `https://example.com/team/jordan`; Jordan Example is listed as VP Product at Example Company and `jordan@example.com` is published as a professional address.
 - Synthetic alternative search: no Chief Product Officer or stronger alternate route found.
 - Synthetic job-poster/recruiter search: no explicit job-poster found.

@@ -3,14 +3,14 @@
   "run_id": "run-invalid",
   "researcher_id": "same-agent",
   "role": {
-    "target_id": "J-000999",
+    "target_id": "J-SYN999",
     "intake_mode": "LIVE_REQUISITION",
     "company": "Example Company",
-    "role_title": "Director of Product Design",
-    "job_url": "https://careers.example.com/jobs/director-product-design",
-    "jd_source": "JobPostings/postings/example.md",
+    "role_title": "Director of Example Operations",
+    "job_url": "https://careers.example.com/jobs/director-example-operations",
+    "jd_source": "synthetic/postings/example.md",
     "posting_status": "OPEN",
-    "geography": "Mexico",
+    "geography": "Exampleland",
     "explicit_boss_titles": ["VP Product"]
   },
   "guards": {

@@ -17,7 +17,7 @@ are recorded independently rather than assumed hash-identical.
 
 This skill produces an evidence-backed candidate-route dossier without forcing a hiring-manager name. The canonical input is `BossHuntTargetV2`; the current output is `BossHuntResearchDossierV3`. The preserved V2 schema and frozen pilot remain history and are never silently reinterpreted.
 
-The planner and validator are offline. They do not fetch pages, open authenticated sessions, call Hunter, verify an inbox, establish source truth, draft outreach, authorize contact, send messages, install the skill, or mutate Job Hunting, Tasks, LinkedIn, Gmail, or Hunter state.
+The planner and validator are offline. They do not fetch pages, open authenticated sessions, call Hunter, verify an inbox, establish source truth, draft outreach, authorize contact, send messages, install the skill, or mutate a job tracker, Tasks, LinkedIn, Gmail, or Hunter state.
 
 ## Key files
 
