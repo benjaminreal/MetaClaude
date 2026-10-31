@@ -1,4 +1,4 @@
-# Recovery and persistence contract (newbeginning 2.2.2 / closingtime 3.2.2)
+# Recovery and persistence contract (newbeginning 2.3.0 / closingtime 3.3.0)
 
 All helpers require Python 3 and shell access; the runtime uses only the standard
 library. Continuity files remain v1-readable. Hashes check consistency, not
@@ -61,7 +61,10 @@ foreign bytes to truncate.
 ## Commands and approvals
 
 `new-envelope ROOT` derives package identity/version, captures a fresh snapshot
-and leaves services `unprobed`; replace them with observed four-state results.
+and leaves services `unprobed`. Before any probe, record Open Brain `not_used`
+when learning is skipped or the owner forbids Open Brain; do not probe, search
+or capture. This is a recorded choice, not a capability state. Otherwise replace
+unprobed with observed four-state results.
 `validate ENVELOPE` must pass before an authoritative brief. Snapshot `captured_at`
 (fallback `observed_at` for legacy shapes) must be no older than six hours and no
 more than 120 seconds ahead of wall clock. Freeze, approve, append and ordinary
@@ -72,9 +75,9 @@ opening. Every approved local target is resolved and its aliases/preimage checke
 at freeze and again before append's first byte. The result binds snapshot, entry,
 index draft, exact operations, preimages and canonical `scope_lines`/`scope_sha256`.
 Journal metadata is part of the local approval scope. Show those exact lines.
-`approve-draft RECEIPT SCOPE --owner-reply TEXT` requires exact scope equality.
+`approve-draft RECEIPT SCOPE --owner-reply TEXT` requires exact scope equality and non-empty trimmed owner words.
 An exclusion means revise, freeze and present again; the exclusion reply is not
-approval. Each invocation gets one approved draft (`EINVOCATIONUSED` for another
+approval. One approval covers one envelope chain; each later chain in the same conversation needs a new envelope and approval. Each invocation gets one approved draft (`EINVOCATIONUSED` for another
 approval or a different receipt). Discard superseded unapproved proposals: the
 helper cannot know which pre-approval freeze was revoked in conversation.
 
@@ -82,13 +85,14 @@ helper cannot know which pre-approval freeze was revoked in conversation.
 --expect SHA256|absent [--mirror-rows ROWS] --owner-reply TEXT` requires explicit
 preconditions; absent and empty differ. The allowlist is independent of snapshot
 labels: `project_index.md`, `Project_Index.md`, `project.md`, `index.md`,
-`pending_learnings.md`, `project_decisions_archive.md`. The session log and journal
-are never writer targets. Newbeginning further restricts writes to index replacement.
+`pending_learnings.md`, `project_decisions_archive.md`. The session log is never a writer target. Closingtime additionally permits replacement of the fixed `private-artifacts/session-journal/_policy.json`, bound by exact payload hash; all other journal targets remain forbidden. Newbeginning further restricts writes to index replacement.
 Snapshot aliases: session `project_session.md`, `Project_Session.md`,
 `session_log.md`, `sessions.md`; pending `pending_learnings.md`, `Pending_Learnings.md`.
 An existing noncanonical pending alias must be reconciled separately before a
 canonical pending write. Alternate histories/target aliases stop persistence.
 An ordinary website's lone `index.md` is an index alias: confirm project scope.
+
+Write/read back any decisions archive first in its own approved chain. Only then may a close index draft drop that decision.
 
 Close order: append → approved Tasks operations and fresh read → one index write.
 An index child cannot write until its parent append verifies. The index payload is frozen; only its Active TODOs body may be regenerated using
@@ -126,7 +130,7 @@ If the index changed, do not reuse its old preimage:
 1. Observe a fresh envelope, containing only the remaining index replacement.
 2. Run `freeze-draft ENVELOPE --index-draft INDEX --continue
    private-artifacts/session-journal/<parent>.done`.
-3. Present the new draft and `scope_lines`, obtain owner approval, approve it,
+3. Present the new draft and `scope_lines`, obtain owner approval, run `approve-draft RECEIPT SCOPE --owner-reply "<owner words>"`,
    then `write-approved ... --expect <current-sha256>`.
 
 `EUNFINISHED` permits this continuation, not a duplicate append or unrelated write.
@@ -149,7 +153,7 @@ inside its approval/write chain. Bound interrupted recovery remains exempt.
 One parser feeds snapshot, validation, append and audit. Writers emit `---`, a
 blank line, then `### Session #N | YYYY-MM-DD | Mode (Tool)`. The legacy first
 entry may follow `# Session Log` directly and is counted. Numbers/dates use ASCII
-digits. Duplicate numbers, malformed headers and impossible dates refuse
+digits. Strict duplicate numbers, malformed headers and impossible dates refuse
 `EHISTORY`; non-monotonic numbers warn `session_non_monotonic` in the brief.
 Entries need populated Focus, Done, Next, Blockers; Decisions is optional.
 `Session #[N]` is substituted; embedded headers/separators are refused.
@@ -192,7 +196,7 @@ and OneDrive host-suffix names remain undetected. Unrelated numbered files and
 | EREADBACK | conditional rollback verified; inspect retained intent via resume |
 | EPARTIAL_APPEND / EPARTIAL_WRITE / ERECOVERY | preserve evidence; resume; ambiguous bytes require reconciliation |
 | ENTRY_DATE_SKEW | warning; show actual date discrepancy |
-| ENOJOURNAL / ENOPOLICY / EBADPOLICY / EUNMATCHED_EXCEPTION | audit historical coverage/configuration; do not fabricate receipts |
+| ENOJOURNAL / EBADPOLICY / EUNMATCHED_EXCEPTION | audit historical coverage/configuration; do not fabricate receipts |
 | BAD_STATUS / MISSING_RECEIPT / STALE_RECEIPT / FUTURE_RECEIPT / CONTRADICTORY / FOREIGN_ROWS / FINGERPRINT_MISMATCH | no authoritative external claim; correct evidence once |
 | BAD_SESSION_NUMBER / UNRECOGNIZED_SCHEMA / MISSING_LOCAL_CAP / MISSING_EXTERNAL_CAP / LOCAL_CAP_NOT_BOOL / EXTERNAL_CAP_NOT_FOUR_STATE | correct schema and observed capability fields |
 | git unavailable/corrupt | name read-only degraded state; unborn branch is normal |
@@ -208,3 +212,13 @@ At most one file argument can be `-` per CLI call; scope and owner reply are lit
 arguments. `verify-sync CANONICAL TARGET...` compares package trees excluding
 `__pycache__` and `.DS_Store`. Run `python3 evals/structural_eval.py` from a package.
 Without Python/shell, output unverified drafts only; no manual persistence fallback.
+
+Plain legacy duplicate numbers produce non-blocking `legacy_duplicate_number` warnings; allocation uses the maximum plus one. Supplements share a base number without warning. Strict duplicate numbers still refuse.
+
+Opening `resume` is read-only for closing operations: no lock, directory, child, rename or stage write. Run closingtime `resume ROOT` to finish them. Exception: newbeginning may finish its own approved unfinished index write. With no journal, resume in either package creates nothing.
+
+## Adopting historical entries (closingtime)
+
+Run `adopt-history ROOT` after all unfinished operations are resolved. It reads only and returns exact policy_text, policy_sha256, preimage and a proposed scope line. Save those exact policy bytes. Create a fresh closingtime envelope with M2 replace `private-artifacts/session-journal/_policy.json` and bind policy_sha256 at that path in local_payload_hashes. Freeze, show the policy and frozen scope_lines, then run `approve-draft RECEIPT SCOPE --owner-reply "<exact owner words>"`. Write the saved bytes with `write-approved ENV RECEIPT private-artifacts/session-journal/_policy.json POLICY --expect <preimage>`. Audit again. No policy grants no exemptions; legacy ceilings and documented exceptions retain their meaning.
+
+Version-2 policies add hash-bound historical_entries and superseded_records. Matching historical entries do not make a close partial, but are never called journaled. Editing one again exposes it as unjournaled. Superseded orphan records remain on disk and are listed separately. Finished append edits/removals report edited_after_close/missing_after_close during resume without blocking other operations. Pending records still require strict byte classification.

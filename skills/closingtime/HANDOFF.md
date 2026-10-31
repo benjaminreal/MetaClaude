@@ -1,4 +1,4 @@
-# closingtime 3.2.2 — candidate
+# closingtime 3.3.0 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -18,14 +18,14 @@ start. It captures start/captured_at and derives this package's name/version. La
 independent helper chains use new-envelope; never copy earlier start times.
 Capture more than fifteen minutes after start refuses ESTALEEVIDENCE. Word
 counts use count-words on exact final text sent, after the last edit.
-Discover services and replace both `unprobed` states before validation. Read
+Before probing, honor owner choices: learning skipped or Open Brain forbidden means open_brain `not_used`, with no probe, search or capture. Otherwise discover services and replace `unprobed` with observed states before validation. Read
 `references/envelope_examples.md` for complete JSON recipes and
 `references/recovery.md` for exact command syntax, state tables, stdin support,
 errors and historical migration. At most one file argument per call may be
 `-`; do not assume every literal argument supports stdin.
 
 All project writes need the displayed approval scope. Freeze returns canonical
-scope_lines, approve compares that exact text and records owner_reply
+scope_lines, approve compares that exact text and requires non-empty owner_reply
 separately. An exclusion requires a revised freeze; the exclusion reply is not
 approval, so show the new scope_lines and wait. Hashes are consistency
 checks, not proof of conversation authority, provenance or authenticity.
@@ -65,14 +65,14 @@ Close order: observe → draft entry/index/operations → freeze → show exact 
 transition with mirror_receipt/--mirror-rows → verify/audit → learnings.
 Index content is bound before approval; only Active TODOs is regenerated from
 fresh receipt rows. Archive overflow names project_decisions_archive.md in M2
-and binds its exact payload in local_payload_hashes. Pending edits/dispositions
-use --expect current SHA-256 and non-empty --owner-reply; stage uses the close's
+and binds its exact payload in local_payload_hashes. Write/read back the archive first in its own chain, before a later close index draft drops that decision. Pending edits/dispositions
+bind exact replacement hashes (delete: absent) before a new freeze/approval for each revision, with --expect current SHA-256 and non-empty --owner-reply; stage uses the close's
 recorded owner words. Pending approval expires
 after six hours. Only started stage writes become child obligations; an unused
 optional permission never holds the close open. A failed stage resumes/abandons
 independently and never unjournals the verified append.
 
-Search candidate connections (or name unavailability), then append only new
+Unless not_used, search candidate connections (or name unavailability), then append only new
 blocks with write-approved --operation stage --expect current-sha256|absent.
 Preserve the existing bytes; stage once after verified parent append. Read back
 pending_learnings.md before presenting candidates. Keep needs no write; show
@@ -86,7 +86,7 @@ search. Search sends candidate text to the service.
 Append writes a durable intent before any log bytes. On error use resume ROOT
 and audit, not another logical close. Unfinished children block fresh freezes except a remaining-target continuation.
 Resume inspects actual bytes even for final records and needs no scratch file;
-it never retries external calls. Fresh retries need preconditions and approval.
+it never retries external calls. Opening resume only inspects closing operations; closingtime finishes them. No journal means no new files. Finished edits/removals report edited_after_close/missing_after_close and do not stop other operations. Use adopt-history for a read-only exact policy proposal, bind its hash, freeze/approve/write with --expect, then audit; adopted and superseded records remain separate from journaled entries. Fresh retries need preconditions and approval.
 The append finalizes at readback; its index is a child intent. For remaining_stale,
 freeze-draft --continue <parent-intent> with only the index, approve new scope,
 then write-approved; alternatively abandon only the unfinished child. Verified
@@ -100,10 +100,10 @@ unless SKIP-ritual. Learning may proceed once attempted local writes read back a
 operation is verified or recorded pending. A blocked close omits the "Session closed" ritual. Status lines must describe actual
 verified, partial, skipped or pending state; evidence then ritual line last.
 
-Use the whole folder; runtime and references are bundled independently of its
+Install by copying the whole folder; Releases hold earlier versions. Repository review links may be missing from standalone copies. Use the whole folder; runtime and references are bundled independently of its
 sibling. The original receipt survives a bound interrupted operation returned by resume;
 otherwise re-observe and freeze a current receipt. New evidence expires after
-six hours, with at most 120 seconds future skew. One draft approval per invocation;
+six hours, with at most 120 seconds future skew. One approval per envelope chain; each later chain in the conversation requires a new envelope and approval;
 discard superseded proposals before approval (conversation duty).
 For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
 the repository Phase 4 eligibility note and the Phase 4.5 implementation report.

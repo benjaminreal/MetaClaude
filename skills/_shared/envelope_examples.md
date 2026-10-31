@@ -1,18 +1,20 @@
-# Standalone envelope recipes (2.2.2 / 3.2.2)
+# Standalone envelope recipes (2.3.0 / 3.3.0)
 
 Use `python3 scripts/runtime_cli.py new-envelope ROOT` from this package first.
 It derives skill/version and a helper-stamped start from the snapshot. The
 skeleton deliberately fails validation while either external state is
-`unprobed`; discover services, record the observed four-state result, then
-validate. Examples below are synthetic shapes, not evidence to copy into a
+`unprobed`. Before probing, record Open Brain `not_used` for skipped learning
+or an owner instruction not to use it. This choice forbids probes, searches and
+capture; supply no Open Brain rows or receipt. Otherwise discover services,
+record observed four-state results, then validate. Examples below are synthetic shapes, not evidence to copy into a
 live invocation. Replace the entire local snapshot with constructor output.
 
 Routine unavailable opening: set both services to their observed non-working
-states; retain empty scope and approval false. Current opening: set intended
+states (or Open Brain `not_used` when chosen); retain empty scope and approval false. Current opening: set intended
 `project`, observed working state, matching receipt identity and actual rows.
 Closing draft: add M2 paths and exact M3 operations; validate before scope is
 added, then freeze. A draft with unapproved scope correctly fails only
-SCOPE_UNAPPROVED. Closing approved: run approve-draft with exact scope_lines,
+SCOPE_UNAPPROVED. Closing approved: run `approve-draft RECEIPT SCOPE --owner-reply "<owner words>"` with exact scope_lines,
 copy that string into approval, retain the original snapshot and validate.
 For index-only opening omit entry and pass `--index-draft INDEX`. Opening has no
 task creation or pending/capture mutation scope. A close may include
@@ -129,7 +131,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.2.2",
+  "skill_version": "2.3.0",
   "returned_rows_by_capability": {}
 }
 ```
@@ -221,7 +223,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.2.2",
+  "skill_version": "2.3.0",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -332,7 +334,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.2.2",
+  "skill_version": "3.3.0",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -437,13 +439,13 @@ is allowed in both directions. Never type live start/approval timestamps.
   },
   "approval": {
     "granted": true,
-    "scope_string": "M2 append project_session.md (+ journal receipt under private-artifacts/session-journal/)"
+    "scope_string": "M2 append project_session.md (Session #39) (+ journal receipt under private-artifacts/session-journal/)"
   },
   "source_hashes_used_for_draft": {
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.2.2",
+  "skill_version": "3.3.0",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -479,5 +481,4 @@ actual result. After Tasks mutations attach a freshly validated current
 `mirror_receipt` to the approved envelope, preserving the frozen snapshot, and
 pass its actual rows via write-approved --mirror-rows. The original receipt
 remains observation evidence. Archive payloads require local_payload_hashes
-with their exact SHA-256 before freeze; pending revisions carry payload hashes
-in individual durable transition intents and record owner_reply per revision.
+with their exact SHA-256 before freeze. Pending replacements also bind their exact payload SHA-256 in local_payload_hashes before freeze; deletes bind `absent`. Each revision uses a new freeze and approval with non-empty owner words.

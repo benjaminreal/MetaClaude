@@ -55,7 +55,7 @@ def _parser() -> argparse.ArgumentParser:
     fingerprint.add_argument("text_file")
     skip = commands.add_parser("skip-plan")
     skip.add_argument("names")
-    resume = commands.add_parser("resume")
+    resume = commands.add_parser("resume", help="inspect recovery; closingtime finishes closing operations, opening only its own approved index")
     resume.add_argument("workspace_root")
     resume.add_argument("approved_draft_json", nargs="?")
     resume.add_argument("--abandon")
@@ -80,7 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     freeze.add_argument("--index-draft")
     freeze.add_argument("--continue", dest="continue_parent")
 
-    approve = commands.add_parser("approve-draft", help="stamp approval on a frozen draft (after explicit approval)")
+    approve = commands.add_parser("approve-draft", help="stamp approval after explicit approval; non-empty --owner-reply required")
     approve.add_argument("draft_receipt_json")
     approve.add_argument("scope_string")
     approve.add_argument("--owner-reply", default="")
@@ -92,6 +92,9 @@ def _parser() -> argparse.ArgumentParser:
 
     audit = commands.add_parser("audit", help="audit session entries against the journal")
     audit.add_argument("workspace_root")
+
+    adopt = commands.add_parser("adopt-history", help="closingtime: propose a hash-bound historical policy without writing")
+    adopt.add_argument("workspace_root")
 
     sync = commands.add_parser("verify-sync", help="compare canonical and target trees")
     sync.add_argument("canonical_dir")
@@ -145,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
             envelope = _json_file(args.envelope_json)
             entry = _text_file(args.entry_markdown)
             result = helpers.append_session_entry(envelope, entry, _json_file(args.approved_draft_json))
+        elif args.command == "adopt-history":
+            result = helpers.adopt_history(args.workspace_root)
         elif args.command == "audit":
             result = helpers.audit_session_log(args.workspace_root)
         elif args.command == "verify-sync":

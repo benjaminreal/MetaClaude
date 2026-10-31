@@ -38,6 +38,7 @@ PROJECTION_BYTE_CAP = 16_384
 SESSION_ENTRY_WORD_CAP = 300
 LOCK_STALE_SECONDS = 10 * 60
 GRANDFATHER_POLICY = "_policy.json"
+POLICY_PATH = "private-artifacts/session-journal/_policy.json"
 
 INDEX_NAMES = ("project_index.md", "Project_Index.md", "project.md", "index.md")
 SESSION_NAMES = (
@@ -159,10 +160,15 @@ def _read_text(root: Path, path: Path | None) -> str:
 
 def _last_session_entries(text: str, count: int = 2) -> tuple[str, int]:
     entries, _ = S.parse_history(text)
-    legacy = S.legacy_session_numbers(text)
-    if not entries:
-        return "", max(legacy, default=0)
-    return text[entries[-count:][0]["header_start"]:].strip(), max([e["session_number"] for e in entries] + legacy)
+    legacy = [(m.start(), S.legacy_session_number(m.group()))
+              for m in re.finditer(r"(?m)^#{2,6}[ \t]+[^\n]*", text)
+              if S.legacy_session_number(m.group()) is not None]
+    selected = [e["header_start"] for e in entries[-count:]]
+    if len(selected) < count:
+        first = entries[0]["header_start"] if entries else len(text)
+        selected = [pos for pos, _ in legacy if pos < first][-(count - len(selected)):] + selected
+    latest = max([e["session_number"] for e in entries] + [n for _, n in legacy], default=0)
+    return (text[min(selected):].strip() if selected else ""), latest
 
 
 def _contained(root: Path, path: Path) -> Path:
@@ -418,6 +424,7 @@ def capture_local_snapshot(workspace_root: str | os.PathLike[str], entries: int 
         },
         "pending_learnings": {**file_observation(pending_path, _read_text(root, pending_path)), "alternates": pending_alts},
         "decisions_archive": {**file_observation(archive_path, _read_text(root, archive_path)), "alternates": archive_alts},
+        "audit_policy": {"path": POLICY_PATH, "present": (journal / GRANDFATHER_POLICY).is_file(), "sha256": _file_state(journal / GRANDFATHER_POLICY)["sha256"]},
         "unfinished_operations": unfinished,
         "subprojects": sorted(p.name for p in root.iterdir() if p.is_dir() and not p.is_symlink() and any((p / name).is_file() for name in INDEX_NAMES + SESSION_NAMES))[:20],
         "git": git,
@@ -637,6 +644,11 @@ def render_task_mirror(rows: list[dict], local_date: str) -> str:
     for row in rows:
         if not row.get("id") or not row.get("title"):
             raise HelperError("EBADROWS", "each row needs id and title")
+        for field in ("id", "due", "review_on", "priority"):
+            if re.search(r"[\x00-\x1f\x7f]", str(row.get(field, ""))):
+                raise HelperError("EBADROWS", "control character in task field: " + field)
+        if re.search(r"[\x00-\x08\x0e-\x1f\x7f]", str(row["title"])):
+            raise HelperError("EBADROWS", "control character in task title")
         priority = row.get("priority")
         label = f"P{priority}" if isinstance(priority, int) else "P-"
         details = [f"id: `{row['id']}`"]
@@ -785,8 +797,10 @@ def _scope_operations(envelope: dict, legacy: bool = False) -> list[dict]:
     return sorted(result, key=lambda v: _canonical_json(v))
 
 
-def _scope_text(operations: list[dict], legacy: bool = False) -> str:
+def _scope_text(operations: list[dict], legacy: bool = False, session_number: int | None = None, historical_count: int | None = None) -> str:
     return "\n".join(op["class"] + " " + op["operation"] + (" " + op["path"] if "path" in op else "") +
+                     (f" (adopt {historical_count} historical entries)" if historical_count is not None and op.get("path") == POLICY_PATH else "") +
+                     (f" (Session #{session_number})" if session_number is not None and op["operation"] == "append" else "") +
                      (" (optional; new candidate blocks only)" if op["operation"] == "stage" else "") +
                      (" (+ journal receipt under private-artifacts/session-journal/)" if op["class"] == "M2" and (not legacy or op["operation"] == "append") else "") for op in operations)
 
@@ -794,7 +808,7 @@ def _scope_text(operations: list[dict], legacy: bool = False) -> str:
 def _observed_targets(envelope: dict) -> dict:
     snap = envelope["local_snapshot"]
     return {field: ((snap.get(field) or {}).get("path") or names[0]) for field, names in
-            (("index", INDEX_NAMES), ("pending_learnings", PENDING_NAMES), ("decisions_archive", ARCHIVE_NAMES))}
+            (("index", INDEX_NAMES), ("pending_learnings", PENDING_NAMES), ("decisions_archive", ARCHIVE_NAMES), ("audit_policy", (POLICY_PATH,)))}
 
 
 def _unfinished(root: Path) -> list[str]:
@@ -846,6 +860,15 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
     if any(op.get("path") == archive and op["operation"] == "replace" for op in operations):
         if not re.fullmatch(r"sha256:[a-f0-9]{64}", (envelope.get("local_payload_hashes") or {}).get(archive, "")):
             raise HelperError("EDRAFTMISMATCH", "archive scope requires local_payload_hashes binding")
+    pending = targets["pending_learnings"]
+    for op in operations:
+        if op.get("path") == pending and op["operation"] in {"replace", "delete"}:
+            binding = (envelope.get("local_payload_hashes") or {}).get(pending, "")
+            if not (binding == "absent" if op["operation"] == "delete" else re.fullmatch(r"sha256:[a-f0-9]{64}", binding)):
+                raise HelperError("EDRAFTMISMATCH", "pending replacement/delete requires local_payload_hashes binding")
+    if any(op.get("path") == POLICY_PATH for op in operations):
+        if any(op.get("path") == POLICY_PATH and op["operation"] != "replace" for op in operations) or not re.fullmatch(r"sha256:[a-f0-9]{64}", (envelope.get("local_payload_hashes") or {}).get(POLICY_PATH, "")):
+            raise HelperError("EDRAFTMISMATCH", "policy replacement requires exact payload hash")
     if entry_text is not None:
         _render_entry(entry_text, (envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1)
     elif any(op["operation"] == "append" for op in operations):
@@ -854,6 +877,7 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
     for field, name in targets.items():
         obs = envelope["local_snapshot"].get(field) or {}
         preimages[name] = obs.get("sha256") if obs.get("present") else "absent"
+    historical_count = len(audit_session_log(root)["unjournaled"]) if any(op.get("path") == POLICY_PATH for op in operations) else None
     receipt = {
         "schema_version": S.SCHEMA_VERSION, "kind": DRAFT_RECEIPT_KIND, "recovery_version": 2,
         "invocation_id": envelope.get("invocation_id"), "skill": envelope.get("skill"), "workspace_root": str(root),
@@ -869,7 +893,8 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
         "index_draft": index_text,
         "m2_preimages": preimages, "scope_operations": operations,
         "local_payload_hashes": envelope.get("local_payload_hashes") or {},
-        "scope_lines": _scope_text(operations), "scope_sha256": _sha256_text(_scope_text(operations)),
+        "scope_lines": _scope_text(operations, session_number=(envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1, historical_count=historical_count),
+        "scope_sha256": _sha256_text(_scope_text(operations, session_number=(envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1, historical_count=historical_count)),
         "drafted_at": _utc_now(), "approved_at": None, "scope_string": None, "owner_reply": None,
     }
     receipt["receipt_sha256"] = _receipt_digest(receipt)
@@ -885,6 +910,8 @@ def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> di
         raise HelperError("EINVOCATIONUSED", "invocation already approved")
     if not scope_string or scope_string != receipt.get("scope_lines"):
         raise HelperError(S.SCOPE_UNAPPROVED, "approval must equal exact rendered scope; exclusions require a new freeze")
+    if not isinstance(owner_reply, str) or not owner_reply.strip():
+        raise HelperError(S.SCOPE_UNAPPROVED, "approval requires non-empty owner words")
     package = _package_skill()
     if package and (receipt.get("skill") != package or package == "newbeginning" and any(op.get("path") not in INDEX_NAMES or op.get("operation") != "replace" for op in receipt.get("scope_operations", []))):
         raise HelperError("ESKILL", "draft is outside this package scope")
@@ -911,7 +938,9 @@ def _check_approved_draft(envelope: dict, entry_text: str | None, receipt: dict 
     if receipt.get("receipt_sha256") != _receipt_digest(receipt) or not receipt.get("approved_at"):
         raise HelperError("EDRAFTRECEIPT", "modified or unapproved draft receipt")
     legacy = "snapshot_captured_at" not in receipt
-    scope = _scope_text(_scope_operations(envelope, legacy=legacy), legacy=legacy)
+    scope = _scope_text(_scope_operations(envelope, legacy=legacy), legacy=legacy,
+                        session_number=((envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1) if re.search(r" \(Session #[0-9]+\)", receipt.get("scope_lines", "")) else None,
+                        historical_count=int(re.search(r"\(adopt ([0-9]+) historical entries\)", receipt["scope_lines"])[1]) if re.search(r"\(adopt ([0-9]+) historical entries\)", receipt.get("scope_lines", "")) else None)
     snapshot_matches = receipt.get("snapshot_sha256") == _snapshot_digest(envelope.get("local_snapshot"))
     if legacy:
         snapshot_matches |= receipt.get("snapshot_sha256") == _sha256_bytes(_canonical_json(envelope.get("local_snapshot")))
@@ -1044,6 +1073,13 @@ def _append_classification(record: dict, final: bool = False, root: Path | None 
     if len(appended) != record["append_length"] or _sha256_bytes(appended) != record["append_sha256"]:
         raise HelperError("ERECOVERY", "intent append hash/length mismatch")
     prefix_ok = (not pre["exists"] and pre["length"] == 0) or _sha256_bytes(data[:pre["length"]]) == pre["sha256"]
+    if final:
+        # Finished receipts bind their own entry, independent of later edits to
+        # earlier entries. Pending appends still require the full byte prefix.
+        entries = _parse_session_entries(data.decode("utf-8"))
+        matches = [e for e in entries if e["session_number"] == record["session_number"]]
+        if len(matches) == 1 and matches[0]["entry_sha256"] == record["entry_sha256"]:
+            return "appended"
     if prefix_ok and data[pre["length"]:expected_length] == appended and (len(data) == expected_length or (final and len(data) > expected_length)):
         return "appended"
     return "partial_or_conflicted"
@@ -1116,7 +1152,7 @@ def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict |
             records = _load_intents(root)
             for path, record in records:
                 if record["kind"] == "append_intent" and record["draft_receipt_sha256"] == approved_draft["receipt_sha256"] and path.suffix != ".abandoned":
-                    state = _append_classification(record, final=path.suffix != ".pending", root=root)
+                    state = _resume_append_state(root, path, record)
                     if state == "appended":
                         if path.suffix == ".pending":
                             path = _move_record(path, ".done")
@@ -1188,6 +1224,13 @@ def _writer_target(root: Path, envelope: dict, relative_path: str) -> tuple[Path
         raise HelperError("ESKILL", "opening only writes the approved index")
     if Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
         raise HelperError("EPERM", "relative contained target required")
+    if relative_path == POLICY_PATH:
+        if envelope.get("skill") != "closingtime":
+            raise HelperError("ESKILL", "only closingtime writes audit policy")
+        target = _contained(root, root / POLICY_PATH)
+        if target.exists() and not target.is_file():
+            raise HelperError("EPERM", "policy target is not a file")
+        return target, "audit_policy"
     groups = {"index": INDEX_NAMES, "pending_learnings": ("pending_learnings.md",), "decisions_archive": ARCHIVE_NAMES}
     field = next((key for key, names in groups.items() if relative_path in names), None)
     if field is None:
@@ -1294,10 +1337,14 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                 stage_parent = _stage_parent(root, receipt["receipt_sha256"], records)
                 if any(r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["operation"] == "stage" for p, r in records):
                     raise HelperError("ESTAGE", "one staging transition per close; resume or abandon its child")
-            previous = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["relative_path"] == relative_path and p.suffix != ".abandoned"]
+            previous = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["relative_path"] == relative_path]
             if any(p.suffix == ".pending" and r["kind"] != "remaining_intent" for p, r in records):
                 raise HelperError("EUNFINISHED", "resume pending intent before writing")
+            if previous and operation != "stage":
+                raise HelperError("EDRAFTMISMATCH", "one transition per path per approved draft")
             if field == "pending_learnings":
+                if operation != "stage" and receipt.get("local_payload_hashes", {}).get(relative_path) != (_sha256_text(content) if operation == "replace" else "absent"):
+                    raise HelperError("EDRAFTMISMATCH", "pending payload differs from approved hash")
                 if operation != "stage" and not owner_reply.strip():
                     raise HelperError(S.SCOPE_UNAPPROVED, "every pending revision needs --owner-reply")
                 if dt.datetime.now(dt.timezone.utc) - _parse_utc(receipt["approved_at"]) > dt.timedelta(hours=6):
@@ -1328,7 +1375,7 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                     content = _replace_mirror(content, mirror_rows, envelope["local_snapshot"]["local_date"])
             elif mirror_rows is not None:
                 raise HelperError("EINPUT", "mirror rows are index-only")
-            if field == "decisions_archive" and operation == "replace" and receipt["local_payload_hashes"].get(relative_path) != _sha256_text(content):
+            if field in {"decisions_archive", "audit_policy"} and operation == "replace" and receipt["local_payload_hashes"].get(relative_path) != _sha256_text(content):
                 raise HelperError("EDRAFTMISMATCH", "archive payload differs from approved hash")
             if operation != "stage" and not previous and expect != receipt["m2_preimages"][relative_path]:
                 raise HelperError("ESOURCECHANGED", "first transition must use observed preimage")
@@ -1390,9 +1437,95 @@ def _recovery_inputs(root: Path, path: Path, record: dict) -> dict:
             "index_draft": record["approved_draft"].get("index_draft")}
 
 
+def _resume_append_state(root: Path, path: Path, record: dict) -> str:
+    state = _append_classification(record, final=path.suffix != ".pending", root=root)
+    if path.suffix == ".done" and state != "appended":
+        target = _record_target(root, record)
+        entries = _parse_session_entries(_read_text(root, target) if target.exists() else "")
+        return "edited_after_close" if any(e["session_number"] == record["session_number"] for e in entries) else "missing_after_close"
+    return state
+
+
+def _inspect_recovery(root: Path, records: list[tuple[Path, dict]], receipt: dict | None = None) -> dict:
+    """Opening's read-only view: no lock, record migration or child creation."""
+    results = []
+    for path, record in records:
+        if path.suffix == ".abandoned" or receipt and record["draft_receipt_sha256"] != receipt["receipt_sha256"]:
+            continue
+        if record["kind"] == "append_intent":
+            state = _resume_append_state(root, path, record)
+            remaining = _remaining_paths(root, record, records)
+            result = {"intent": str(path), "state": state, "session_number": record["session_number"], "remaining_paths": remaining}
+            if remaining and state == "appended":
+                child = next((p for p, r in records if r["kind"] == "remaining_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and p.suffix == ".pending"), path)
+                result["recovery_inputs"] = _recovery_inputs(root, child, record)
+        elif record["kind"] == "remaining_intent":
+            if path.suffix != ".pending" or any(r["kind"] == "write_intent" and r["draft_receipt_sha256"] == record["draft_receipt_sha256"] and r["relative_path"] == record["relative_path"] and p.suffix == ".done" for p, r in records):
+                continue
+            parent = next((r for p, r in records if p.with_suffix(".done") == _contained(root, root / record["parent_intent"]) and r["kind"] == "append_intent" and p.suffix != ".abandoned"), None)
+            if parent is None or _append_classification(parent, final=True, root=root) != "appended":
+                result = {"intent": str(path), "state": "waiting_for_append", "path": record["relative_path"]}
+            else:
+                actual = _file_state(_record_target(root, record))
+                result = {"intent": str(path), "state": "remaining" if actual["sha256"] == record["preimage"]["sha256"] else "remaining_stale", "path": record["relative_path"], "current_sha256": actual["sha256"], "recovery_inputs": _recovery_inputs(root, path, record)}
+        else:
+            actual = _file_state(_record_target(root, record))
+            newer = any(r["kind"] == "write_intent" and r["relative_path"] == record["relative_path"] and r["written_at"] > record["written_at"] and p.suffix != ".abandoned" for p, r in records)
+            state = "superseded" if newer else "applied" if actual == record["postimage"] else "not_applied" if actual == record["preimage"] and path.suffix == ".pending" else "partial_or_conflicted"
+            result = {"intent": str(path), "state": state, "path": record["relative_path"]}
+        results.append(result)
+    return {"state": "partial_or_conflicted" if any(r["state"] == "partial_or_conflicted" for r in results) else results[0]["state"] if len(results) == 1 else "inspected",
+            "operations": results, "unfinished_operations": _unfinished(root), "warnings": [],
+            "recovery_instruction": "Run closingtime resume ROOT to finish closing operations.",
+            "external_retry": "fresh preconditions and approval required", "freshness_exemption": "bound interrupted operation; no new approval authorized"}
+
+
+def _opening_resume(root: Path, receipt: dict | None, abandon: str | None, owner_reply: str) -> dict:
+    records = _load_intents(root)
+    own = lambda p, r: p.suffix == ".pending" and r["kind"] == "write_intent" and r["relative_path"] in INDEX_NAMES and r["approved_envelope"].get("skill") == "newbeginning"
+    if abandon and not any(str(p.relative_to(root)) == abandon and own(p, r) for p, r in records):
+        raise HelperError("ESKILL", "opening only recovers its own approved index; use closingtime resume")
+    warnings = []
+    if any(own(p, r) and (not receipt or r["draft_receipt_sha256"] == receipt["receipt_sha256"]) for p, r in records):
+        with _advisory_lock(root, "resume-opening-index") as recovered:
+            for path, record in _load_intents(root):
+                if not own(path, record) or receipt and record["draft_receipt_sha256"] != receipt["receipt_sha256"]:
+                    continue
+                if abandon:
+                    if str(path.relative_to(root)) != abandon:
+                        continue
+                    if not owner_reply.strip():
+                        raise HelperError(S.SCOPE_UNAPPROVED, "abandon needs recorded explicit owner approval")
+                    _move_record(path, ".abandoned")
+                    _atomic_record(path.with_name(path.name + ".abandon-note"), {"workspace_root": str(root), "intent": abandon, "owner_reply": owner_reply, "written_at": _utc_now()})
+                else:
+                    actual = _file_state(_record_target(root, record))
+                    if actual == record["postimage"]:
+                        _move_record(path, ".done")
+                    elif actual == record["preimage"]:
+                        _move_record(path, ".abandoned")
+            if recovered:
+                warnings.append("ELOCK_STALE_RECOVERED")
+    result = _inspect_recovery(root, _load_intents(root), receipt)
+    result["warnings"] = warnings
+    return result
+
+
 def resume_append(workspace_root: str | os.PathLike[str], receipt: dict | None = None,
                   abandon: str | None = None, owner_reply: str = "") -> dict:
     root = _resolve_root(workspace_root)
+    _check_conflicts(root)
+    journal = _contained(root, root / "private-artifacts/session-journal")
+    if receipt is not None:
+        _check_identity(root, receipt)
+        if receipt.get("receipt_sha256") != _receipt_digest(receipt) or not any(r["draft_receipt_sha256"] == receipt["receipt_sha256"] for p, r in _load_intents(root)):
+            raise HelperError("ERECOVERY", "modified receipt or no durable intent")
+    if _package_skill() == "newbeginning":
+        return _opening_resume(root, receipt, abandon, owner_reply)
+    if not journal.is_dir():
+        if abandon:
+            raise HelperError("ERECOVERY", "no unfinished child to abandon")
+        return {"state": "inspected", "operations": [], "unfinished_operations": [], "warnings": []}
     try:
         with _advisory_lock(root, "resume") as recovered:
             _check_conflicts(root)
@@ -1419,9 +1552,9 @@ def resume_append(workspace_root: str | os.PathLike[str], receipt: dict | None =
             for path, record in records:
                 if record["kind"] != "append_intent" or path.suffix == ".abandoned":
                     continue
-                state = _append_classification(record, final=path.suffix != ".pending", root=root)
-                if path.suffix != ".pending" and state != "appended":
-                    raise HelperError("ERECOVERY", "final entry missing or edited: " + str(path))
+                state = _resume_append_state(root, path, record)
+                if path.suffix == ".json" and state != "appended":
+                    raise HelperError("ERECOVERY", "legacy final entry missing or edited: " + str(path))
                 if state == "appended":
                     _create_children(root, path, record, records)
                     if path.suffix != ".done":
@@ -1445,7 +1578,7 @@ def resume_append(workspace_root: str | os.PathLike[str], receipt: dict | None =
                 if (path.suffix == ".abandoned" and path not in classified) or receipt and record["draft_receipt_sha256"] != receipt["receipt_sha256"]:
                     continue
                 if record["kind"] == "append_intent":
-                    state = classified.get(path) or _append_classification(record, final=path.suffix != ".pending", root=root)
+                    state = classified.get(path) or _resume_append_state(root, path, record)
                     remaining = _remaining_paths(root, record, records)
                     result = {"intent": str(path), "state": state, "session_number": record["session_number"], "remaining_paths": remaining}
                     if remaining and state == "appended":
@@ -1572,9 +1705,62 @@ def _read_audit_policy(
             if key in accepted:
                 raise ValueError("duplicate documented exception")
             accepted[key] = evidence_path
+        _adoption_fields(root, value)
         return ceiling, accepted, []
     except (OSError, json.JSONDecodeError, KeyError, ValueError, HelperError) as exc:
         return ceiling, {}, [f"EBADPOLICY:{exc}"]
+
+
+def _adoption_fields(root: Path, value: dict) -> tuple[set, set]:
+    historical, superseded = set(), set()
+    for key, fields, result in (("historical_entries", {"session_number", "entry_sha256"}, historical),
+                                 ("superseded_records", {"path", "session_number", "entry_sha256"}, superseded)):
+        items = value.get(key, [])
+        if not isinstance(items, list):
+            raise ValueError(key + " must be a list")
+        for item in items:
+            if not isinstance(item, dict) or set(item) != fields:
+                raise ValueError(key + " has invalid fields")
+            number, digest = item["session_number"], item["entry_sha256"]
+            if isinstance(number, bool) or not isinstance(number, int) or number < 1 or not isinstance(digest, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+                raise ValueError(key + " needs positive number and SHA-256")
+            identity = (number, digest)
+            if key == "superseded_records":
+                path = item["path"]
+                if not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts or Path(path).parent.as_posix() != "private-artifacts/session-journal" or Path(path).suffix not in {".json", ".done"}:
+                    raise ValueError("superseded path must be a relative journal record")
+                _contained(root, root / path)
+                identity = (path, number, digest)
+            if identity in result:
+                raise ValueError("duplicate " + key)
+            result.add(identity)
+    return historical, superseded
+
+
+def adopt_history(workspace_root: str | os.PathLike[str]) -> dict:
+    """Read-only proposal; the fixed writer still needs freeze, approval and CAS."""
+    if _package_skill() not in {None, "closingtime"}:
+        raise HelperError("ESKILL", "adopt-history belongs to closingtime")
+    root = _resolve_root(workspace_root)
+    _check_conflicts(root)
+    if _unfinished(root):
+        raise HelperError("EUNFINISHED", "finish or abandon interrupted operations before adoption")
+    audit = audit_session_log(root)
+    if any(error != "ENOJOURNAL" for error in audit["errors"]):
+        raise HelperError("EBADPOLICY", "reconcile audit errors before adoption")
+    target = _contained(root, root / POLICY_PATH)
+    value = json.loads(target.read_text()) if target.exists() else {"grandfather_session_ceiling": 0}
+    value["schema_version"] = "2.0"
+    historical, superseded = _adoption_fields(root, value)
+    entries = audit["unjournaled"]
+    historical.update((e["session_number"], e["entry_sha256"]) for e in entries)
+    numbers = {e["session_number"] for e in entries}
+    superseded.update((Path(r["path"]).relative_to(root).as_posix(), r["session_number"], r["entry_sha256"]) for r in audit["orphan_records"] if r.get("session_number") in numbers and r.get("entry_sha256"))
+    value["historical_entries"] = [{"session_number": n, "entry_sha256": h} for n, h in sorted(historical)]
+    value["superseded_records"] = [{"path": p, "session_number": n, "entry_sha256": h} for p, n, h in sorted(superseded)]
+    text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+    return {"policy_text": text, "policy_sha256": _sha256_text(text), "preimage": _file_state(target)["sha256"],
+            "scope_line": f"M2 replace {POLICY_PATH} (adopt {len(entries)} historical entries)"}
 
 
 def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
@@ -1590,13 +1776,16 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
             "entries": len(entries),
             "journaled": 0,
             "grandfathered": [],
-            "documented_unverified": [],
+            "documented_unverified": [], "historical": [], "superseded_records": [],
             "unjournaled": entries,
             "orphan_records": [],
             "errors": ["ENOJOURNAL"] + (["EHISTORY"] if any(w in S.HISTORY_ERRORS for w in S.parse_history(session_text)[1]) else []), "pending_records": [], "pending_journal": [], "foreign_files": [], "legacy_records": [],
         }
 
     ceiling, exceptions, errors = _read_audit_policy(root, journal_dir)
+    historical_keys, superseded_keys = set(), set()
+    if not errors and (journal_dir / GRANDFATHER_POLICY).exists():
+        historical_keys, superseded_keys = _adoption_fields(root, json.loads((journal_dir / GRANDFATHER_POLICY).read_text()))
     if any(w in S.HISTORY_ERRORS for w in S.parse_history(session_text)[1]):
         errors.append("EHISTORY")
     records: list[tuple[Path, dict]] = []
@@ -1629,6 +1818,8 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
     unmatched_records = set(range(len(records)))
     journaled = 0
     grandfathered: list[dict] = []
+    historical: list[dict] = []
+    superseded_records: list[dict] = []
     documented_unverified: list[dict] = []
     unjournaled: list[dict] = []
     for entry in entries:
@@ -1645,6 +1836,8 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
         if match_index is not None:
             unmatched_records.remove(match_index)
             journaled += 1
+        elif (entry["session_number"], entry["entry_sha256"]) in historical_keys:
+            historical.append(entry)
         elif entry["session_number"] <= ceiling:
             grandfathered.append(entry)
         elif (entry["session_number"], entry["entry_sha256"]) in exceptions:
@@ -1658,7 +1851,8 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
 
     for index in sorted(unmatched_records):
         path, record = records[index]
-        orphan_records.append(
+        destination = superseded_records if (path.relative_to(root).as_posix(), record["session_number"], record["entry_sha256"]) in superseded_keys else orphan_records
+        destination.append(
             {
                 "path": str(path),
                 "session_number": record["session_number"],
@@ -1690,7 +1884,7 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
         "entries": len(entries),
         "journaled": journaled,
         "grandfathered": grandfathered,
-        "documented_unverified": documented_unverified,
+        "documented_unverified": documented_unverified, "historical": historical, "superseded_records": superseded_records,
         "unjournaled": unjournaled,
         "orphan_records": orphan_records,
         "grandfather_session_ceiling": ceiling,

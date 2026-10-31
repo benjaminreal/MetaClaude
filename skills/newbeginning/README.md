@@ -8,11 +8,11 @@ When you start a new session and ask an LLM "where did we leave off?" in a multi
 
 **newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief capped at 250 words, from a bounded set of reads. You get the same situational awareness in seconds, with a clean context window ready for actual work.
 
-**Version:** 2.2.2 candidate
+**Version:** 2.3.0 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent
-transferability review (the round-2 review failed both skills). It is not
+transferability review (the round-3 review failed both skills). It is not
 certified for deployment. A public summary of the review status is in
 [`skills/_shared/validation/phase4_5/`](../_shared/validation/phase4_5/README.md).
 See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and recovery.
@@ -33,13 +33,7 @@ cp -r skills/newbeginning .claude/skills/newbeginning
 
 **Codex** — copy the folder to `~/.codex/skills/newbeginning` and invoke it as `$newbeginning`.
 
-**GitHub CLI** (v2.90.0+):
-
-```bash
-gh skill install benjaminreal/MetaClaude newbeginning --agent claude-code
-```
-
-**Cowork:** Import the `.skill` file from the [GitHub Releases](https://github.com/benjaminreal/MetaClaude/releases) page.
+Install this candidate by copying its whole folder. [GitHub Releases](https://github.com/benjaminreal/MetaClaude/releases) holds earlier versions, not this candidate. Review links point inside the repository and may be missing from standalone copies.
 
 > If this is the first skill you install and `~/.claude/skills/` didn't exist before, restart Claude Code so it picks up the new directory.
 
@@ -121,9 +115,20 @@ for session work or closingtime. New evidence expires after six hours (at most
 helper chains use a new envelope; capture over fifteen minutes after start is
 refused. Any reported count uses count-words on the final text after all edits. Portable journal
 identity permits remounts. Conflicts in non-continuity iCloud copies remain a
-limit; see `references/recovery.md` for the lock, aliases and recovery rules.
+limit. Opening resume only inspects closing operations; closingtime finishes them.
+Opening may finish its own approved unfinished index write. Resume without a
+journal creates nothing. Plain legacy duplicates warn without blocking; dated
+headings are prose, and the nearest legacy handoffs fill the opening projection.
+See `references/recovery.md` for the lock, aliases and recovery rules.
 
 ### 7. Version & Changelog
+
+**v2.3.0 candidate** — 2026-10-28
+- Round-4 repairs: legacy dates, duplicate warnings and handoffs; root binding;
+  exact pending payload/one-write approvals; required owner words; mirror controls;
+  opening recovery split; historical adoption; task row preconditions and skip guidance.
+- One approval means one envelope chain; every later chain needs a new envelope
+  and approval. Open Brain `not_used` records owner choice without probing.
 
 **v2.2.2 candidate** — 2026-10-28
 - Real project logs no longer block: `# Session Log — …` titles, subheadings such as

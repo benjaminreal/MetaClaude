@@ -1,4 +1,4 @@
-# Session runtime contract (2.2.2 / 3.2.2)
+# Session runtime contract (2.3.0 / 3.3.0)
 
 Run the bundled `scripts/runtime_cli.py` with `python3` (standard library only).
 Python is required for every helper path. Without it, output entry, index and
@@ -17,6 +17,7 @@ append <envelope.json> <entry.md|-> <approved-receipt.json>
 write-approved <envelope.json> <approved-receipt.json> <observed-relative-path> [<payload|->] --operation replace|delete|stage --expect <sha256|absent> --owner-reply "<owner words>"
 resume <workspace-root> [<approved-receipt.json>]
 audit <workspace-root>
+adopt-history <workspace-root>  # closingtime-only read-only proposal
 skip-plan tasks,index
 count-words <text-file|->
 render-mirror <rows.json|-> <local-date>
@@ -25,7 +26,7 @@ verify-sync <canonical-dir> <target-dir> [<target-dir> ...]
 
 Read [envelope_examples.md](envelope_examples.md) when assembling evidence;
 [recovery.md](recovery.md) before persistence, recovery or a helper refusal.
-It contains the state table, exact stdin matrix, errors and migration policy.
+It contains the state table, stdin rule (at most one file argument may be `-`; scope and owner reply are literal arguments), errors and migration policy.
 Opening bootstrap/reconstruction also uses `index_template.md`
 (shipped only by newbeginning); closingtime's entrypoint includes its template.
 
@@ -37,7 +38,7 @@ corrected once; repeated failure is a named blocker.
 
 `new-envelope` derives its skill/version from its package, mints an invocation
 id and both invocation_started_at/snapshot captured_at, and deliberately sets
-services to `unprobed`. That is not evidence of absence. Discover services and
+services to `unprobed`. That is not evidence of absence. Before probing, honor owner choices: learning skipped or Open Brain forbidden means open_brain `not_used`. This recorded choice is not a capability state; do not probe, search or capture, and supply no Open Brain receipt or rows. Otherwise discover services and
 record observed states: absent, present_unauthenticated, present_wrong_scope or
 working. Both working capabilities require current receipts. Receipt times and
 snapshot/start are timezone-aware instants; tolerance is 120 seconds in both
@@ -73,13 +74,13 @@ Instructions resolution reports project_root/ancestor/instructions_absent,
 files and ancestor_files with bytes. Read every unique file explicitly, even
 when the harness preloaded it; conflicting task rules or semantic narrative
 contradictions stop. A stale Updated date alone is a gap. Session-unparseable,
-duplicate numbers, malformed headers, alternate histories or sync conflicts
+strict duplicate numbers, malformed headers, alternate histories or sync conflicts
 stop persistence and the opening brief; reconcile only with separate approval.
 
 Freeze binds workspace identity, snapshot/entry/index, scope kinds and relative paths;
-absolute roots are informational. New evidence expires after six hours (future
+snapshot and envelope roots must agree after resolution; matching workspace ids do not bypass that check. Bound relocation recovery rewrites both roots. New evidence expires after six hours (future
 skew at most 120 seconds), except bound interrupted recovery. One draft approval
-per invocation; discard pre-approval superseded proposals in conversation. Show scope_lines
+per envelope chain; each later chain in the same conversation needs a new envelope and approval. Discard pre-approval superseded proposals in conversation. Show scope_lines
 verbatim. An exclusion requires a revised freeze; owner_reply is recorded
 separately, not interpreted or authenticated. Append is closingtime-only.
 write-approved is the sanctioned non-session writer and takes the same lock.
@@ -89,8 +90,9 @@ deletion and archive writes need separate scopes. A plain pending M2 path defaul
 to stage beside the session, replace otherwise; delete is never added implicitly.
 Archive overflow must name
 project_decisions_archive.md in M2 and bind its payload SHA-256 in
-local_payload_hashes before freeze. Pending candidate payloads are approved
-in conversation at each revision and bound in each transition intent.
+local_payload_hashes before freeze. Pending replacement payloads require their SHA-256 in local_payload_hashes before freeze; deletes bind absent. Each path permits one transition per approval, including abandoned write intents; each revision needs a new freeze and approval. Stage remains once per close.
+
+Write/read back any decisions archive first in its own approved chain. Only then may a close index draft drop that decision.
 
 Close order: append → approved Tasks operations and fresh read → one index
 write. For a current read, attach its mirror_receipt and use --mirror-rows;
@@ -101,7 +103,7 @@ results/readback or an exact pending operation in Decisions/Next, reserved UUID
 for inserts and "needs fresh approval". A partial result remains partial.
 
 Audit separates final journal matches, pending_journal, pending_records,
-legacy_records, grandfathered, documented_unverified, unjournaled, orphans and
+legacy_records, grandfathered, historical, superseded_records, documented_unverified, unjournaled, orphans and
 foreign_files. Pending is never journaled. Old v1 records/_policy.json remain
 unchanged; historical exceptions name a hash-bound local note and never prove
 the original append. New receipt versions do not certify old drafts.

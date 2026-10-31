@@ -168,13 +168,18 @@ def run():
     return problems
 
 
-def approved(root, m2=None, entry=HF.ENTRY_DRAFT, index=None, skill='closingtime'):
+def approved(root, m2=None, entry=HF.ENTRY_DRAFT, index=None, skill='closingtime', pending_payload='new'):  # P4
     env = HF._envelope(root)
     env['skill'] = skill
     if m2 is not None:
         env['mutation_scope'] = {'M2': m2, 'M3': [], 'M4': []}
     if 'project_decisions_archive.md' in (m2 or []):
         env['local_payload_hashes'] = {'project_decisions_archive.md': H._sha256_text('approved archive')}
+    for item in (m2 or []):  # P4
+        name = item.get('path') if isinstance(item, dict) else item  # P4
+        if name == 'pending_learnings.md' and (isinstance(item, dict) or 'project_session.md' not in (m2 or [])):  # P4
+            operation = item.get('operation', 'replace') if isinstance(item, dict) else 'replace'  # P4
+            env.setdefault('local_payload_hashes', {})[name] = 'absent' if operation == 'delete' else H._sha256_text(pending_payload)  # P4
     r = H.freeze_draft(env, entry, index)
     env['approval'] = {'granted': True, 'scope_string': r['scope_lines']}
     return env, H.approve_draft(r, r['scope_lines'], 'Approved synthetic scope')
@@ -186,7 +191,7 @@ def approval_matrix():
         e, r = approved(root)
         draft = H.freeze_draft(e, HF.ENTRY_DRAFT)
         for text in ('Approve project_index.md only. Do not write project_session.md.', 'M2 append project_session.md.bak', draft['scope_lines'] + '\nM3 update:other', ''):
-            refuses('SCOPE_UNAPPROVED', lambda: H.approve_draft(draft, text))
+            refuses('SCOPE_UNAPPROVED', lambda: H.approve_draft(draft, text, 'Approve synthetic scope'))  # P5
         for cls in ('M2', 'M3', 'M4'):
             bad = copy.deepcopy(e); bad['mutation_scope'][cls].append('unexpected.md')
             refuses('EDRAFTMISMATCH', lambda: H.append_session_entry(bad, HF.ENTRY_DRAFT, r))
@@ -226,7 +231,7 @@ def entry_matrix():
             log = root / 'project_session.md'; log.write_bytes(HF.SESSION_TEXT.replace('\n', '\r\n').encode())
             e = HF._envelope(root); e['local_snapshot'] = H.capture_local_snapshot(root, entries=depth)
             entry = HF.ENTRY_DRAFT.replace('synthetic', 'síntético').replace('\n', '\r\n')
-            r = H.freeze_draft(e, entry); e['approval']['scope_string'] = r['scope_lines']; r = H.approve_draft(r, r['scope_lines'])
+            r = H.freeze_draft(e, entry); e['approval']['scope_string'] = r['scope_lines']; r = H.approve_draft(r, r['scope_lines'], 'Approve synthetic scope')  # P5
             before = log.read_bytes(); result = H.append_session_entry(e, entry, r)
             assert result['session_number'] == 3 and log.read_bytes().startswith(before)
             assert 'ENTRY_DATE_SKEW' in result['warnings']
@@ -339,7 +344,7 @@ def recovery_matrix():
             H._workspace_id(other, create=True)
             refuses('EWORKSPACEMISMATCH', lambda: H.resume_append(other))
         log = root / 'project_session.md'; log.write_text('missing entry')
-        refuses('ERECOVERY', lambda: H.resume_append(root))
+        assert any(op['state'] == 'missing_after_close' for op in H.resume_append(root)['operations'])  # P8.4 / R-a
     with HF.workspace() as root:
         e, r = approved(root)
         with mock.patch.object(H, '_append_bytes', side_effect=OSError('before write')):
@@ -397,9 +402,9 @@ def learning_lifecycle():
         close, close_r = approved(root)
         H.append_session_entry(close, HF.ENTRY_DRAFT, close_r)
         assert not H.resume_append(root)['unfinished_operations']
-        e, r = approved(root, ['pending_learnings.md'], entry=None)
         expected = H._sha256_text(legacy)
         for content, reply in ((legacy + '\n## Candidate 2\nstaged\n', 'Stage candidates'), (legacy + '\n## Candidate 2\nowner wording\n', 'Use this edit'), (legacy, 'Discard 2, retain 1')):
+            e, r = approved(root, ['pending_learnings.md'], entry=None, pending_payload=content)  # P4: each revision has a new freeze/approval.
             result = H.write_approved_file(e, r, 'pending_learnings.md', content, expect=expected, owner_reply=reply)
             expected = result['readback_sha256']; assert pending.read_text() == content
         e, r = approved(root, [{'path': 'pending_learnings.md', 'operation': 'delete'}], entry=None)
@@ -451,7 +456,7 @@ def writer_faults():
             assert pending.read_text() == 'old'
             H.resume_append(root)
     with HF.workspace() as root:
-        e, r = approved(root, ['pending_learnings.md'], entry=None)
+        e, r = approved(root, ['pending_learnings.md'], entry=None, pending_payload='approved')  # P4
         real = H._persist_intent
         def foreign(*a):
             path = real(*a); (root / 'pending_learnings.md').write_text('foreign'); return path
@@ -486,7 +491,7 @@ def packaged_commands():
                 entry = root / 'entry.md'; entry.write_text(HF.ENTRY_DRAFT)
                 code, frozen = command('freeze-draft', path, entry); assert not code, frozen
                 receipt = root / 'receipt.json'; receipt.write_text(json.dumps(frozen))
-                code, approved_r = command('approve-draft', receipt, frozen['scope_lines']); assert not code
+                code, approved_r = command('approve-draft', receipt, frozen['scope_lines'], '--owner-reply', 'Approve synthetic scope'); assert not code  # P5
                 receipt.write_text(json.dumps(approved_r)); env['approval'] = {'granted': True, 'scope_string': frozen['scope_lines']}; path.write_text(json.dumps(env))
                 code, result = command('append', path, '-', receipt, data=HF.ENTRY_DRAFT); assert not code, result
                 assert command('resume', project)[0] == 0

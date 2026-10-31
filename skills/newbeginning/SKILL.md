@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.2.2"
+  version: "2.3.0"
 ---
 
 # newbeginning
@@ -53,11 +53,13 @@ projection, validation, or conflict checks ran.
    - no instruction file — `instructions_absent`; continue.
    Explicitly read each unique path in `files` and `ancestor_files`, including files the harness may already have loaded; count each successfully read path once. If task-tracking rules conflict,
    enter `conflicted` and stop. Record the state in the evidence line.
-3. **Observe capabilities.** Local capabilities are booleans:
+3. **Observe capabilities.** Before probing, honor owner choices. Local capabilities are booleans:
    `shell_available`, `git_available`, `temporary_workspace_available`, and
    `parallel_read_only_available`. `tasks_mcp` and `open_brain` are each one of:
    `absent` (tools not listed), `present_unauthenticated`, `present_wrong_scope`,
    or `working` (a successful read in this invocation).
+   Record `open_brain: not_used` when learning is skipped or the owner forbids
+   Open Brain. This is a recorded choice, not a capability state: do not probe, search or capture.
 4. **Confirm brief depth.** Default to project state, latest `Next:`, top three
    tasks, blockers/flags, and one hand-off question. Honor a shorter request.
 5. **Check sibling availability.** If `closingtime` is detectably absent, add one
@@ -69,7 +71,7 @@ projection, validation, or conflict checks ran.
 
 Run `new-envelope <workspace-root>` to capture evidence and helper-stamped
 start and `captured_at`. For each later helper call chain use a new envelope;
-never copy start times. Replace `unprobed` states before validation.
+never copy start times. One approval covers one envelope chain; each later chain in this conversation needs a new envelope and approval. Replace `unprobed` states before validation.
 Use `snapshot <workspace-root> --entries 10` for reconstruction. Treat its projection, hashes, filename
 resolution, parse warnings, and sync-conflict list as local evidence. State the
 branch and changed files only from its `git` fields. Detect one branch:
@@ -130,8 +132,9 @@ code. A sync conflict always stops.
 ### Opening projection and brief
 
 The helper reads whole files and emits a bounded projection. Report
-`unfinished_operations` and direct recovery to `resume`; do not start another
-close. A non-monotonic history warns; parse ambiguity or semantic narrative contradictions stop; a stale index
+`unfinished_operations`: opening `resume` only inspects closing operations;
+use closingtime `resume` to finish them. Opening may finish its own approved
+unfinished index write. Do not start another close. A non-monotonic history warns; parse ambiguity or semantic narrative contradictions stop; a stale index
 date alone is a gap. Use only the validated bounded projection:
 
 | Measure | Bound |
@@ -232,70 +235,15 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 
 ## 7. Version & Changelog
 
-**v2.2.2 — 2026-10-28 — candidate**
+**v2.3.0 — 2026-10-28 — candidate**
 
-- Legacy log headings readable. 2.2.0–2.2.1: index-only opening writes, portable
-  recovery, fixed targets, fresh evidence, one approval per invocation.
+- Round 4: legacy grammar/projection, root binding, frozen pending payloads,
+  owner words, mirror controls, read-only opening recovery, historical adoption,
+  task preconditions and skip/approval/archive guidance. See bundled recovery.md.
+- 2.2.2 and earlier: portable recovery, optional staging, exact scope approval,
+  receipts, candidate quality, instruction reads and v1 continuity compatibility.
+  Detailed history remains in README and git.
 
-**v2.1.0 — 2026-10-27 — candidate**
-
-- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
-  identity and parsed times; conflict/alias stops; read-only git evidence.
-- Atomic append intents, conditional rollback, resume and unfinished-operation
-  guard; approved local transitions share a lock and explicit preimages.
-- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
-- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
-  and independent recertification remain required. This is not deployment.
-
-**v2.0.7 — 2026-10-27 — candidate**
-
-- Documentation refresh for the Phase 4.5 review (HANDOFF and README); no
-  runtime or workflow change.
-
-**v2.0.6 — 2026-10-27 — candidate**
-
-- Phase 4 findings O-01 to O-04: the brief follows the user's language;
-  `brief_words` comes from `count-words`; receipt times come from
-  `fingerprinted_at`; git facts come from snapshot `git.branch` and
-  `changed_paths`; `validate` refuses future receipt times.
-
-**v2.0.5 — 2026-10-27 — candidate**
-
-- Snapshot reports `local_date` and `local_utc_offset`; briefs use absolute
-  dates and resolve relative ones against the local date.
-- Instruction files are read explicitly and counted once.
-
-**v2.0.4 — 2026-10-27 — candidate**
-
-- Phase 4 fixes: no current-task claim when the receipt cannot be produced;
-  `fingerprint-rows`/`validate` accept stdin; the snapshot resolves
-  instruction files; every brief ends with an evidence line; the 250-word cap
-  covers the whole reply; the hand-off offers exactly three options.
-
-**v2.0.3 — 2026-10-08 — candidate**
-
-- Shared append now requires the session filename in approved M2 scope; first-close audit needs no historical policy.
-- Prior preflights remain evidence for earlier package hashes.
-
-**v2.0.2 — 2026-10-08 — candidate**
-
-- Preserved creation-only task guidance and reserved-ID retry protection during package regeneration.
-- Earlier validation hashes and transfer certificates do not certify this package.
-
-**v2.0.1 — 2026-08-25 — candidate**
-
-- Added the progressively loaded bilingual candidate-quality contract to
-  pending-learning review and owner-edit handling.
-
-**v2.0.0 — 2026-08-05 — candidate**
-
-- Replaced model-authored file scanning with the bounded snapshot/projection
-  helper and validated evidence envelope.
-- Added explicit bootstrap, reconstruction, and conflicted branches.
-- Added four-state external capabilities and three-case instruction resolution.
-- Moved schemas, SQL, hashing, and long rationale into bundled scripts and
-  progressive-disclosure references.
-- Preserved the v1 continuity-file formats and all eleven trigger semantics.
-
-Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.
+Install by copying the whole folder. Releases hold earlier versions; repository
+review links may be missing from standalone copies. This source candidate still
+needs independent recertification and Phase 5 before deployment.

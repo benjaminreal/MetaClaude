@@ -79,7 +79,7 @@ def validate_capability_profile(profile: dict) -> list[dict]:
     for cap in ("tasks_mcp", "open_brain"):
         if cap not in external:
             issues.append({"code": "MISSING_EXTERNAL_CAP", "detail": cap})
-        elif external[cap] not in EXTERNAL_STATES:
+        elif external[cap] not in EXTERNAL_STATES and not (cap == "open_brain" and external[cap] == "not_used"):
             # A boolean here is the specific defect the four-state model exists
             # to prevent -- it cannot distinguish unauthenticated from wrong-scope.
             issues.append({"code": "EXTERNAL_CAP_NOT_FOUR_STATE",
@@ -170,15 +170,19 @@ def _same_root(left: object, right: object) -> bool:
 HISTORY_ERRORS = {"session_unparseable", "duplicate_session_number", "session_header_malformed", "session_date_impossible"}
 
 
-def legacy_session_number(line: str) -> int | None:
-    """Number of a legacy, never-written-by-helper entry heading, else None.
-
-    Accepted: letter-suffixed supplements ("### Session #12A | ...",
-    "#### Session #12A (supplement) | ..."), v1 headings at another level or
-    without "#" ("## Session 5 — Title", "### Session 5 — Title"). A level-3
-    "### Session #N" heading that is not the strict format stays malformed.
-    """
+def _numbered_heading(line: str) -> bool:
     import re
+    token = re.match(r"#{2,6}[ \t]+(?:Session|Sesi[oó]n)[ \t]+(#?)([0-9]+)", line)
+    if not token or (not token[1] and len(token[2]) >= 5):
+        return False
+    return not re.match(r"[-/.][0-9]", line[token.end():])
+
+
+def legacy_session_number(line: str) -> int | None:
+    """Recognise v1 headings, supplements and multi-day entries, never dates."""
+    import re
+    if not _numbered_heading(line):
+        return None
     line = line.rstrip("\r")
     m = re.match(r"#{2,6}[ \t]+Session[ \t]+#([0-9]+)[A-Za-z]{1,2}\b", line)
     if m:
@@ -186,50 +190,64 @@ def legacy_session_number(line: str) -> int | None:
     m = re.match(r"(#{2}|#{4,6})[ \t]+(?:Session|Sesi[oó]n)[ \t]+#?([0-9]+)\b", line) or re.match(r"(###)[ \t]+(?:Session|Sesi[oó]n)[ \t]+([0-9]+)\b", line)
     if m:
         return int(m[2])
-    # A legacy multi-day entry: "### Session #N | 2026-04-15–16 | ..." (date range).
     m = re.match(r"###[ \t]+Session[ \t]+#([0-9]+)[ \t]*\|[ \t]*[0-9]{4}-[0-9]{2}-[0-9]{2}[–-][0-9]{2}(?:-[0-9]{2})?[ \t]*\|", line)
     return int(m[1]) if m else None
 
 
 def legacy_session_numbers(text: str) -> list[int]:
+    return [n for n in (legacy_session_number(line) for line in text.splitlines()) if n is not None]
+
+
+def _heading_dates_valid(line: str) -> bool:
     import re
-    return [n for n in (legacy_session_number(m.group()) for m in re.finditer(r"(?m)^#{2,6}[ \t]+(?:Session|Sesi[oó]n)[ \t]+#?[0-9][^\n]*", text)) if n is not None]
+    try:
+        for token in re.findall(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", line):
+            _dt.date.fromisoformat(token)
+        for m in re.finditer(r"([0-9]{4}-[0-9]{2}-[0-9]{2})[–-]([0-9]{2}(?:-[0-9]{2})?)(?![0-9-])", line):
+            start = _dt.date.fromisoformat(m[1])
+            end = _dt.date.fromisoformat(m[1][:8] + m[2] if len(m[2]) == 2 else m[1][:5] + m[2])
+            if end < start:
+                return False
+    except ValueError:
+        return False
+    return True
 
 
 def parse_history(text: str) -> tuple[list[dict], list[str]]:
-    """Single grammar for projection, validation, audit and persistence.
-
-    A legacy first header may follow the title directly. Writers emit separators;
-    when present a separator belongs to the following entry's receipt bytes.
-    """
+    """Shared entry grammar; legacy boundaries do not become strict receipts."""
     import re
-    # Entry-like headings only: level-1 titles ("# Session Log — X") and
-    # headings without a number ("## Session Context") are ordinary text.
-    candidates = list(re.finditer(r"(?m)^(?:###[ \t]+Session[ \t]+#|#{2,6}[ \t]+Session[ \t]+#?[0-9])[^\n]*", text))
+    candidates = [m for m in re.finditer(r"(?m)^#{2,6}[ \t]+(?:Session|Sesi[oó]n)[ \t]+[^\n]*", text)
+                  if _numbered_heading(m.group()) or re.match(r"###[ \t]+Session[ \t]+#(?![0-9])", m.group())]
     header = re.compile(r"### Session #([0-9]+)[ \t]*\|[ \t]*([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*\|[ \t]*[^\s|][^\n|]*")
-    entries, warnings, numbers = [], [], []
+    entries, warnings, numbers, plain_legacy = [], [], [], []
     starts = []
     for m in candidates:
-        prefix = text[:m.start()]
-        separator = re.search(r"(?m)^---\n\n$", prefix)
+        separator = re.search(r"(?m)^---\n\n$", text[:m.start()])
         starts.append(separator.start() if separator else m.start())
     for i, m in enumerate(candidates):
-        parsed = header.fullmatch(m.group().rstrip("\r"))
+        line = m.group().rstrip("\r")
+        parsed = header.fullmatch(line)
+        if not _heading_dates_valid(line):
+            warnings.append("session_date_impossible")
         if not parsed:
-            if legacy_session_number(m.group()) is None:
+            legacy = legacy_session_number(line)
+            if legacy is None:
                 warnings.append("session_header_malformed")
+            elif not re.search(r"#[0-9]+[A-Za-z]{1,2}\b", line):
+                plain_legacy.append(legacy)
             continue
         number = int(parsed[1]); numbers.append(number)
-        try:
-            _dt.date.fromisoformat(parsed[2])
-        except ValueError:
-            warnings.append("session_date_impossible")
         chunk = text[starts[i]:starts[i+1] if i+1 < len(starts) else len(text)].rstrip() + "\n"
         entries.append({"session_number": number, "date": parsed[2], "header_start": m.start(), "chunk": chunk})
-    if "### Session" in text and not entries:
+    if any(w == "session_header_malformed" for w in warnings) and not entries:
         warnings.append("session_unparseable")
     if len(numbers) != len(set(numbers)):
         warnings.append("duplicate_session_number")
+    seen = set(numbers)
+    for number in plain_legacy:
+        if number in seen:
+            warnings.append("legacy_duplicate_number")
+        seen.add(number)
     if any(b <= a for a, b in zip(numbers, numbers[1:])):
         warnings.append("session_non_monotonic")
     return entries, sorted(set(warnings))
@@ -271,7 +289,9 @@ def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None =
         failures.append({"code": SYNC_CONFLICT,
                          "detail": ", ".join(snap["sync_conflicts"])})
 
-    if not snap.get("workspace_id") and not _same_root(envelope.get("workspace_root"), snap.get("workspace_root")):
+    if not _same_root(envelope.get("workspace_root"), snap.get("workspace_root")) or (
+        envelope.get("workspace_id") and snap.get("workspace_id") and envelope["workspace_id"] != snap["workspace_id"]
+    ):
         failures.append({"code": WORKSPACE_MISMATCH, "detail": "snapshot and envelope roots must agree"})
     started = envelope.get("invocation_started_at")
     start_time = _parse_instant(started)
@@ -319,6 +339,8 @@ def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None =
         if external.get(cap) == "working" and cap not in current:
             failures.append({"code": MISSING_RECEIPT, "detail": cap + " working without current receipt"})
 
+    if external.get("open_brain") == "not_used" and ("open_brain" in seen or "open_brain" in returned_rows_by_capability):
+        failures.append({"code": CONTRADICTORY, "receipt": "open_brain", "detail": "not_used forbids Open Brain reads, receipts and captures"})
     scope = envelope.get("mutation_scope") or {}
     has_mutations = any(scope.get(cls) for cls in ("M2", "M3", "M4"))
     approval = envelope.get("approval") or {}

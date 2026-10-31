@@ -67,7 +67,7 @@ def _append(envelope, entry_text):
         raise H.HelperError("EINVALIDENVELOPE", str(verdict["failures"]))
     receipt = H.freeze_draft(envelope, entry_text, INDEX_TEXT if "project_index.md" in envelope.get("mutation_scope", {}).get("M2", []) else None)
     envelope["approval"]["scope_string"] = receipt["scope_lines"]
-    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, receipt["scope_lines"]))
+    return H.append_session_entry(envelope, entry_text, H.approve_draft(receipt, receipt["scope_lines"], "Approve synthetic scope"))  # P5
 
 
 @contextmanager
@@ -110,7 +110,7 @@ def _envelope(root: Path, invocation_id: str | None = None) -> dict:
         receipt["observed_at"] = env["local_snapshot"]["observed_at"]
     env["skill_version"] = "closingtime@fixture"
     env["mutation_scope"] = {"M2": [(env["local_snapshot"]["session"].get("path") or "project_session.md")], "M3": [], "M4": []}
-    env["approval"]["scope_string"] = H._scope_text(H._scope_operations(env))
+    env["approval"]["scope_string"] = H._scope_text(H._scope_operations(env), session_number=env["local_snapshot"]["session"]["latest_session_number"] + 1)  # P1.4 / R-b: numbered append scope setup.
     env["returned_rows_by_capability"] = {"tasks_mcp": fixtures.TASK_ROWS}
     return env
 
@@ -572,7 +572,7 @@ def check_f04_frozen_draft() -> list[str]:
             stream.write("\n---\n\n### Session #9 | 2026-08-04 | Foreign\n**Next:** x\n")
         rebased = _envelope(root)
         before = (root / "project_session.md").read_text(encoding="utf-8")
-        approved = H.approve_draft(receipt, receipt["scope_lines"])
+        approved = H.approve_draft(receipt, receipt["scope_lines"], "Approve synthetic scope")  # P5
         expect("EDRAFTMISMATCH", lambda: H.append_session_entry(rebased, ENTRY_DRAFT, approved), "F04-rebased")
         expect("ESTALE", lambda: H.append_session_entry(draft_env, ENTRY_DRAFT, approved), "F04-foreign-write")
         if (root / "project_session.md").read_text(encoding="utf-8") != before:
@@ -585,9 +585,9 @@ def check_f04_frozen_draft() -> list[str]:
     with workspace() as root:
         _policy(root)
         env = _envelope(root)
-        scope = env["approval"]["scope_string"]
         receipt = H.freeze_draft(env, ENTRY_DRAFT)
-        approved = H.approve_draft(receipt, scope)
+        scope = env["approval"]["scope_string"] = receipt["scope_lines"]  # P1.4 / R-b: frozen scope setup.
+        approved = H.approve_draft(receipt, scope, "Approve the displayed synthetic scope")  # P5
         expect("EDRAFTRECEIPT", lambda: H.append_session_entry(env, ENTRY_DRAFT, None), "F04-missing")
         expect("EDRAFTRECEIPT", lambda: H.append_session_entry(env, ENTRY_DRAFT, receipt), "F04-unapproved-tampered")
         expect("EDRAFTMISMATCH", lambda: H.append_session_entry(env, ENTRY_DRAFT + " edited", approved), "F04-entry")
@@ -599,7 +599,7 @@ def check_f04_frozen_draft() -> list[str]:
         early = dict(approved, approved_at="2000-01-01T00:00:00Z")
         early["receipt_sha256"] = H._receipt_digest(early)
         expect("ECHRONOLOGY", lambda: H.append_session_entry(env, ENTRY_DRAFT, early), "F04-before-draft")
-        expect("EINVOCATIONUSED", lambda: H.approve_draft(approved, scope), "F04-double-approve")
+        expect("EINVOCATIONUSED", lambda: H.approve_draft(approved, scope, "Approve synthetic scope"), "F04-double-approve")  # P5
         result = H.append_session_entry(env, ENTRY_DRAFT, approved)
         if not result.get("readback_ok"):
             issues.append(f"F04-happy: {result}")

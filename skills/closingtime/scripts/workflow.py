@@ -53,6 +53,7 @@ def plan_skip_paths(skipped: set[str] | list[str] | tuple[str, ...]) -> dict:
 
     return {
         "skipped": sorted(selected),
+        "open_brain_choice": "not_used" if selected & {"learning", "openbrain"} else None,
         "acknowledgements": [
             SKIP_ACKNOWLEDGEMENTS[name] for name in sorted(selected)
         ],

@@ -37,6 +37,8 @@ def proposal(root, paths=('project_session.md', 'project_index.md'), index='appr
     env['mcp_receipts'] = []; env['returned_rows_by_capability'] = {}
     env['mutation_scope'] = {'M2': list(paths), 'M3': [], 'M4': []}
     entry = HF.ENTRY_DRAFT if 'project_session.md' in paths else None
+    if 'pending_learnings.md' in paths:  # P4
+        env['local_payload_hashes'] = {'pending_learnings.md': H._sha256_text('one')}  # P4
     draft = H.freeze_draft(env, entry, index if any(p in H.INDEX_NAMES for p in paths) else None)
     return env, draft, entry
 
@@ -232,7 +234,7 @@ def freshness_and_approval():
         env,old,entry=proposal(root)
         reduced=copy.deepcopy(env);reduced['mutation_scope']['M2']=['project_session.md']
         new=H.freeze_draft(reduced,entry);receipt=approve(reduced,new)
-        refuses('EINVOCATIONUSED',lambda:H.approve_draft(old,old['scope_lines']))
+        refuses('EINVOCATIONUSED',lambda:H.approve_draft(old,old['scope_lines'],'Approve synthetic scope'))  # P5
         H.append_session_entry(reduced,entry,receipt)
         forged=copy.deepcopy(receipt);forged['owner_reply']='different receipt';forged['receipt_sha256']=H._receipt_digest(forged)
         refuses('EINVOCATIONUSED',lambda:H.append_session_entry(reduced,entry,forged))
@@ -240,6 +242,9 @@ def freshness_and_approval():
         env,draft,_=proposal(root,['pending_learnings.md']);receipt=approve(env,draft)
         refuses('SCOPE_UNAPPROVED',lambda:H.write_approved_file(env,receipt,'pending_learnings.md','one',expect='absent'))
         result=H.write_approved_file(env,receipt,'pending_learnings.md','one',expect='absent',owner_reply='Stage one')
+        env,draft,_=proposal(root,['pending_learnings.md'])  # P4: new approval for the later revision.
+        env['local_payload_hashes']['pending_learnings.md']=H._sha256_text('two')  # P4
+        draft=H.freeze_draft(env);receipt=approve(env,draft)  # P4
         real=dt.datetime
         class Later(real):
             @classmethod
@@ -286,7 +291,7 @@ def round1_reasons():
             assert S.WORKSPACE_MISMATCH in {x['code'] for x in S.validate_envelope(env)['failures']}
             refuses('EWORKSPACEMISMATCH',lambda:H.freeze_draft(env,HF.ENTRY_DRAFT))
         env,draft,entry=proposal(root)
-        refuses('SCOPE_UNAPPROVED',lambda:H.approve_draft(draft,'Index only; exclude session'))
+        refuses('SCOPE_UNAPPROVED',lambda:H.approve_draft(draft,'Index only; exclude session','Approve synthetic scope'))  # P5
         receipt=approve(env,draft)
         refuses('EDRAFTMISMATCH',lambda:H.append_session_entry(env,entry+' altered',receipt))
         before=(root/'project_session.md').read_bytes()

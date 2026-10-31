@@ -153,7 +153,7 @@ def exact_operations():
             for operation in (None, 'replace', 'delete'):
                 env = HF._envelope(root)
                 env['mutation_scope'] = {'M2': [path if operation is None else {'path': path, 'operation': operation}], 'M3': [], 'M4': []}
-                env['local_payload_hashes'] = {path: H._sha256_text('archive')}
+                env['local_payload_hashes'] = {path: 'absent' if path == 'pending_learnings.md' and operation == 'delete' else H._sha256_text('archive')}  # P4
                 draft = H.freeze_draft(env)
                 assert draft['scope_operations'] == [{'class': 'M2', 'operation': operation or 'replace', 'path': path}]
                 assert len(draft['scope_lines'].splitlines()) == 1

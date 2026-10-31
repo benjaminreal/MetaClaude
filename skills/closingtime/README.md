@@ -8,11 +8,11 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.2.2 candidate
+**Version:** 3.3.0 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent
-transferability review (the round-2 review failed both skills). It is not
+transferability review (the round-3 review failed both skills). It is not
 certified for deployment. A public summary of the review status is in
 [`skills/_shared/validation/phase4_5/`](../_shared/validation/phase4_5/README.md).
 See [HANDOFF.md](HANDOFF.md) for prerequisites, limits, and recovery.
@@ -33,13 +33,7 @@ cp -r skills/closingtime .claude/skills/closingtime
 
 **Codex** — copy the folder to `~/.codex/skills/closingtime` and invoke it as `$closingtime`.
 
-**GitHub CLI** (v2.90.0+):
-
-```bash
-gh skill install benjaminreal/MetaClaude closingtime --agent claude-code
-```
-
-**Cowork:** Import the `.skill` file from the [GitHub Releases](https://github.com/benjaminreal/MetaClaude/releases) page.
+Install this candidate by copying its whole folder. [GitHub Releases](https://github.com/benjaminreal/MetaClaude/releases) holds earlier versions, not this candidate. Review links point inside the repository and may be missing from standalone copies.
 
 > If this is the first skill you install and `~/.claude/skills/` didn't exist before, restart Claude Code so it picks up the new directory.
 
@@ -142,13 +136,13 @@ Seven named gates:
 | Draft | Session entry, index changes and task operations; frozen with `freeze-draft` before you see it |
 | Approval | You approve the exact scope lines the helper shows; excluding anything means a revised draft |
 | Concurrency + persistence | Helper append with tail-hash check, readback and journal; then task writes; then one checked index write that refuses if the index changed since the draft |
-| Verification | Every write has a returned result or readback; journal audit |
+| Verification | Every write has a returned result or readback; audit distinguishes journaled, adopted historical and unverified entries |
 | Learning | Optional close-approved staging after append; search, append new blocks, read back, show candidates; keep needs no write, other dispositions show their own scope; capture needs separate approval |
 | Closing | Status lines, evidence line, closing line |
 
 ### Interrupted closes and limits
 
-If a close stops partway, run `resume ROOT`. A verified session append stays
+If a close stops partway, run closingtime `resume ROOT`. Opening resume only inspects it. A verified session append stays
 journaled; only its remaining index or an attempted failed stage is unfinished. A changed index is reported
 as `remaining_stale` with its current hash. Freeze only that target with
 `freeze-draft --continue <parent-intent>`, approve the new scope, then write it;
@@ -167,7 +161,12 @@ fifteen minutes of start. Counts use count-words on the final text after all edi
 Each invocation approves one draft; discard superseded proposals before approval.
 Conflict scans cover the root and journal only. iCloud numbered copies of
 non-continuity files, OneDrive host names and the final cross-device write window
-remain limits. See HANDOFF.md and `references/recovery.md` for syntax and errors.
+remain limits. Finished entry edits/removals are reported without blocking other
+recovery. `adopt-history ROOT` proposes an exact hash-bound policy; freeze, approve
+and write it through the helper before audit calls those entries historical.
+Write the decisions archive in its own approved chain before a later index draft
+drops that decision. Skipped learning/Open Brain records `not_used` without a probe.
+See HANDOFF.md and `references/recovery.md` for syntax and errors.
 
 ### 4. Harness Adaptations
 The skill works across Claude Code, Cowork, and other environments. It requires Python 3, shell access, file writing and conversation — everything else (git access, transcript tools, Supabase Tasks DB, Open Brain) is optional and degrades gracefully. If Supabase is unavailable, it names the exact state, logs the session, and keeps task changes pending without editing the markdown mirror.
@@ -179,6 +178,13 @@ Behavioral guardrails: respects "skip" at any point, handles first-ever sessions
 Output quality (entry ≤ 300 words, narrative index concise, no duplication between entry and index, candidates that pass the quality contract), workflow correctness (draft shown and frozen before writing, every write verified, Open Brain capture gated on approval, counts and times taken from the helper), and failure response (restart from observation on boundary violations, edit in place on length/wording).
 
 ### 7. Version & Changelog
+
+**v3.3.0 candidate** — 2026-10-28
+- Round-4 repairs: legacy dates, duplicate warnings and handoffs; root binding;
+  exact pending payload/one-write approvals; required owner words; mirror controls;
+  opening recovery split; historical adoption; task row preconditions and skip guidance.
+- One approval means one envelope chain; every later chain needs a new envelope
+  and approval. Open Brain `not_used` records owner choice without probing.
 
 **v3.2.2 candidate** — 2026-10-28
 - Real project logs no longer block: `# Session Log — …` titles, subheadings such as

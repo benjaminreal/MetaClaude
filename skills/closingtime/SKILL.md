@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.2.2"
+  version: "3.3.0"
 ---
 
 # closingtime
@@ -36,7 +36,7 @@ a separate request in this invocation.
 
 The bundled helper is the only sanctioned writer of `project_session.md`. Audit checks consistency,
 not provenance; a later snapshot can adopt an undetectable direct write. Use
-`write-approved` for index, pending-learnings and decisions-archive transitions.
+`write-approved` for index, pending-learnings, decisions-archive and approved audit-policy transitions.
 
 ## 2. Pre-flight Checklist
 
@@ -48,9 +48,12 @@ not provenance; a later snapshot can adopt an undetectable direct write. Use
    files, otherwise `instructions_absent`. Explicitly read each unique path in `files` and `ancestor_files`, including files the harness may already have loaded; count each successfully read path once. Stop on
    conflicting task specifications. Never name an instruction file as if its
    location were guaranteed. Record the state in the closing evidence line.
-3. **Observe capabilities.** Local capabilities are booleans. `tasks_mcp` and
+3. **Observe capabilities.** Before probing, honor skips and owner choices. Local capabilities are booleans. `tasks_mcp` and
    `open_brain` each use `absent` (tools not listed), `present_unauthenticated`,
    `present_wrong_scope`, or `working` (a read in this invocation).
+   Record `open_brain: not_used` for SKIP-learning, SKIP-openbrain or an owner
+   instruction not to use Open Brain. It is a recorded choice, not a capability
+   state; do not probe, search or capture.
 4. **Choose depth and skips.** Default entry cap is 300 words; a short session may
    use three to five lines. Ask about ambiguous project scope, not routine facts.
    Record any `SKIP-tasks`, `SKIP-index`, `SKIP-learning`, `SKIP-openbrain`, or
@@ -62,7 +65,7 @@ not provenance; a later snapshot can adopt an undetectable direct write. Use
 
 Run `new-envelope <workspace-root>` after this skill is invoked; it captures
 start and `captured_at`. Use a new envelope for each later helper call chain;
-never copy start times. Replace `unprobed` states before validation. The helper reads whole files and emits a bounded projection. Use the
+never copy start times. One approval covers one envelope chain; each later chain in this conversation needs a new envelope and approval. Replace `unprobed` states before validation. The helper reads whole files and emits a bounded projection. Use the
 index projection (name truncation), latest session state, git result or explicit no-git result,
 parse warnings, and sync-conflict scan. Add conversation and bounded transcript
 signals without treating memory as a file receipt. State the branch and changed
@@ -156,9 +159,10 @@ _Read-only mirror regenerated from Supabase `task_urgency`. Do not hand-edit; DB
 [at most 10]
 ```
 
-Use `scripts/workflow.py` decision-overflow policy: a ninth active decision moves
+Apply the decision-overflow rule: a ninth active decision moves
 the oldest to Archived; an eleventh archived decision moves the oldest to
-`project_decisions_archive.md`.
+`project_decisions_archive.md`. Write/read back that archive first, in its own
+approved chain; only then may the close index draft drop the archived decision.
 
 ### `APPROVAL_GATE`
 
@@ -214,8 +218,8 @@ absent index uses the template above.
 
 Proceed only when each attempted mutation has a returned result or readback.
 Recompute the task receipt from the final returned rows, read the index fields
-that changed, and run `audit` after the session append. Any unjournaled entry,
-orphan record, missing readback, or stale task result keeps the close partial.
+that changed, and run `audit` after the session append. Unjournaled entries keep the close partial unless adopted; offer `adopt-history` once.
+Orphan records, missing readback or stale task results also keep it partial.
 Report `documented_unverified` entries separately: they have a hash-bound,
 owner-approved historical exception, not a journal receipt. They do not make
 the current close partial when `unjournaled`, `orphan_records`, and `errors`
@@ -225,12 +229,12 @@ are empty. Never count them as journaled or claim their original append verified
 
 Learning is optional. Skips/zero candidates leave no child intent or unfinished
 close; existing pending bytes stay untouched. Begin after attempted writes verify.
-For `SKIP-learning`, acknowledge it and create no candidates. Otherwise:
+For `SKIP-learning`, acknowledge it, record Open Brain as `not_used` and create no candidates. Otherwise:
 
 1. read `references/candidate_quality_contract.md`; identify at least two
    grounded candidates unless pure execution makes fewer honest. Each is
    plain, standalone, with one transferable insight;
-2. search Open Brain per candidate or name its non-working state. A search is
+2. unless `not_used`, search Open Brain per candidate or name its non-working state. A search is
    a read; an instruction not to update/capture does not skip it;
 3. preserve existing bytes and append new candidate blocks. Use the close's
    optional `stage` permission with `write-approved ... pending_learnings.md
@@ -244,7 +248,8 @@ For `SKIP-learning`, acknowledge it and create no candidates. Otherwise:
 5. after owner edits, reapply the quality contract to the complete wording;
    obtain fresh approval for repairs. Write/read back edits before capture;
 6. separately approve edits/mixed disposition with current `--expect` and
-   non-empty `--owner-reply`; retain unresolved blocks and unknown fields.
+   non-empty `--owner-reply`; bind replacement hashes (delete: `absent`) before
+   each new freeze/approval. Retain unresolved blocks and unknown fields.
    Delete only after all dispositions; approval expires after six hours.
    Capture only explicitly approved items.
 
@@ -255,7 +260,7 @@ traceability belongs in separate metadata.
 
 `SKIP-openbrain` keeps candidate extraction and the pending file but performs no
 search or capture. An instruction not to use Open Brain at all is
-`SKIP-openbrain`; a search sends candidate text to the service. Never write "New thread" unless a search actually found no match.
+`SKIP-openbrain`; record `not_used` and do not probe. A search sends candidate text to the service. Never write "New thread" unless a search actually found no match.
 
 ### `CLOSING_GATE`
 
@@ -282,7 +287,7 @@ ritual line as the very last line:
 
 ### Skip and interruption paths
 
-Run `scripts/workflow.py` for each skip acknowledgement.
+Run `scripts/runtime_cli.py skip-plan <kind>` for each skip acknowledgement.
 `SKIP-index` does not imply `SKIP-tasks`; clarify task intent separately.
 
 On interruption, claim only artifacts already verified, list everything not completed,
@@ -356,87 +361,15 @@ or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
 
-**v3.2.2 — 2026-10-28 — candidate**
+**v3.3.0 — 2026-10-28 — candidate**
 
-- Legacy log headings readable. 3.2.0–3.2.1: optional staging, portable
-  recovery, preflight, project locks, bounded approvals.
+- Round 4: legacy grammar/projection, root binding, frozen pending payloads,
+  owner words, mirror controls, read-only opening recovery, historical adoption,
+  task preconditions and skip/approval/archive guidance. See bundled recovery.md.
+- 3.2.2 and earlier: portable recovery, optional staging, exact scope approval,
+  receipts, candidate quality, instruction reads and v1 continuity compatibility.
+  Detailed history remains in README and git.
 
-**v3.1.1 — 2026-10-28 — candidate**
-
-- An exclusion or correction reply is not approval of the revised scope: show
-  the re-frozen `scope_lines` and wait (repair check P4X-CT-C-S01).
-
-**v3.1.0 — 2026-10-27**
-
-- Phase 4 and 4.5 fixes, packaging: exact canonical scope approval; root/project
-  identity and parsed times; conflict/alias stops; read-only git evidence.
-- Atomic append intents, conditional rollback, resume and unfinished-operation
-  guard; approved local transitions share a lock and explicit preimages.
-- Standalone constructor, recipes, recovery/error catalogue and lifecycle rules.
-- Prior Phase 4/4.5 results certify only their earlier hashes; fresh eligibility
-  and independent recertification remain required. This is not deployment.
-
-**v3.0.10 — 2026-10-27 — candidate**
-
-- Documentation refresh for the Phase 4.5 review (HANDOFF and README); no
-  runtime or workflow change.
-
-**v3.0.9 — 2026-10-27 — candidate**
-
-- One closing order: status lines, evidence line, ritual line last (the eval
-  criteria no longer say the message ends with the evidence line).
-
-**v3.0.8 — 2026-10-27 — candidate**
-
-- A search is a read: "do not update Open Brain" no longer skips the
-  per-candidate connection search (targeted check of 3.0.7, check 27).
-
-**v3.0.7 — 2026-10-27 — candidate**
-
-- Helper-derived facts, mirror, counts and times; language and candidate-readback fixes.
-
-**v3.0.6 — 2026-10-27 — candidate**
-
-- Frozen receipts bind snapshot, entry and chronology; instruction reads are counted.
-
-**v3.0.5 — 2026-10-27 — candidate**
-
-- Fingerprinted task claims, stdin evidence, four status lines and refreshed index.
-
-**v3.0.4 — 2026-10-08 — candidate**
-
-- Shared append now requires the session filename in approved M2 scope; first-close audit needs no historical policy.
-- Prior preflights remain evidence for earlier package hashes.
-
-**v3.0.3 — 2026-10-08 — candidate**
-
-- Refreshed the candidate package and handoff status for a new validation cycle; shared runtime behavior is unchanged from 3.0.2.
-- Earlier validation hashes and transfer certificates do not certify this package.
-
-**v3.0.2 — 2026-08-29 — candidate**
-
-- Audit now consumes exact `(session_number, entry_sha256)` receipts before
-  applying the grandfather ceiling, so valid historical receipts are not
-  misclassified as orphan records.
-
-**v3.0.1 — 2026-08-25 — candidate**
-
-- Added a progressively loaded bilingual candidate-quality contract. Learning
-  wording must be plain, standalone, source-faithful, and centered on one
-  transferable insight; volatile trace identifiers stay in metadata.
-- Rechecks owner-edited wording before capture and requires fresh approval for
-  any semantic repair.
-
-**v3.0.0 — 2026-08-05 — candidate**
-
-- Rebuilt closeout around validated evidence, itemized approval, tail-hash
-  compare-and-swap append, readback, and append-only journal evidence.
-- Added named skip, conflict, and interruption paths plus deterministic archive
-  overflow policy.
-- Added four-state external capabilities and three-case instruction resolution.
-- Moved schemas, SQL, hashing, and long rationale into bundled scripts and
-  progressive-disclosure references.
-- Preserved v1 continuity-file formats and all ten trigger semantics.
-
-Earlier releases remain in git and GitHub Releases for rollback. This candidate
-is canonical source only; deployment waits for Phase 4.5 PASS and Phase 5.
+Install by copying the whole folder. Releases hold earlier versions; repository
+review links may be missing from standalone copies. This source candidate still
+needs independent recertification and Phase 5 before deployment.

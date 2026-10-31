@@ -11,7 +11,7 @@ it.
 ## Current project slice
 
 ```sql
-select id, urgency, priority, project, title, flagged, due, review_on, status
+select id, urgency, priority, project, title, flagged, due, review_on, status, updated_at
 from task_urgency
 where status = 'open' and project = '<project>'
 order by (coalesce(flagged, false) or coalesce(review_on <= current_date, false)) desc,
@@ -30,20 +30,20 @@ values ('<reserved-task-uuid>'::uuid, '<project>', '<title>', '<details>', <prio
 returning id, project, title, priority, status, origin;
 
 update tasks set status = 'done', completed_at = now(), updated_at = now()
-where id = '<task-uuid>'
-returning id, project, title, status, completed_at;
+where id = '<task-uuid>' and updated_at = '<observed-updated_at>'
+returning id, status, priority, flagged, updated_at;
 
 update tasks set priority = <priority>, flagged = <flagged>, updated_at = now()
-where id = '<task-uuid>'
-returning id, project, title, priority, flagged;
+where id = '<task-uuid>' and updated_at = '<observed-updated_at>'
+returning id, status, priority, flagged, updated_at;
 
 update tasks set status = 'parked', review_on = '<review-date>', updated_at = now()
-where id = '<task-uuid>'
-returning id, project, title, status, review_on;
+where id = '<task-uuid>' and updated_at = '<observed-updated_at>'
+returning id, status, priority, flagged, updated_at;
 
 update tasks set status = 'cancelled', updated_at = now()
-where id = '<task-uuid>'
-returning id, project, title, status;
+where id = '<task-uuid>' and updated_at = '<observed-updated_at>'
+returning id, status, priority, flagged, updated_at;
 ```
 
 After mutations, rerun the current project slice and rebuild the mirror from
@@ -63,8 +63,7 @@ result or a follow-up current read before it is reported as verified.
 Reserve the UUID before approval. After an uncertain insert, read that same
 UUID before any retry; never substitute a fresh UUID. Every external retry
 requires fresh approval and fresh preconditions. Updates use observed row
-preconditions (including updated_at when available) and returning; a zero-row
-result is a conflict, not success. If unavailable, retain the exact operation,
+preconditions using the observed updated_at and returning. Zero returned rows is a conflict: read again and ask again; never retry blindly. The tasks_set_updated_at trigger refreshes updated_at on every update (verified read-only on 2026-10-28). No live call is needed to use these templates. If unavailable, retain the exact operation,
 reserved id and "needs fresh approval" in the entry's Decisions/Next.
 
 An authoritative receipt needs envelope.project = identity.project = every

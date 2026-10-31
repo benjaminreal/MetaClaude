@@ -1,4 +1,4 @@
-# newbeginning 2.2.2 — candidate
+# newbeginning 2.3.0 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -18,14 +18,14 @@ start. It captures start/captured_at and derives this package's name/version. La
 independent helper chains use new-envelope; never copy earlier start times.
 Capture more than fifteen minutes after start refuses ESTALEEVIDENCE. Word
 counts use count-words on exact final text sent, after the last edit.
-Discover services and replace both `unprobed` states before validation. Read
+Before probing, honor owner choices: learning skipped or Open Brain forbidden means open_brain `not_used`, with no probe, search or capture. Otherwise discover services and replace `unprobed` with observed states before validation. Read
 `references/envelope_examples.md` for complete JSON recipes and
 `references/recovery.md` for exact command syntax, state tables, stdin support,
 errors and historical migration. At most one file argument per call may be
 `-`; do not assume every literal argument supports stdin.
 
 All project writes need the displayed approval scope. Freeze returns canonical
-scope_lines, approve compares that exact text and records owner_reply
+scope_lines, approve compares that exact text and requires non-empty owner_reply
 separately. An exclusion requires a revised freeze. Hashes are consistency
 checks, not proof of conversation authority, provenance or authenticity.
 
@@ -71,15 +71,15 @@ edits/dispositions/deletion belong during the session or at closingtime: route
 those requests there and stop. Searches remain reads; SKIP-openbrain means no
 search or capture, since searches send candidate text to the service.
 
-Report unfinished_operations and direct the operator to resume. A verified
+Report unfinished_operations. Opening resume only inspects closing operations; use closingtime resume to finish them. Opening may finish its own approved unfinished index write; a project without a journal gets no new files. A verified
 append stays journaled; changed remaining indexes use a fresh index-only
 freeze-draft --continue <parent-intent> with new approval, or approved child
 abandonment. Opening never creates pending Tasks intent.
 
-Use the whole folder; runtime and references are bundled independently of its
+Install by copying the whole folder; Releases hold earlier versions. Repository review links may be missing from standalone copies. Use the whole folder; runtime and references are bundled independently of its
 sibling. The original receipt survives a bound interrupted operation returned by resume;
 otherwise re-observe and freeze a current receipt. New evidence expires after
-six hours, with at most 120 seconds future skew. One draft approval per invocation;
+six hours, with at most 120 seconds future skew. One approval per envelope chain; each later chain in the conversation requires a new envelope and approval;
 discard superseded proposals before approval (conversation duty).
 For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
 the repository Phase 4 eligibility note and the Phase 4.5 implementation report.

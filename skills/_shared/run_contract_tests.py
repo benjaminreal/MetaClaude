@@ -37,6 +37,8 @@ import workflow_fixtures  # noqa: E402
 import repair_fixtures
 import round3_fixtures
 import round3_1_fixtures
+import recert_regressions
+import round4_fixtures
 import candidate_quality_fixtures  # noqa: E402
 
 SKILLS = Path(__file__).resolve().parent.parent
@@ -190,6 +192,18 @@ def run() -> int:
     failures += [f"round3.1: {problem}" for problem in round3_1_bad]
     print(f"  [{'PASS' if not round3_1_bad else 'FAIL'}] {len(round3_1_fixtures.CHECKS)} Round-3.1 regression groups")
     for problem in round3_1_bad:
+        print(f"        └─ {problem}")
+
+    for group, total, recert_bad in recert_regressions.run_groups():
+        failures += [f"recert {group}: {problem}" for problem in recert_bad]
+        print(f"  [{'PASS' if not recert_bad else 'FAIL'}] recert {group}: {total - len(recert_bad)}/{total} cases")
+        for problem in recert_bad:
+            print(f"        └─ {problem}")
+
+    round4_bad = round4_fixtures.run()
+    failures += [f"round4: {problem}" for problem in round4_bad]
+    print(f"  [{'PASS' if not round4_bad else 'FAIL'}] 4 Round-4 additional guard groups")
+    for problem in round4_bad:
         print(f"        └─ {problem}")
 
     workflow_bad = workflow_fixtures.run()
