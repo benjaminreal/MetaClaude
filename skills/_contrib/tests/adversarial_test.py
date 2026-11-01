@@ -358,6 +358,38 @@ def main() -> int:
         exc(lab.changes / cid12 / "GATE-EXCEPTIONS.json", [dict(good, mode="install", fingerprint=irow["fingerprint"])])
         rc, out = lab.tool_run("install", "calibre", "--commit", w12, "--change-id", cid12, "--target", str(A))
         expect("S12 install proceeds with the exact install-mode exception", rc == 0 and "installed calibre@" in out, out)
+
+        # S13 a commit already on the main line installs even though the range from the installed
+        # commit also holds other merged work (a non-skill file and another skill's edit)
+        installed = json.loads((lab.changes / "installed.json").read_text())["entries"][f"calibre@{A}"]["commit"]
+        wt13 = lab.worktree(installed)
+        (wt13 / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (wt13 / "skills/sync-jobs/SKILL.md").write_text((wt13 / "skills/sync-jobs/SKILL.md").read_text() + "\nother merged work\n")
+        lab.commit(wt13, "other merged work")
+        bump_calibre(wt13, "1.0.5")
+        w13 = lab.commit(wt13, "calibre 1.0.5")
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "1", cwd=wt13)
+        expect("S13 before merge, the contributor gate still fails the scope checks",
+               rc == 1 and "changes_inside_skills" in out and "only_declared_skills_touched" in out, out)
+        cid13 = lab.records("2026-10-31_test_calibre_thirteen", w13, ["calibre"])
+        rc, out = lab.tool_run("install", "calibre", "--commit", w13, "--change-id", cid13, "--target", str(A))
+        expect("S13 before merge, install refuses on scope", rc == 1 and "re-gate" in out, out)
+        sh(["git", "merge", "-q", "--no-ff", "-m", "merge", w13], lab.repo)
+        # a later rules change on the main line must not block installing the merged commit
+        with open(lab.repo / "skills/STANDARDS.md", "a") as f:
+            f.write("\n- Later rule.\n")
+        sh(["git", "commit", "-qam", "later rules change"], lab.repo)
+        rc, out = lab.tool_run("install", "calibre", "--commit", w13, "--change-id", cid13, "--target", str(A))
+        inst13 = json.loads(sorted((lab.changes / cid13).glob("INSTALL-GATE-*.json"))[-1].read_text())
+        scope_rows = [c for c in inst13["checks"] if c["check"] in ("changes_inside_skills", "only_declared_skills_touched")]
+        expect("S13 after merge, install succeeds and records the scope checks as not applicable",
+               rc == 0 and "installed calibre@" in out and len(scope_rows) == 2
+               and all("not applicable" in c["detail"] for c in scope_rows), out + json.dumps(scope_rows))
+        expect("S13 after merge, privacy is still scanned", any(c["check"].startswith("privacy:") for c in inst13["checks"]))
+        expect("S13 after merge, a later rules change is reported, not blocking",
+               any(c["check"] == "protected_unchanged:skills/STANDARDS.md" and "not applicable" in c["detail"]
+                   for c in inst13["checks"]))
+        # unmerged installs still compare protected files with the main line (S3 covers the contributor gate)
     finally:
         if keep:
             print(f"kept {root}")

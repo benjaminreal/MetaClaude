@@ -267,8 +267,11 @@ Owner-accepted failures:
   `gate --skill S --level L --exceptions <change folder>/GATE-EXCEPTIONS.json --out <change folder>/GATE.json`.
 - `install` reads the same file by itself. Its gate takes versions and the old
   tests from the installed commit, so it can report different failures:
-  - the scope checks still use the merge base with the main line, unless the
-    commit is already on the main line;
+  - the scope checks still use the merge base with the main line. For a commit
+    already on the main line, the scope and protected-file checks are marked
+    not applicable: only the owner or a MetaClaude session merges, the
+    contributor gate checked scope before review, and the main line's own rules
+    and tool are the ones that run;
   - so a test failure there needs its own `install` entry.
 - Only these checks can be accepted:
   - corpus append-only;
