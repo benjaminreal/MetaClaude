@@ -482,3 +482,15 @@ actual result. After Tasks mutations attach a freshly validated current
 pass its actual rows via write-approved --mirror-rows. The original receipt
 remains observation evidence. Archive payloads require local_payload_hashes
 with their exact SHA-256 before freeze. Pending replacements also bind their exact payload SHA-256 in local_payload_hashes before freeze; deletes bind `absent`. Each revision uses a new freeze and approval with non-empty owner words.
+
+## Authorized gateway opening
+
+Capture a fresh envelope first. Save the actual `urgency` structured result and
+separately supplied intended operation in scratch, then run `gateway-receipt`
+as described in task_operations.md. Merge its `receipt` and
+`returned_rows_by_capability` without editing them. Set the intended project and
+observed capability state and expected service reference in the envelope, keep
+mutation scope empty, and validate. The result's database timestamp is retained
+with microseconds. A validated bounded slice can be rendered with render-mirror;
+it does not authorize changing the Markdown mirror during opening. No synthetic
+example is evidence of a working gateway.

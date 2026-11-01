@@ -8,6 +8,7 @@ task drafts; nothing is persisted. No manual append fallback.
 new-envelope <workspace-root>
 snapshot <workspace-root> --entries 2
 fingerprint-rows <rows.json|->
+gateway-receipt <result.json|-> <operation.json|-> --project <project|portfolio> --project-ref <expected-service-ref>
 fingerprint-operation <query.sql|->
 validate <envelope.json|->
 freeze-draft <envelope.json> [<entry.md>] [<index.md>]
@@ -125,3 +126,19 @@ Show any edit/discard/delete transition's frozen scope_lines with its question.
 Pending edits/dispositions/deletion require non-empty --owner-reply and approval
 at most six hours old; stage uses the close's approved owner words. A close
 waiting only on learning dispositions ends with the ritual unless SKIP-ritual.
+
+## Gateway receipt variant
+
+For an authorized task-only connection, use the recipe in task_operations.md.
+`gateway-receipt` emits a current Tasks receipt plus exact returned rows from a
+successful urgency response and an independently supplied intended operation,
+project/scope and service reference. It performs no network or file mutation.
+`operation_fingerprint` uses a tasks-gateway domain and sorted-key compact JSON;
+string case and spaces remain significant. The SQL fingerprint is unchanged.
+The retained `gateway_result`, explicit transport, operation, identity, server
+time, truncation and rows are checked again during envelope validation. Missing
+or divergent evidence refuses with GATEWAY_RECEIPT. Existing freshness, project,
+capability, approval, mutation and mirror checks still apply. Consistency checks
+do not authenticate supplied output, prove live availability, or certify an
+installed client. Removing every evidence marker and inventing a different SQL
+receipt is fabrication; no offline validator can authenticate that history.

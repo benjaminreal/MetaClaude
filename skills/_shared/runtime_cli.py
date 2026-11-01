@@ -53,6 +53,12 @@ def _parser() -> argparse.ArgumentParser:
     constructor.add_argument("workspace_root")
     fingerprint = commands.add_parser("fingerprint-operation")
     fingerprint.add_argument("text_file")
+    gateway = commands.add_parser("gateway-receipt", help="bind actual urgency output to independently intended scope")
+    gateway.add_argument("gateway_response")
+    gateway.add_argument("gateway_operation")
+    gateway.add_argument("--project", required=True)
+    gateway.add_argument("--project-ref", required=True)
+    gateway.add_argument("--tool-result-id")
     skip = commands.add_parser("skip-plan")
     skip.add_argument("names")
     resume = commands.add_parser("resume", help="inspect recovery; closingtime finishes closing operations, opening only its own approved index")
@@ -116,7 +122,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        file_fields = ("envelope_json", "entry_markdown", "index_markdown", "index_draft", "draft_receipt_json", "approved_draft_json", "content", "mirror_rows", "rows_json", "text_file")
+        file_fields = ("envelope_json", "entry_markdown", "index_markdown", "index_draft", "draft_receipt_json", "approved_draft_json", "content", "mirror_rows", "rows_json", "text_file", "gateway_response", "gateway_operation")
         if sum(getattr(args, field, None) == "-" for field in file_fields) > 1:
             raise helpers.HelperError("EINPUT", "one stdin argument per call")
         if args.command == "snapshot":
@@ -125,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
             result = helpers.new_envelope(args.workspace_root)
         elif args.command == "fingerprint-operation":
             result = {"operation_fingerprint": schemas.fingerprint_operation(_text_file(args.text_file))}
+        elif args.command == "gateway-receipt":
+            result = schemas.gateway_receipt(_json_file(args.gateway_response), _json_file(args.gateway_operation),
+                                            args.project_ref, args.project, args.tool_result_id)
         elif args.command == "skip-plan":
             result = workflow.plan_skip_paths({n.removeprefix("SKIP-") for n in args.names.split(",") if n})
         elif args.command == "resume":

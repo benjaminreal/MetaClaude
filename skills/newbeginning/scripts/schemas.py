@@ -16,6 +16,9 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import re
+import uuid
+from decimal import Decimal, InvalidOperation
 
 SCHEMA_VERSION = "1.0"
 
@@ -105,6 +108,125 @@ def fingerprint_operation(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.replace("\r\n", "\n").rstrip().encode("utf-8")).hexdigest()
 
 
+def _gateway_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def _gateway_operation(operation: object) -> dict:
+    if not isinstance(operation, dict) or set(operation) != {"tool", "arguments"} or operation.get("tool") != "urgency":
+        raise ValueError("gateway requires an explicit urgency operation")
+    args = operation["arguments"]
+    if not isinstance(args, dict) or not (
+        set(args) == {"project"} and isinstance(args["project"], str) and 0 < len(args["project"]) <= 160
+        or set(args) == {"scope"} and args["scope"] == "portfolio"
+    ):
+        raise ValueError("gateway requires explicit project or portfolio scope")
+    return operation
+
+
+def fingerprint_gateway_operation(operation: dict) -> str:
+    payload = {"transport": "tasks_gateway", "operation": _gateway_operation(operation)}
+    return "tasks-gateway:sha256:" + hashlib.sha256(_gateway_json(payload).encode("utf-8")).hexdigest()
+
+
+def gateway_receipt(result: object, operation: object, project_ref: str, project: str,
+                    tool_result_id: str | None = None) -> dict:
+    """Construct local evidence from independent intended scope and actual server output.
+
+    Consistency checks do not authenticate a tool result or grant mutation approval.
+    Freshness is checked by validate_receipt against the enclosing invocation.
+    """
+    operation = _gateway_operation(operation)
+    if not isinstance(result, dict) or set(result) != {
+        "operation", "project_ref", "view", "observed_at", "rows", "truncated", "outcome"
+    }:
+        raise ValueError("gateway response fields differ from the urgency contract")
+    if not isinstance(project_ref, str) or not project_ref or result["project_ref"] != project_ref:
+        raise ValueError("gateway service identity differs from the expected project reference")
+    if result["view"] != "task_urgency" or result["outcome"] != "ok" or _gateway_json(result["operation"]) != _gateway_json(operation):
+        raise ValueError("gateway tool, arguments, view or outcome differ from intent")
+    args = operation["arguments"]
+    portfolio = args.get("scope") == "portfolio"
+    if (portfolio and project != "portfolio") or (not portfolio and args["project"] != project):
+        raise ValueError("gateway scope differs from the independently intended project")
+    if _parse_instant(result["observed_at"]) is None:
+        raise ValueError("gateway requires a timezone-aware server observation time")
+    rows, truncated = result["rows"], result["truncated"]
+    limit = 20 if portfolio else 8
+    if not isinstance(rows, list) or type(truncated) is not bool or len(rows) > limit or (truncated and len(rows) != limit):
+        raise ValueError("gateway row bound or truncation flag is invalid")
+    required = {"id", "urgency", "priority", "project", "title", "flagged", "due", "review_on", "status", "updated_at"}
+    ids = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != required:
+            raise ValueError("gateway urgency projection differs from the contract")
+        value = row["id"]
+        if not isinstance(value, str):
+            raise ValueError("gateway task ID is invalid")
+        try:
+            valid_id = str(uuid.UUID(value)) == value.lower()
+        except ValueError:
+            valid_id = False
+        if not valid_id or value.lower() in ids:
+            raise ValueError("gateway task IDs must be valid and unique")
+        ids.add(value.lower())
+        if not isinstance(row["project"], str) or not row["project"] or (not portfolio and row["project"] != project):
+            raise ValueError("gateway row project differs from intent")
+        if not isinstance(row["title"], str) or not row["title"] or len(row["title"]) > 500 or type(row["flagged"]) is not bool or row["status"] != "open":
+            raise ValueError("gateway row text, flag or status is invalid")
+        priority = row["priority"]
+        if priority is not None and (type(priority) is not int or priority not in range(4)):
+            raise ValueError("gateway priority is invalid")
+        if type(row["urgency"]) not in (str, int, float):
+            raise ValueError("gateway urgency is invalid")
+        try:
+            if not Decimal(str(row["urgency"])).is_finite():
+                raise ValueError("gateway urgency must be finite")
+        except InvalidOperation as exc:
+            raise ValueError("gateway urgency is invalid") from exc
+        for field in ("due", "review_on"):
+            value = row[field]
+            if value is not None:
+                if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                    raise ValueError("gateway date is invalid")
+                _dt.date.fromisoformat(value)
+        if _parse_instant(row["updated_at"]) is None:
+            raise ValueError("gateway updated_at must preserve a timezone-aware timestamp")
+    identity = {"project_ref": project_ref, "view": "task_urgency"}
+    identity.update({"scope": "portfolio"} if portfolio else {"project": project})
+    # Independent copies keep retained evidence distinct from envelope row edits.
+    response_copy = json.loads(_gateway_json(result))
+    receipt = {
+        "schema_version": SCHEMA_VERSION, "capability": "tasks_mcp", "status": "current",
+        "transport": "tasks_gateway", "identity": identity, "tool_result_id": tool_result_id,
+        "operation": json.loads(_gateway_json(operation)), "observed_at": result["observed_at"],
+        "truncated": truncated, "operation_fingerprint": fingerprint_gateway_operation(operation),
+        "row_fingerprint": canonical_row_fingerprint(rows), "row_count": len(rows),
+        "gateway_result": response_copy,
+    }
+    return {"receipt": receipt, "returned_rows_by_capability": {"tasks_mcp": json.loads(_gateway_json(rows))}}
+
+
+def _validate_gateway_receipt(receipt: dict, returned_rows: list[dict] | None) -> list[dict]:
+    marker = any(k in receipt for k in ("transport", "gateway_result", "operation")) or str(receipt.get("operation_fingerprint", "")).startswith("tasks-gateway:")
+    if not marker:
+        return []  # Existing SQL receipts keep their original contract.
+    try:
+        if receipt.get("transport") != "tasks_gateway" or receipt.get("capability") != "tasks_mcp" or receipt.get("status") != "current":
+            raise ValueError("gateway receipt transport, capability or status differs")
+        identity = receipt.get("identity") or {}
+        project = "portfolio" if identity.get("scope") == "portfolio" else identity.get("project")
+        built = gateway_receipt(receipt.get("gateway_result"), receipt.get("operation"), identity.get("project_ref"), project, receipt.get("tool_result_id"))
+        expected = built["receipt"]
+        if any(_gateway_json(receipt.get(k)) != _gateway_json(v) for k,v in expected.items()):
+            raise ValueError("gateway receipt metadata differs from retained evidence")
+        if _gateway_json(returned_rows) != _gateway_json(built["returned_rows_by_capability"]["tasks_mcp"]):
+            raise ValueError("gateway returned rows differ from retained evidence")
+    except (ValueError, TypeError, KeyError) as exc:
+        return [{"code": "GATEWAY_RECEIPT", "receipt": "tasks_mcp", "detail": str(exc)}]
+    return []
+
+
 def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
                      invocation_started_at: str) -> list[dict]:
     issues: list[dict] = []
@@ -153,6 +275,7 @@ def validate_receipt(receipt: dict, returned_rows: list[dict] | None,
         if receipt.get("capability_state") not in EXTERNAL_STATES - {"working"}:
             issues.append({"code": MISSING_RECEIPT, "receipt": cap,
                            "detail": "non-current receipt must name its capability_state"})
+    issues += _validate_gateway_receipt(receipt, returned_rows)
     return issues
 
 

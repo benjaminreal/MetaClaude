@@ -41,6 +41,7 @@ import recert_regressions
 import round4_fixtures
 import round5_fixtures
 import candidate_quality_fixtures  # noqa: E402
+import gateway_receipt_fixtures
 
 SKILLS = Path(__file__).resolve().parent.parent
 
@@ -222,6 +223,9 @@ def run() -> int:
 
     if candidate_quality_fixtures.run() != 0:
         failures.append("bilingual candidate-quality fixture catalog failed")
+    gateway_bad = gateway_receipt_fixtures.run()
+    failures += [f"gateway: {problem}" for problem in gateway_bad]
+    print(f"  [{'PASS' if not gateway_bad else 'FAIL'}] gateway receipt evidence and CLI fixtures")
 
     print(f"\n  Not covered here ({len(fixtures.DEFERRED)} fixture families + the "
           f"historical-corpus scorer self-test):")

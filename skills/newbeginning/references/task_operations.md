@@ -7,6 +7,30 @@ Use angle-bracket placeholders. Never place a dollar sign followed by a digit
 in a skill body or reference: slash-command argument substitution may rewrite
 it.
 
+
+## Task-only gateway transport
+
+When resolved task instructions authorize `tasks-mcp` and the actual tool is
+available, call `urgency` with exactly `{"project":"<project>"}` or
+`{"scope":"portfolio"}`. There are no implicit scope defaults. Otherwise keep
+the existing approved SQL path; do not reconfigure a connection here.
+
+Save the actual structured urgency result and the independently intended
+operation `{"tool":"urgency","arguments":<exact arguments>}` to scratch. Run:
+
+```text
+runtime_cli.py gateway-receipt <result.json> <operation.json> --project <project|portfolio> --project-ref <expected-service-ref>
+```
+
+The expected service reference comes from resolved instructions, not the
+response. Copy the emitted `receipt` into `mcp_receipts` and its
+`returned_rows_by_capability` into the envelope. Preserve the retained
+`gateway_result`, operation, transport, timestamp and truncation flag unchanged;
+run `validate`. Only a successful urgency result can establish current task
+state. A truncated result is a bounded slice, never a complete backlog. Server
+time is evidence; do not replace it with a local time. The constructor is local,
+read-only, and does not prove the service or installed client works.
+
 ## Current project slice
 
 ```sql

@@ -1248,6 +1248,20 @@ def r5_f5_docs():
     assert "`## Session 2026 retrospective` is Session 2026" in (HERE / "recovery.md").read_text()
 
 
+
+# Task gateway transport: preserve retained evidence through envelope validation.
+@case("Tasks gateway", "retained tool evidence cannot be relabelled as SQL")
+def gateway_transport_cannot_be_relabelled():
+    import fixtures
+    import gateway_receipt_fixtures as G
+    with fixtures.historical_clock():
+        packet = G.construct(G.response())
+        envelope_ = G.envelope(packet)
+        envelope_["mcp_receipts"][0]["transport"] = "sql"
+        result = S.validate_envelope(envelope_, envelope_["returned_rows_by_capability"])
+        assert "GATEWAY_RECEIPT" in {failure["code"] for failure in result["failures"]}
+
+
 def results():
     rows = []
     for group, label, fn in CHECKS:

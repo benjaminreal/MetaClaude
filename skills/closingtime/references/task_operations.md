@@ -8,6 +8,30 @@ Use angle-bracket placeholders. Never place a dollar sign followed by a digit
 in a skill body or reference: slash-command argument substitution may rewrite
 it.
 
+
+## Task-only gateway transport
+
+When resolved task instructions authorize `tasks-mcp` and the actual tool is
+available, call `urgency` with exactly `{"project":"<project>"}` or
+`{"scope":"portfolio"}`. There are no implicit scope defaults. Otherwise keep
+the existing approved SQL path; do not reconfigure a connection here.
+
+Save the actual structured urgency result and the independently intended
+operation `{"tool":"urgency","arguments":<exact arguments>}` to scratch. Run:
+
+```text
+runtime_cli.py gateway-receipt <result.json> <operation.json> --project <project|portfolio> --project-ref <expected-service-ref>
+```
+
+The expected service reference comes from resolved instructions, not the
+response. Copy the emitted `receipt` into `mcp_receipts` and its
+`returned_rows_by_capability` into the envelope. Preserve the retained
+`gateway_result`, operation, transport, timestamp and truncation flag unchanged;
+run `validate`. Only a successful urgency result can establish current task
+state. A truncated result is a bounded slice, never a complete backlog. Server
+time is evidence; do not replace it with a local time. The constructor is local,
+read-only, and does not prove the service or installed client works.
+
 ## Current project slice
 
 ```sql
@@ -70,3 +94,17 @@ An authoritative receipt needs envelope.project = identity.project = every
 row.project, including an explicit project identity for empty rows. Portfolio
 mode is explicit (see runtime_contract.md). Fingerprint the exact query using
 fingerprint-operation; do not lowercase or collapse whitespace in literals.
+
+### Approved gateway mutations
+
+The same exact-change approval and fresh-read rules apply to gateway calls.
+Show the tool name and exact JSON arguments instead of SQL when this transport
+is authorized. Reserve the create UUID before approval. `create_task` requires
+`id`, `project`, `title` and `origin`; `update_task` requires `id`, the exact
+last-read `expected_updated_at`, and `changes`. There is no delete or free SQL.
+An explicit `status: "done"` refreshes `completed_at`; other status changes and
+ordinary edits preserve it, matching the SQL templates. Timestamps are not
+caller-editable fields. A duplicate create returns the existing row; a stale
+update returns conflict and grants no retry. Use `get_task` for independent
+readback, then a fresh `urgency` result and validated receipt for the mirror.
+No gateway call is authorized by a receipt constructor or an opening brief.
