@@ -490,7 +490,8 @@ def installed_report() -> list[dict]:
             "entry": key, "version": e.get("version"), "commit": (e["commit"] or "snapshot")[:12],
             "state": "MISSING" if actual is None else ("OK" if actual == e["tree_sha256"] else "DRIFT"),
             "locked": is_locked(path),
-            "merged": not e["commit"] or git_ok(MAIN, "merge-base", "--is-ancestor", e["commit"], "HEAD"),
+            "merged": not e["commit"] or any(git_ok(MAIN, "merge-base", "--is-ancestor", e["commit"], ref)
+                                             for ref in ("HEAD", "refs/heads/main", "refs/remotes/origin/main")),
         })
     return rows
 

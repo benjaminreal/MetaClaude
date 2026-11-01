@@ -7,8 +7,8 @@ and ask the owner; do not work around it.
 
 Skills maintained here: `newbeginning`, `closingtime` (the session skills,
 which share `skills/_shared/`), `boss-hunt-research`, `calibre`,
-`local-whisper-transcription`, `nate-update`, `research-triangulation`,
-`sync-jobs`.
+`evidence-research`, `local-whisper-transcription`, `nate-update`,
+`research-triangulation`, `sync-jobs`.
 
 `<MetaClaude>` below means the root of the main checkout of this repository.
 Your global instructions give its local path.
