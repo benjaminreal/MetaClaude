@@ -51,6 +51,7 @@ DEFAULT_TARGETS = {"claude": "~/.claude/skills", "codex": "~/.codex/skills"}
 HEADING_VERSION_RES = (
     re.compile(r"^\s*\*\*v(\d+\.\d+\.\d+)\b"),
     re.compile(r"^\s*#{2,4}\s+v?(\d+\.\d+\.\d+)\b"),
+    re.compile(r"^\s*\*\*Candidate\s+v?(\d+\.\d+\.\d+)\b"),
 )
 
 

@@ -47,6 +47,13 @@ REQUIRED_FILES = [
     ROOT / "transferability" / "DEFECT-DISPOSITIONS-R1-R13.md",
 ]
 
+# Maintainer-only records are kept out of the public repository (owner decision
+# 2026-10-31). They are checked when present and skipped when absent, so the
+# suite passes on a clean public checkout.
+MAINTAINER_ONLY = {ROOT / "BACKLOG.md", ROOT / "HANDOFF.md"} | {
+    path for path in REQUIRED_FILES if path.parent == ROOT / "transferability"
+}
+
 CERTIFIED_RUNTIME_DOCS = [
     ROOT / "SKILL.md",
     ROOT / "README.md",
@@ -97,7 +104,10 @@ def main() -> int:
     required_files = list(REQUIRED_FILES)
     if tree_kind in {"SOURCE", "CLAUDE_CODE"}:
         required_files.append(CLAUDE_LOADER)
+    maintainer_present = any(path.exists() for path in MAINTAINER_ONLY)
     for path in required_files:
+        if path in MAINTAINER_ONLY and not path.exists() and not maintainer_present:
+            continue
         if not path.is_file() or not path.read_text(encoding="utf-8").strip():
             failures.append(f"missing or empty required file: {path.relative_to(ROOT)}")
 
@@ -113,6 +123,8 @@ def main() -> int:
             failures.append(f"source/Claude tree skill entries drift: {skill_entries}")
 
     for path in CERTIFIED_RUNTIME_DOCS:
+        if path in MAINTAINER_ONLY and not path.exists():
+            continue
         content = path.read_text(encoding="utf-8")
         for fragment in FORBIDDEN_RUNTIME_PATH_FRAGMENTS:
             if fragment in content:
