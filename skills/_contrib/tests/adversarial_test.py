@@ -266,53 +266,87 @@ def main() -> int:
         rc, out = lab.tool_run("gate", "--skill", "newbeginning", "--skill", "closingtime", "--level", "1", cwd=wt10)
         expect("S10 synced session-skill change passes, including base tests", rc == 0, out)
 
-        # S11 owner-accepted gate exceptions: exact match only, never for own tests or privacy
+        # S11 owner-accepted gate exceptions: fingerprint of the complete evidence, never for
+        # own tests, scope or privacy (review of 186f0d9, findings 1-7)
         wt11 = lab.worktree(w2)
         bump_calibre(wt11, "1.0.3")
         p = wt11 / "skills/calibre/SKILL.md"
         p.write_text("\n".join(l for l in p.read_text().splitlines() if not l.startswith("description:")) + "\n")
         (wt11 / "skills/calibre/evals/structural_eval.py").write_text("import sys\nsys.exit(0)\n")
         w11 = lab.commit(wt11, "intentional break of an old test")
-        g11 = root / "gate11.json"
-        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2", "--out", str(g11), cwd=wt11)
-        res = json.loads(g11.read_text())
-        row = next(c for c in res["checks"] if c["check"].startswith("base_tests_on_new_code:"))
-        expect("S11 failing check reports stable items without temp paths",
-               rc == 1 and row["items"] and not any("/tmp" in i or "/var/" in i for i in row["items"]), json.dumps(row))
+
+        def gate_json(wt, name, *extra, level="2"):
+            out_path = root / f"{name}.json"
+            rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", level, "--out", str(out_path), *extra, cwd=wt)
+            return rc, out, (json.loads(out_path.read_text()) if out_path.exists() else None)
+
+        def fail_row(res, prefix):
+            return next(c for c in res["checks"] if c["check"].startswith(prefix) and c["result"] != "PASS")
 
         def exc(path, rows, schema="1.0"):
             path.write_text(json.dumps({"schema_version": schema, "exceptions": rows}))
             return str(path)
 
-        good = {"check": row["check"], "mode": "contributor", "items": row["items"],
+        rc, out, res = gate_json(wt11, "g11")
+        row = fail_row(res, "base_tests_on_new_code:")
+        expect("S11 failing check reports a fingerprint and evidence without temp paths",
+               rc == 1 and row["fingerprint"].startswith("sha256:") and "/tmp/" not in row["evidence"]
+               and "/var/" not in row["evidence"] and row["fingerprint"] in out, json.dumps(row)[:600])
+        rc2, _, res2 = gate_json(wt11, "g11b")
+        expect("S11 fingerprint is identical on a second run", fail_row(res2, "base_tests_on_new_code:")["fingerprint"] == row["fingerprint"])
+        good = {"check": row["check"], "mode": "contributor", "fingerprint": row["fingerprint"],
                 "decision": "test decision", "owner_reply": "\"yes\"", "date": "2026-10-31"}
-        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
-                               "--exceptions", exc(root / "e1.json", [good]), cwd=wt11)
+        rc, out, _ = gate_json(wt11, "g11c", "--exceptions", exc(root / "e1.json", [good]))
         expect("S11 exact owner exception turns the failure into ACCEPTED and the gate passes",
                rc == 0 and "ACCEPTED" in out and "owner-accepted" in out, out)
-        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
-                               "--exceptions", exc(root / "e2.json", [dict(good, items=row["items"][:1] + ["other"])]), cwd=wt11)
-        expect("S11 an exception with different items does not apply", rc == 1 and "matched no failure" in out, out)
-        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
-                               "--exceptions", exc(root / "e3.json", [dict(good, mode="install")]), cwd=wt11)
+        rc, out, _ = gate_json(wt11, "g11d", "--exceptions", exc(root / "e2.json", [dict(good, fingerprint="sha256:" + "0" * 64)]))
+        expect("S11 an exception with another fingerprint does not apply", rc == 1 and "matched no failure" in out, out)
+        rc, out, _ = gate_json(wt11, "g11e", "--exceptions", exc(root / "e3.json", [dict(good, mode="install")]))
         expect("S11 an install-mode exception does not apply to the contributor gate", rc == 1, out)
         for label, bad in (("privacy check", dict(good, check="privacy:email_address")),
                            ("own head tests", dict(good, check="head_tests:skills/calibre/evals/structural_eval.py")),
+                           ("scope: outside skills", dict(good, check="changes_inside_skills")),
+                           ("scope: undeclared skill", dict(good, check="only_declared_skills_touched")),
                            ("empty owner reply", dict(good, owner_reply="")),
-                           ("bad date", dict(good, date="yesterday"))):
+                           ("bad date", dict(good, date="yesterday")),
+                           ("item list instead of fingerprint", {k: v for k, v in good.items() if k != "fingerprint"} | {"items": ["x"]})):
             rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
                                    "--exceptions", exc(root / "e4.json", [bad]), cwd=wt11)
             expect(f"S11 exception file refused: {label}", rc != 0 and "REFUSED" in out, out)
         (root / "e5.json").write_text("{not json")
         rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2", "--exceptions", str(root / "e5.json"), cwd=wt11)
         expect("S11 malformed exception file is refused, not ignored", rc != 0 and "REFUSED" in out, out)
+
+        # finding 2: a further issue inside the same failing check changes the evidence
+        wt11b = lab.worktree(w11)
+        p = wt11b / "skills/calibre/SKILL.md"
+        p.write_text("\n".join(l for l in p.read_text().splitlines() if not l.startswith("name:")) + "\n")
+        lab.commit(wt11b, "also drop name")
+        rc, out, _ = gate_json(wt11b, "g11f", "--exceptions", exc(root / "e6.json", [good]))
+        expect("S11 an additional failure inside the accepted check is not accepted", rc == 1, out)
+        # a new failure in another check still fails
         (wt11 / "skills/calibre/notes.md").write_text("Contact bob@realmail.io\n")
         lab.commit(wt11, "add a privacy hit")
-        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
-                               "--exceptions", exc(root / "e6.json", [good]), cwd=wt11)
+        rc, out, _ = gate_json(wt11, "g11g", "--exceptions", exc(root / "e7.json", [good]))
         expect("S11 a new unaccepted failure still fails the gate", rc == 1 and "privacy:email_address" in out, out)
 
-        # S12 install reads the change folder's exceptions and needs install-mode items
+        # finding 3: binary acceptance covers exactly the accepted files
+        wtb = lab.worktree(w2)
+        bump_calibre(wtb, "1.0.3")
+        for i in range(11):
+            (wtb / f"skills/calibre/b{i:02d}.dat").write_bytes(b"\0" + bytes([i]))
+        lab.commit(wtb, "eleven binaries")
+        rc, out, res = gate_json(wtb, "gb1", level="1")
+        brow = fail_row(res, "no_binary_files")
+        bexc = exc(root / "eb.json", [dict(good, check="no_binary_files", fingerprint=brow["fingerprint"])])
+        rc, out, _ = gate_json(wtb, "gb2", "--exceptions", bexc, level="1")
+        expect("S11 accepted binaries pass", rc == 0, out)
+        (wtb / "skills/calibre/b99.dat").write_bytes(b"\0extra")
+        lab.commit(wtb, "a twelfth binary")
+        rc, out, _ = gate_json(wtb, "gb3", "--exceptions", bexc, level="1")
+        expect("S11 a binary beyond the accepted ones fails", rc == 1, out)
+
+        # S12 install reads the change folder's exceptions and needs install-mode fingerprints
         wt12 = lab.worktree(w11)
         bump_calibre(wt12, "1.0.4")
         w12 = lab.commit(wt12, "calibre 1.0.4 on the intentional break")
@@ -320,8 +354,8 @@ def main() -> int:
         rc, out = lab.tool_run("install", "calibre", "--commit", w12, "--change-id", cid12, "--target", str(A))
         expect("S12 install refuses without an install-mode exception", rc == 1 and "re-gate" in out, out)
         inst = json.loads(next((lab.changes / cid12).glob("INSTALL-GATE-*.json")).read_text())
-        irow = next(c for c in inst["checks"] if c["check"].startswith("base_tests_on_new_code:"))
-        exc(lab.changes / cid12 / "GATE-EXCEPTIONS.json", [dict(good, mode="install", items=irow["items"])])
+        irow = fail_row(inst, "base_tests_on_new_code:")
+        exc(lab.changes / cid12 / "GATE-EXCEPTIONS.json", [dict(good, mode="install", fingerprint=irow["fingerprint"])])
         rc, out = lab.tool_run("install", "calibre", "--commit", w12, "--change-id", cid12, "--target", str(A))
         expect("S12 install proceeds with the exact install-mode exception", rc == 0 and "installed calibre@" in out, out)
     finally:

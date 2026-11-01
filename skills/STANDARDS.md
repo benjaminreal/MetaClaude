@@ -248,25 +248,35 @@ Owner-accepted failures:
   ```json
   {"schema_version": "1.0", "exceptions": [
     {"check": "<check name>", "mode": "contributor | install",
-     "items": ["<copied exactly from the gate output>"],
+     "fingerprint": "sha256:<64 hex>",
      "decision": "<what was decided>", "owner_reply": "<owner's words>", "date": "YYYY-MM-DD"}]}
   ```
 - Write an entry only from a recorded owner decision, quoted word for word.
   Never write one to get a gate to pass.
-- An entry applies only when its check name, its mode and its full item list
-  all match the failure. Any other failure still fails the gate.
-- `install` reads the file from the change folder by itself. Its gate measures
-  from the installed commit, so it can list different items. Those need their
-  own `install` entries.
-- Only these checks can be accepted:
-  - corpus append-only
-  - base tests on new code
-  - changes inside `skills/`
-  - only declared skills touched
-  - binary files
+- Copy `check` and `fingerprint` from the failing check in the JSON report:
+  - `GATE.json` (from `--out`) for mode `contributor`;
+  - `INSTALL-GATE-<commit>.json` in the change folder for mode `install`.
 
-  The change's own tests, privacy, protected files, parity and versions can
-  never be waived.
+  Read that check's `evidence` field first. The fingerprint covers all of it:
+  - the complete test output;
+  - the complete corpus diff, line positions included;
+  - every binary file with its hash.
+
+  If anything is added, removed or moved, the entry stops matching.
+- Contributor gate with exceptions:
+  `gate --skill S --level L --exceptions <change folder>/GATE-EXCEPTIONS.json --out <change folder>/GATE.json`.
+- `install` reads the same file by itself. Its gate takes versions and the old
+  tests from the installed commit, so it can report different failures:
+  - the scope checks still use the merge base with the main line, unless the
+    commit is already on the main line;
+  - so a test failure there needs its own `install` entry.
+- Only these checks can be accepted:
+  - corpus append-only;
+  - base tests on new code;
+  - binary files.
+
+  The change's own tests, scope, privacy, protected files, parity and versions
+  can never be waived.
 
 The tool's own adversarial tests are in `skills/_contrib/tests/`.
 

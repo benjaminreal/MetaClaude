@@ -13,8 +13,9 @@ mechanical half of that protocol:
   install           re-gate a certified commit, then install it and re-lock
 
 A gate failure that the owner has accepted is recorded in the change folder's
-GATE-EXCEPTIONS.json. It is accepted only when its check name, mode and exact
-item list match the failure; any other failure still fails the gate.
+GATE-EXCEPTIONS.json. It is accepted only when its check name, mode and the
+fingerprint of the complete failure evidence match; any other failure, or the
+same failure with anything extra, still fails the gate.
 
 Always run the main checkout's copy of this file. The repository is located
 from the tool's own path, never from the current folder. Standard library only;
@@ -46,15 +47,11 @@ REGRESSION_CORPUS = "skills/_shared/recert_regressions.py"
 TEST_PATH_RE = re.compile(r"(^|/)(evals|tests?)/|fixtures|recert_regressions|run_contract_tests|_test\.py$|(^|/)test_[^/]*\.py$")
 EXCEPTIONS_NAME = "GATE-EXCEPTIONS.json"
 # Only these checks can be owner-accepted. A change's own failing tests, privacy hits,
-# protected-file edits, parity and version checks can never be waived.
-ACCEPTABLE_CHECKS = ("regression_corpus_append_only", "base_tests_on_new_code:", "changes_inside_skills",
-                     "only_declared_skills_touched", "no_binary_files")
+# protected-file edits, scope, parity and version checks can never be waived.
+ACCEPTABLE_CHECKS = ("regression_corpus_append_only", "base_tests_on_new_code:", "no_binary_files")
+FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+TMP_PATH_RE = re.compile(r"/(?:private/)?(?:var|tmp)/\S+")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-FAILURE_LINE_RES = (
-    re.compile(r"^\s*- (?P<item>[^\n]+?): [A-Za-z_][\w.]*(?:Error|Exception)\b"),  # contract suite: '  - case: AssertionError'
-    re.compile(r"^(?P<item>[A-Za-z_][\w.]*(?:Error|Exception)\b[^\n]*)$"),          # final traceback line
-    re.compile(r"^(?P<item>FAIL\s+\S+.*)$"),                                         # structural eval rows
-)
 CHANGE_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_[A-Za-z0-9][A-Za-z0-9_.-]*$")
 DOLLAR_DIGIT_RE = re.compile(r"\$\d")
 PRIVACY_RES = {
@@ -315,10 +312,15 @@ def gate(head: str, skills: list[str], level: int, mode: str,
          exceptions: list[dict] | None = None) -> dict:
     checks: list[dict] = []
 
-    def record(name: str, ok: bool, detail: str = "", items: list[str] | None = None) -> None:
+    def record(name: str, ok: bool, detail: str = "", evidence: str | None = None,
+               summary: list[str] | None = None) -> None:
         row = {"check": name, "result": "PASS" if ok else "FAIL", "detail": detail}
         if not ok:
-            row["items"] = sorted(set(items if items is not None else [l.strip() for l in detail.splitlines() if l.strip()]))
+            # The fingerprint covers the complete failure evidence, so an exception for this
+            # failure stops matching as soon as anything is added, removed or moved.
+            row["evidence"] = evidence if evidence is not None else detail
+            row["fingerprint"] = "sha256:" + hashlib.sha256(row["evidence"].encode()).hexdigest()
+            row["summary"] = summary if summary is not None else [l.strip() for l in detail.splitlines() if l.strip()][:5]
         checks.append(row)
 
     head = git(MAIN, "rev-parse", head)
@@ -348,16 +350,17 @@ def gate(head: str, skills: list[str], level: int, mode: str,
         record(f"protected_unchanged:{path}", same,
                "" if same else "differs from the main line; changes to the rules or tool need a MetaClaude session, or rebase")
     outside = [p for p in changed if not p.startswith("skills/")]
-    record("changes_inside_skills", not outside, ", ".join(outside[:20]), outside)
+    record("changes_inside_skills", not outside, ", ".join(outside[:20]))
     undeclared = sorted(touched_skills(changed) - set(skills))
-    record("only_declared_skills_touched", not undeclared, ", ".join(undeclared), undeclared)
+    record("only_declared_skills_touched", not undeclared, ", ".join(undeclared))
 
     if REGRESSION_CORPUS in changed:
         diff = git(MAIN, "diff", "-U0", "--no-color", scope_base, head, "--", REGRESSION_CORPUS)
         removed_lines = [l[1:] for l in diff.splitlines() if l.startswith("-") and not l.startswith("---")]
         removed = len(removed_lines)
         record("regression_corpus_append_only", removed == 0,
-               f"{removed} removed lines; changing a reproduction needs a recorded owner decision", removed_lines)
+               f"{removed} removed lines; changing a reproduction needs a recorded owner decision",
+               evidence=diff, summary=removed_lines[:5])
 
     for skill in skills:
         rel = f"skills/{skill}/SKILL.md"
@@ -393,7 +396,8 @@ def gate(head: str, skills: list[str], level: int, mode: str,
             for name, rx in PRIVACY_RES.items():
                 if rx.search(line):
                     privacy[name].append(f"{path}: {line.strip()[:80]}")
-    record("no_binary_files", not binary, ", ".join(binary[:10]) + (" (binary files need owner approval)" if binary else ""))
+    record("no_binary_files", not binary, ", ".join(binary[:10]) + (" (binary files need owner approval)" if binary else ""),
+           evidence="\n".join(f"{p} {hashlib.sha256(blob(head, p) or b'').hexdigest()}" for p in sorted(binary)))
     record("no_dollar_digit_placeholders", not dollar, "; ".join(dollar[:5]))
     for name, hits in privacy.items():
         record(f"privacy:{name}", not hits, "; ".join(hits[:5]))
@@ -415,7 +419,7 @@ def gate(head: str, skills: list[str], level: int, mode: str,
         for cmd in test_commands(tree, skills):
             proc = run([sys.executable, cmd], tree, check=False)
             tail = "\n".join(l for l in (proc.stdout + proc.stderr).strip().splitlines()[-8:] if l.strip())
-            record(f"head_tests:{cmd}", proc.returncode == 0, tail, failure_items(proc.stdout + proc.stderr, tree))
+            record(f"head_tests:{cmd}", proc.returncode == 0, tail)
     # The base commit's own tests must still pass against the new skill code, so a
     # change cannot pass by weakening or stubbing the tests it ships with.
     with worktree_at(head) as tree:
@@ -434,7 +438,9 @@ def gate(head: str, skills: list[str], level: int, mode: str,
             tail = "\n".join(l for l in (proc.stdout + proc.stderr).strip().splitlines()[-8:] if l.strip())
             record(f"base_tests_on_new_code:{cmd}", proc.returncode == 0,
                    tail + ("\nAn intentional behaviour change that breaks an old test needs a recorded owner decision."
-                           if proc.returncode else ""), failure_items(proc.stdout + proc.stderr, tree))
+                           if proc.returncode else ""),
+                   evidence=normalize_output(f"exit {proc.returncode}\n" + proc.stdout + "\n--- stderr ---\n" + proc.stderr, tree),
+                   summary=failure_summary(proc.stdout + proc.stderr))
 
     accepted, unused = apply_exceptions(checks, exceptions or [], mode)
     failed = [c for c in checks if c["result"] == "FAIL"]
@@ -450,16 +456,16 @@ def gate(head: str, skills: list[str], level: int, mode: str,
     }
 
 
-def failure_items(output: str, tree: Path) -> list[str]:
-    """Stable names of what failed in a test run: case names and exception lines, temp paths removed."""
-    items = []
-    for line in output.replace(str(tree), "<tree>").splitlines():
-        for rx in FAILURE_LINE_RES:
-            m = rx.match(line)
-            if m:
-                items.append(re.sub(r"/(?:private/)?(?:var|tmp)/\S+", "<tmp>", m.group("item").strip()))
-                break
-    return items or ["exit status nonzero, no failure lines recognised"]
+def normalize_output(output: str, tree: Path) -> str:
+    """Complete test output with only run-specific paths replaced, so equal runs give equal fingerprints."""
+    return TMP_PATH_RE.sub("<tmp>", output.replace(str(tree), "<tree>"))
+
+
+def failure_summary(output: str) -> list[str]:
+    """A few human-readable failure lines for display. Never used for matching."""
+    keep = [l.strip() for l in output.splitlines()
+            if re.match(r"^\s*(- |FAIL\b|FAIL:|[A-Za-z_][\w.]*(Error|Exception)\b)", l)]
+    return [TMP_PATH_RE.sub("<tmp>", l)[:200] for l in keep[:5]] or ["(no failure lines recognised; see evidence)"]
 
 
 def load_exceptions(path: Path | None) -> list[dict]:
@@ -482,8 +488,8 @@ def load_exceptions(path: Path | None) -> list[dict]:
             bad.append("check (only " + ", ".join(ACCEPTABLE_CHECKS) + " can be accepted)")
         if e.get("mode") not in ("contributor", "install"):
             bad.append("mode (contributor or install)")
-        if not isinstance(e.get("items"), list) or not e["items"] or not all(isinstance(x, str) for x in e["items"]):
-            bad.append("items (non-empty list of strings, copied from the gate output)")
+        if not isinstance(e.get("fingerprint"), str) or not FINGERPRINT_RE.match(e["fingerprint"]):
+            bad.append("fingerprint (sha256:<64 hex>, copied from the failing check in GATE.json or INSTALL-GATE-*.json)")
         for key in ("decision", "owner_reply"):
             if not isinstance(e.get(key), str) or not e[key].strip('" '):
                 bad.append(key)
@@ -495,13 +501,13 @@ def load_exceptions(path: Path | None) -> list[dict]:
 
 
 def apply_exceptions(checks: list[dict], exceptions: list[dict], mode: str) -> tuple[list[str], list[int]]:
-    """Mark a failure ACCEPTED only when an owner exception matches its check, mode and exact items."""
+    """Mark a failure ACCEPTED only when an owner exception matches its check, mode and evidence fingerprint."""
     used, accepted = set(), []
     for c in checks:
         if c["result"] != "FAIL":
             continue
         for i, e in enumerate(exceptions):
-            if e["check"] == c["check"] and e["mode"] == mode and sorted(set(e["items"])) == c["items"]:
+            if e["check"] == c["check"] and e["mode"] == mode and e["fingerprint"] == c["fingerprint"]:
                 c["result"], c["exception"] = "ACCEPTED", {"decision": e["decision"], "date": e["date"]}
                 used.add(i)
                 accepted.append(c["check"])
@@ -514,7 +520,11 @@ def print_gate(result: dict) -> None:
         first = next((l for l in c["detail"].splitlines() if l.strip()), "")
         print(f"{c['result']:4}  {c['check']}" + (f"  — {first[:120]}" if first and c["result"] != "PASS" else ""))
         if c["result"] == "FAIL":
-            print("      items: " + json.dumps(c.get("items", []), ensure_ascii=False)[:600])
+            print(f"      fingerprint: {c['fingerprint']}")
+            for line in c.get("summary", [])[:3]:
+                print(f"      | {line[:150]}")
+            if any(c["check"] == a or (a.endswith(":") and c["check"].startswith(a)) for a in ACCEPTABLE_CHECKS):
+                print("      (owner-acceptable; full evidence is in the JSON report)")
         if c["result"] == "ACCEPTED":
             print(f"      owner exception {c['exception']['date']}: {c['exception']['decision'][:100]}")
     accepted = f"  ({len(result.get('accepted', []))} owner-accepted)" if result.get("accepted") else ""
