@@ -1,0 +1,9 @@
+[project]
+name = "metaclaude"
+version = "0.1.0"
+description = "MetaClaude tooling — spreadsheet and YAML utilities"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openpyxl",
+    "pyyaml",
+]

@@ -11,7 +11,7 @@ SKIP_ACKNOWLEDGEMENTS = {
     "tasks": "Task updates intentionally skipped; Tasks DB state was left unchanged.",
     "index": "Index narrative and mirror update intentionally skipped.",
     "learning": "Learning extraction intentionally skipped; no candidates were created.",
-    "openbrain": "Open Brain capture intentionally skipped; pending candidates were retained.",
+    "openbrain": "Open Brain search and capture intentionally skipped; pending candidates were retained.",
     "ritual": "Closing ritual line intentionally skipped; verification receipts remain listed.",
 }
 
@@ -20,8 +20,8 @@ STAGES = (
     "drafted",
     "approved",
     "session_verified",
-    "index_verified",
     "tasks_verified",
+    "index_verified",
     "learning_pending",
     "closed",
 )
@@ -53,6 +53,7 @@ def plan_skip_paths(skipped: set[str] | list[str] | tuple[str, ...]) -> dict:
 
     return {
         "skipped": sorted(selected),
+        "open_brain_choice": "not_used" if selected & {"learning", "openbrain"} else None,
         "acknowledgements": [
             SKIP_ACKNOWLEDGEMENTS[name] for name in sorted(selected)
         ],
@@ -61,6 +62,7 @@ def plan_skip_paths(skipped: set[str] | list[str] | tuple[str, ...]) -> dict:
             "task_updates": "tasks" not in selected,
             "index_update": "index" not in selected,
             "learning_extraction": "learning" not in selected,
+            "openbrain_search": "learning" not in selected and "openbrain" not in selected,
             "openbrain_capture": (
                 "learning" not in selected and "openbrain" not in selected
             ),
