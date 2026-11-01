@@ -220,7 +220,7 @@ on one, ask the owner.
 | Command | Purpose |
 |---|---|
 | `status` | Canonical versions, open candidates, installed copies (drift, lock, merge) and open requests |
-| `gate --skill S --level L [--out F]` | Mechanical gate on committed work, run from your worktree |
+| `gate --skill S --level L [--out F] [--exceptions E]` | Mechanical gate on committed work, run from your worktree |
 | `check-installed` | Exit 1 if any registered installed copy drifted or is missing |
 | `install S… --commit C --change-id ID` | Verified install of a certified commit |
 | `register`, `lock`, `unlock` | Owner/MetaClaude maintenance only |
@@ -239,6 +239,34 @@ The gate checks:
 - the shared runtime copies are identical (using the base commit's mapping)
 - the new tests pass, and the base commit's tests also pass against the new
   code
+
+Owner-accepted failures:
+- Some failures can be intended. For example, the owner decides to change a
+  regression case, or an older test expects behaviour the owner has since
+  changed. Record each one in the change folder's `GATE-EXCEPTIONS.json`:
+
+  ```json
+  {"schema_version": "1.0", "exceptions": [
+    {"check": "<check name>", "mode": "contributor | install",
+     "items": ["<copied exactly from the gate output>"],
+     "decision": "<what was decided>", "owner_reply": "<owner's words>", "date": "YYYY-MM-DD"}]}
+  ```
+- Write an entry only from a recorded owner decision, quoted word for word.
+  Never write one to get a gate to pass.
+- An entry applies only when its check name, its mode and its full item list
+  all match the failure. Any other failure still fails the gate.
+- `install` reads the file from the change folder by itself. Its gate measures
+  from the installed commit, so it can list different items. Those need their
+  own `install` entries.
+- Only these checks can be accepted:
+  - corpus append-only
+  - base tests on new code
+  - changes inside `skills/`
+  - only declared skills touched
+  - binary files
+
+  The change's own tests, privacy, protected files, parity and versions can
+  never be waived.
 
 The tool's own adversarial tests are in `skills/_contrib/tests/`.
 

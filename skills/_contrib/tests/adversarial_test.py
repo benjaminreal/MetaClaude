@@ -265,6 +265,65 @@ def main() -> int:
         lab.commit(wt10, "synced and bumped")
         rc, out = lab.tool_run("gate", "--skill", "newbeginning", "--skill", "closingtime", "--level", "1", cwd=wt10)
         expect("S10 synced session-skill change passes, including base tests", rc == 0, out)
+
+        # S11 owner-accepted gate exceptions: exact match only, never for own tests or privacy
+        wt11 = lab.worktree(w2)
+        bump_calibre(wt11, "1.0.3")
+        p = wt11 / "skills/calibre/SKILL.md"
+        p.write_text("\n".join(l for l in p.read_text().splitlines() if not l.startswith("description:")) + "\n")
+        (wt11 / "skills/calibre/evals/structural_eval.py").write_text("import sys\nsys.exit(0)\n")
+        w11 = lab.commit(wt11, "intentional break of an old test")
+        g11 = root / "gate11.json"
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2", "--out", str(g11), cwd=wt11)
+        res = json.loads(g11.read_text())
+        row = next(c for c in res["checks"] if c["check"].startswith("base_tests_on_new_code:"))
+        expect("S11 failing check reports stable items without temp paths",
+               rc == 1 and row["items"] and not any("/tmp" in i or "/var/" in i for i in row["items"]), json.dumps(row))
+
+        def exc(path, rows, schema="1.0"):
+            path.write_text(json.dumps({"schema_version": schema, "exceptions": rows}))
+            return str(path)
+
+        good = {"check": row["check"], "mode": "contributor", "items": row["items"],
+                "decision": "test decision", "owner_reply": "\"yes\"", "date": "2026-10-31"}
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
+                               "--exceptions", exc(root / "e1.json", [good]), cwd=wt11)
+        expect("S11 exact owner exception turns the failure into ACCEPTED and the gate passes",
+               rc == 0 and "ACCEPTED" in out and "owner-accepted" in out, out)
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
+                               "--exceptions", exc(root / "e2.json", [dict(good, items=row["items"][:1] + ["other"])]), cwd=wt11)
+        expect("S11 an exception with different items does not apply", rc == 1 and "matched no failure" in out, out)
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
+                               "--exceptions", exc(root / "e3.json", [dict(good, mode="install")]), cwd=wt11)
+        expect("S11 an install-mode exception does not apply to the contributor gate", rc == 1, out)
+        for label, bad in (("privacy check", dict(good, check="privacy:email_address")),
+                           ("own head tests", dict(good, check="head_tests:skills/calibre/evals/structural_eval.py")),
+                           ("empty owner reply", dict(good, owner_reply="")),
+                           ("bad date", dict(good, date="yesterday"))):
+            rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
+                                   "--exceptions", exc(root / "e4.json", [bad]), cwd=wt11)
+            expect(f"S11 exception file refused: {label}", rc != 0 and "REFUSED" in out, out)
+        (root / "e5.json").write_text("{not json")
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2", "--exceptions", str(root / "e5.json"), cwd=wt11)
+        expect("S11 malformed exception file is refused, not ignored", rc != 0 and "REFUSED" in out, out)
+        (wt11 / "skills/calibre/notes.md").write_text("Contact bob@realmail.io\n")
+        lab.commit(wt11, "add a privacy hit")
+        rc, out = lab.tool_run("gate", "--skill", "calibre", "--level", "2",
+                               "--exceptions", exc(root / "e6.json", [good]), cwd=wt11)
+        expect("S11 a new unaccepted failure still fails the gate", rc == 1 and "privacy:email_address" in out, out)
+
+        # S12 install reads the change folder's exceptions and needs install-mode items
+        wt12 = lab.worktree(w11)
+        bump_calibre(wt12, "1.0.4")
+        w12 = lab.commit(wt12, "calibre 1.0.4 on the intentional break")
+        cid12 = lab.records("2026-10-31_test_calibre_twelve", w12, ["calibre"], level=2)
+        rc, out = lab.tool_run("install", "calibre", "--commit", w12, "--change-id", cid12, "--target", str(A))
+        expect("S12 install refuses without an install-mode exception", rc == 1 and "re-gate" in out, out)
+        inst = json.loads(next((lab.changes / cid12).glob("INSTALL-GATE-*.json")).read_text())
+        irow = next(c for c in inst["checks"] if c["check"].startswith("base_tests_on_new_code:"))
+        exc(lab.changes / cid12 / "GATE-EXCEPTIONS.json", [dict(good, mode="install", items=irow["items"])])
+        rc, out = lab.tool_run("install", "calibre", "--commit", w12, "--change-id", cid12, "--target", str(A))
+        expect("S12 install proceeds with the exact install-mode exception", rc == 0 and "installed calibre@" in out, out)
     finally:
         if keep:
             print(f"kept {root}")
