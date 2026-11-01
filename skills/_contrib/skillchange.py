@@ -325,12 +325,18 @@ def gate(head: str, skills: list[str], level: int, mode: str,
 
     head = git(MAIN, "rev-parse", head)
     main_head = git(MAIN, "rev-parse", "HEAD")
-    if git_ok(MAIN, "merge-base", "--is-ancestor", head, main_head):
+    merged = git_ok(MAIN, "merge-base", "--is-ancestor", head, main_head)
+    if merged:
         if not install_base:
             raise SystemExit("REFUSED: this commit is already on the main line; nothing to gate")
         scope_base = install_base
     else:
         scope_base = git(MAIN, "merge-base", main_head, head)
+    # Once a commit is on the main line, the range from the installed commit also holds every
+    # other change merged since then. Only the owner or a MetaClaude session merges, and the
+    # contributor gate checked this change's scope before review, so the two scope checks do
+    # not apply to that install. Privacy, tests, parity and versions still run.
+    scope_checked_by_merge = bool(install_base) and merged
     version_base = install_base or scope_base
     scope = sorted({p for s in skills for p in skill_scope(s)})
 
@@ -347,12 +353,23 @@ def gate(head: str, skills: list[str], level: int, mode: str,
     record("has_changes", bool(changed), f"{len(changed)} files since {scope_base[:12]} (merge base with the main line)")
     for path in PROTECTED:
         same = object_id(head, path) == object_id(main_head, path)
+        if scope_checked_by_merge:
+            # The tool and rules that run are the main line's own; the commit's older copies are not used.
+            record(f"protected_unchanged:{path}", True,
+                   "not applicable: commit is on the main line; the main line's rules and tool are in force"
+                   + ("" if same else " (the commit carries an older copy)"))
+            continue
         record(f"protected_unchanged:{path}", same,
                "" if same else "differs from the main line; changes to the rules or tool need a MetaClaude session, or rebase")
     outside = [p for p in changed if not p.startswith("skills/")]
-    record("changes_inside_skills", not outside, ", ".join(outside[:20]))
     undeclared = sorted(touched_skills(changed) - set(skills))
-    record("only_declared_skills_touched", not undeclared, ", ".join(undeclared))
+    if scope_checked_by_merge:
+        note = "not applicable: commit is on the main line; scope was gated before review and merge"
+        record("changes_inside_skills", True, note + (f" (range also holds {len(outside)} non-skill paths)" if outside else ""))
+        record("only_declared_skills_touched", True, note + (f" (range also touches {', '.join(undeclared)})" if undeclared else ""))
+    else:
+        record("changes_inside_skills", not outside, ", ".join(outside[:20]))
+        record("only_declared_skills_touched", not undeclared, ", ".join(undeclared))
 
     if REGRESSION_CORPUS in changed:
         diff = git(MAIN, "diff", "-U0", "--no-color", scope_base, head, "--", REGRESSION_CORPUS)
