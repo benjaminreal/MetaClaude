@@ -1,4 +1,4 @@
-# closingtime 3.3.0 — candidate
+# closingtime 3.3.1 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -108,3 +108,9 @@ discard superseded proposals before approval (conversation duty).
 For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
 the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
 No installation into personal skill directories occurs during implementation.
+
+Writers refuse symlinked continuity paths with EPERM; missing session logs are created exclusively.
+
+Finished session numbers remain reserved after removal; ALLOCATION_GAP lists missing numbers. Duplicate-allocation recovery errors from older releases require the owner.
+
+Adoption accepts only the exact current adopt-history proposal; rerun it and freeze again if anything changed.

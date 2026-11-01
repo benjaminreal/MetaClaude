@@ -1,4 +1,4 @@
-# Session runtime contract (2.3.0 / 3.3.0)
+# Session runtime contract (2.3.1 / 3.3.1)
 
 Run the bundled `scripts/runtime_cli.py` with `python3` (standard library only).
 Python is required for every helper path. Without it, output entry, index and
@@ -11,7 +11,7 @@ fingerprint-rows <rows.json|->
 fingerprint-operation <query.sql|->
 validate <envelope.json|->
 freeze-draft <envelope.json> [<entry.md>] [<index.md>]
-freeze-draft <envelope.json> --index-draft <index.md> [--continue <parent-intent>]
+freeze-draft <envelope.json> --index-draft <index.md> [--continue <parent-intent>]  # closingtime only for continuation
 approve-draft <draft-receipt.json> "<exact scope_lines>" --owner-reply "<owner words>"
 append <envelope.json> <entry.md|-> <approved-receipt.json>
 write-approved <envelope.json> <approved-receipt.json> <observed-relative-path> [<payload|->] --operation replace|delete|stage --expect <sha256|absent> --owner-reply "<owner words>"

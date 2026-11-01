@@ -167,7 +167,7 @@ def _same_root(left: object, right: object) -> bool:
     return os.path.realpath(os.path.expanduser(left)) == os.path.realpath(os.path.expanduser(right))
 
 
-HISTORY_ERRORS = {"session_unparseable", "duplicate_session_number", "session_header_malformed", "session_date_impossible"}
+HISTORY_ERRORS = {"session_unparseable", "duplicate_session_number", "session_header_malformed", "session_date_impossible", "session_number_non_ascii"}
 
 
 def _numbered_heading(line: str) -> bool:
@@ -220,6 +220,16 @@ def parse_history(text: str) -> tuple[list[dict], list[str]]:
                   if _numbered_heading(m.group()) or re.match(r"###[ \t]+Session[ \t]+#(?![0-9])", m.group())]
     header = re.compile(r"### Session #([0-9]+)[ \t]*\|[ \t]*([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*\|[ \t]*[^\s|][^\n|]*")
     entries, warnings, numbers, plain_legacy = [], [], [], []
+    for line in text.splitlines():
+        prefix = re.match(r"^#{2,6}[ \t]+(?:Session|Sesi[oó]n)[ \t]+#?", line)
+        if prefix:
+            digits = []
+            for char in line[prefix.end():]:
+                if not char.isdecimal():
+                    break
+                digits.append(char)
+            if any(char not in "0123456789" for char in digits):
+                warnings.append("session_number_non_ascii")
     starts = []
     for m in candidates:
         separator = re.search(r"(?m)^---\n\n$", text[:m.start()])

@@ -8,7 +8,7 @@ When you start a new session and ask an LLM "where did we leave off?" in a multi
 
 **newbeginning** solves this. It reads compact project notes (~400 words) left by its sibling skill [`closingtime`](../closingtime/), queries the Supabase Tasks database for current task state, and delivers a focused brief capped at 250 words, from a bounded set of reads. You get the same situational awareness in seconds, with a clean context window ready for actual work.
 
-**Version:** 2.3.0 candidate
+**Version:** 2.3.1 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent
@@ -122,6 +122,11 @@ headings are prose, and the nearest legacy handoffs fill the opening projection.
 See `references/recovery.md` for the lock, aliases and recovery rules.
 
 ### 7. Version & Changelog
+
+**v2.3.1 candidate** — 2026-10-31
+- Round-5 contract repairs: symlink refusal, reserved session allocations, exact
+  adoption proposals, non-ASCII heading refusal and closingtime-only continuation.
+- Bare four-digit heading numbers count as sessions; use another heading word for year notes.
 
 **v2.3.0 candidate** — 2026-10-28
 - Round-4 repairs: legacy dates, duplicate warnings and handoffs; root binding;

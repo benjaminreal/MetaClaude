@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.3.0"
+  version: "3.3.1"
 ---
 
 # closingtime
@@ -361,14 +361,13 @@ or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
 
-**v3.3.0 — 2026-10-28 — candidate**
+**v3.3.1 — 2026-10-31 — candidate**
 
-- Round 4: legacy grammar/projection, root binding, frozen pending payloads,
-  owner words, mirror controls, read-only opening recovery, historical adoption,
-  task preconditions and skip/approval/archive guidance. See bundled recovery.md.
-- 3.2.2 and earlier: portable recovery, optional staging, exact scope approval,
-  receipts, candidate quality, instruction reads and v1 continuity compatibility.
-  Detailed history remains in README and git.
+- Round 5: refuse symlinked writes and non-ASCII session numbers; reserve
+  allocations, bind exact adoption proposals and route continuations to closingtime.
+  Recovery documents the four-digit heading limit.
+- Earlier: legacy grammar/projection, portable recovery, approvals, receipts,
+  pending payloads, mirror controls and v1 compatibility. History: README and git.
 
 Install by copying the whole folder. Releases hold earlier versions; repository
 review links may be missing from standalone copies. This source candidate still

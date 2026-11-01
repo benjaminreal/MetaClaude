@@ -8,7 +8,7 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.3.0 candidate
+**Version:** 3.3.1 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent
@@ -179,6 +179,11 @@ Output quality (entry ≤ 300 words, narrative index concise, no duplication bet
 
 ### 7. Version & Changelog
 
+**v3.3.1 candidate** — 2026-10-31
+- Round-5 contract repairs: symlink refusal, reserved session allocations, exact
+  adoption proposals, non-ASCII heading refusal and closingtime-only continuation.
+- Bare four-digit heading numbers count as sessions; use another heading word for year notes.
+
 **v3.3.0 candidate** — 2026-10-28
 - Round-4 repairs: legacy dates, duplicate warnings and handoffs; root binding;
   exact pending payload/one-write approvals; required owner words; mirror controls;
@@ -266,3 +271,5 @@ _Part of [MetaClaude](https://github.com/benjaminreal/MetaClaude) — a personal
 _The Open Brain integration uses [Open Brain](https://github.com/NatheBJ/open-brain) by Nathe B. Jones._
 
 _"Closing Time" — Semisonic, 1998. Written by Dan Wilson._
+
+Adoption accepts only the exact current adopt-history proposal; rerun it and freeze again if anything changed.

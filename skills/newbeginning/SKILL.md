@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.3.0"
+  version: "2.3.1"
 ---
 
 # newbeginning
@@ -134,7 +134,7 @@ code. A sync conflict always stops.
 The helper reads whole files and emits a bounded projection. Report
 `unfinished_operations`: opening `resume` only inspects closing operations;
 use closingtime `resume` to finish them. Opening may finish its own approved
-unfinished index write. Do not start another close. A non-monotonic history warns; parse ambiguity or semantic narrative contradictions stop; a stale index
+unfinished bootstrap/reconstructed index write. Use closingtime for `--continue` or child abandonment. A non-monotonic history warns; parse ambiguity or semantic narrative contradictions stop; a stale index
 date alone is a gap. Use only the validated bounded projection:
 
 | Measure | Bound |
@@ -235,14 +235,13 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 
 ## 7. Version & Changelog
 
-**v2.3.0 — 2026-10-28 — candidate**
+**v2.3.1 — 2026-10-31 — candidate**
 
-- Round 4: legacy grammar/projection, root binding, frozen pending payloads,
-  owner words, mirror controls, read-only opening recovery, historical adoption,
-  task preconditions and skip/approval/archive guidance. See bundled recovery.md.
-- 2.2.2 and earlier: portable recovery, optional staging, exact scope approval,
-  receipts, candidate quality, instruction reads and v1 continuity compatibility.
-  Detailed history remains in README and git.
+- Round 5: refuse symlinked writes and non-ASCII session numbers; reserve
+  allocations, bind exact adoption proposals and route continuations to closingtime.
+  Recovery documents the four-digit heading limit.
+- Earlier: legacy grammar/projection, portable recovery, approvals, receipts,
+  pending payloads, mirror controls and v1 compatibility. History: README and git.
 
 Install by copying the whole folder. Releases hold earlier versions; repository
 review links may be missing from standalone copies. This source candidate still

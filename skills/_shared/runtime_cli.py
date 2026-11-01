@@ -78,7 +78,7 @@ def _parser() -> argparse.ArgumentParser:
     freeze.add_argument("entry_markdown", nargs="?")
     freeze.add_argument("index_markdown", nargs="?")
     freeze.add_argument("--index-draft")
-    freeze.add_argument("--continue", dest="continue_parent")
+    freeze.add_argument("--continue", dest="continue_parent", help="finish a remaining index (closingtime only)")
 
     approve = commands.add_parser("approve-draft", help="stamp approval after explicit approval; non-empty --owner-reply required")
     approve.add_argument("draft_receipt_json")

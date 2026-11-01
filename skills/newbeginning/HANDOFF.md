@@ -1,4 +1,4 @@
-# newbeginning 2.3.0 — candidate
+# newbeginning 2.3.1 — candidate
 
 This package is canonical source, not installed or certified for deployment.
 Prior Phase 4 behavior results apply to earlier hashes only. The previous
@@ -72,9 +72,9 @@ those requests there and stop. Searches remain reads; SKIP-openbrain means no
 search or capture, since searches send candidate text to the service.
 
 Report unfinished_operations. Opening resume only inspects closing operations; use closingtime resume to finish them. Opening may finish its own approved unfinished index write; a project without a journal gets no new files. A verified
-append stays journaled; changed remaining indexes use a fresh index-only
-freeze-draft --continue <parent-intent> with new approval, or approved child
-abandonment. Opening never creates pending Tasks intent.
+append stays journaled; changed remaining indexes or child abandonment: run
+closingtime resume / freeze-draft --continue <parent-intent> with new approval.
+Opening never creates pending Tasks intent.
 
 Install by copying the whole folder; Releases hold earlier versions. Repository review links may be missing from standalone copies. Use the whole folder; runtime and references are bundled independently of its
 sibling. The original receipt survives a bound interrupted operation returned by resume;
@@ -84,3 +84,5 @@ discard superseded proposals before approval (conversation duty).
 For re-certification, freeze the exact tree hash and use `python3 evals/structural_eval.py`,
 the repository Phase 4 eligibility note and the Phase 4.5 implementation report.
 No installation into personal skill directories occurs during implementation.
+
+Writers refuse symlinked continuity paths with EPERM; missing session logs are created exclusively.

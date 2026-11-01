@@ -813,16 +813,19 @@ def adopt_refuses_unfinished():
 
 @case("P8 adopt history", "R3 A11 policy writer: newbeginning ESKILL; closingtime needs the hash binding and writes only the bound bytes (P8.5)")
 def policy_boundary():
-    policy = json.dumps({"schema_version": "2.0", "grandfather_session_ceiling": 0, "historical_entries": []}, indent=2) + "\n"
-    digest = sha_bytes(policy.encode())
+    # Setup/payload use the official adopt-history proposal: owner decision 2026-10-31
+    # (REPAIR-DECISIONS-R5 rev2 step 3). Assertions unchanged.
     with lab() as L:
         root = L.project(session=SEED)
+        _, policy, digest, _ = adopt(L, root)
         scope = [{"path": POLICY, "operation": "replace"}]
         L.refused("newbeginning", *L.freeze_args(L.envelope(root, "newbeginning", scope=scope, hashes={POLICY: digest})), code="ESKILL")
         L.refused("closingtime", *L.freeze_args(L.envelope(root, scope=scope)))
         e = L.envelope(root, scope=scope, hashes={POLICY: digest})
         a = L.approve(e, L.freeze(e))
-        L.refused("closingtime", *L.write_args(e, a, POLICY, policy.replace('"historical_entries": []', '"historical_entries": [{"session_number": 1, "entry_sha256": "sha256:' + "0" * 64 + '"}]'), expect="absent"))
+        altered = policy.replace('"grandfather_session_ceiling": 0', '"grandfather_session_ceiling": 999')
+        assert altered != policy
+        L.refused("closingtime", *L.write_args(e, a, POLICY, altered, expect="absent"))
         assert not (root / POLICY).exists()
         L.write(e, a, POLICY, policy, expect="absent")
         assert (root / POLICY).read_text() == policy
@@ -886,6 +889,364 @@ def second_abandon():
 
 
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# R5 F1 symlinked write paths
+# --------------------------------------------------------------------------
+
+@case("R5 F1 symlinked write paths", "R4 F1 C13 relabel; REPAIR-DECISIONS-R5 rev2 step 1")
+def r5_f1_relabel():
+    for skill in ("newbeginning", "closingtime"):
+        with lab() as L:
+            root = L.project(session=SEED, index=None)
+            target = root / "project_index.md"
+            target.symlink_to("project_session.md")
+            e = L.envelope(root, skill, scope=[target.name])
+            e["local_snapshot"]["index"]["path"] = target.name
+            before, session_sha = tree(root), sha(root / "project_session.md")
+            L.refused(skill, *L.freeze_args(e, index=INDEX.replace("Original summary.", "Replaced.")), code="EPERM")
+            assert tree(root) == before and sha(root / "project_session.md") == session_sha
+            assert os.readlink(target) == "project_session.md"
+
+
+@case("R5 F1 symlinked write paths", "R4 F1 C13-postapproval; REPAIR-DECISIONS-R5 rev2 step 1")
+def r5_f1_postapproval():
+    for skill in ("newbeginning", "closingtime"):
+        with lab() as L:
+            root = L.project(session=SEED, index=SEED)
+            e = L.envelope(root, skill, scope=["project_index.md"])
+            a = L.approve(e, L.freeze(e, index=INDEX))
+            target = root / "project_index.md"
+            target.unlink()
+            target.symlink_to("project_session.md")
+            before = tree(root)
+            L.refused(skill, *L.write_args(e, a, target.name, INDEX, expect=sha(root / "project_session.md")), code="EPERM")
+            assert tree(root) == before and os.readlink(target) == "project_session.md"
+
+
+@case("R5 F1 symlinked write paths", "R4 F1 policy_direct; REPAIR-DECISIONS-R5 rev2 step 1")
+def r5_f1_policy_link():
+    with lab() as L:
+        root = L.project(session=SEED)
+        L.close(root)
+        (root / POLICY).symlink_to("../../project_session.md")
+        policy = json.dumps({"schema_version": "2.0", "grandfather_session_ceiling": 0, "historical_entries": []}, indent=2) + "\n"
+        e = L.envelope(root, scope=[{"path": POLICY, "operation": "replace"}], hashes={POLICY: sha_bytes(policy.encode())})
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e), code="EPERM")
+        assert tree(root) == before
+
+
+@case("R5 F1 symlinked write paths", "R4 F1 pending_relabel; REPAIR-DECISIONS-R5 rev2 step 1")
+def r5_f1_pending_link():
+    with lab() as L:
+        root = L.project(session=SEED)
+        (root / "pending_learnings.md").symlink_to("project_session.md")
+        e = L.envelope(root, scope=[{"path": "pending_learnings.md", "operation": "replace"}], hashes={"pending_learnings.md": sha_bytes(b"# Pending\n")})
+        e["local_snapshot"]["pending_learnings"]["path"] = "pending_learnings.md"
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e), code="EPERM")
+        assert tree(root) == before
+
+
+@case("R5 F1 symlinked write paths", "R4 F1 parent-link; REPAIR-DECISIONS-R5 rev2 step 1")
+def r5_f1_parent_link():
+    with lab() as L:
+        root = L.project(session=SEED)
+        (root / "real/session-journal").mkdir(parents=True)
+        (root / "private-artifacts").symlink_to("real")
+        L.close(root)
+        _, _, digest, _ = adopt(L, root)
+        e = L.envelope(root, scope=[{"path": POLICY, "operation": "replace"}], hashes={POLICY: digest})
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e), code="EPERM")
+        assert tree(root) == before
+
+
+# --------------------------------------------------------------------------
+# R5 F2/F4 allocation
+# --------------------------------------------------------------------------
+
+def _r5_removed_entry(text):
+    with lab() as L:
+        root = L.project(session=SEED)
+        session = root / "project_session.md"
+        original = session.read_bytes()
+        _, _, first = L.close(root, index=False)
+        assert first["session_number"] == 3
+        session.write_bytes(original)
+        inspection = L.ok("closingtime", "resume", root)
+        assert any(op.get("session_number") == 3 and op["state"] == "missing_after_close" for op in inspection["operations"])
+        e = L.envelope(root, scope=[session.name])
+        d = L.freeze(e, text)
+        assert "(Session #4)" in d["scope_lines"], d["scope_lines"]
+        second = L.append(e, L.approve(e, d), text)
+        assert second["session_number"] == 4 and "ALLOCATION_GAP" in second["warnings"], second
+        assert second["reserved_missing"] == [3], second
+        L.ok("closingtime", "resume", root)
+        assert L.close(root, index=False)[2]["session_number"] == 5
+        _, policy, digest, _ = adopt(L, root)
+        write_policy(L, root, policy, digest, "absent")
+        audit = L.audit(root)
+        assert audit["errors"] == [] and numbers(audit["orphan_records"]) == [3], audit
+
+
+@case("R5 F2/F4 allocation", "R4 F2 D21; REPAIR-DECISIONS-R5 rev2 step 2")
+def r5_f2_removed_entry():
+    _r5_removed_entry(entry())
+
+
+@case("R5 F2/F4 allocation", "R4 F2 D21-different-content; REPAIR-DECISIONS-R5 rev2 step 2")
+def r5_f2_removed_entry_changed():
+    _r5_removed_entry(entry().replace("Checked synthetic evidence.", "Documented another synthetic change."))
+
+
+@case("R5 F2/F4 allocation", "R4 F2 two_approved; REPAIR-DECISIONS-R5 rev2 step 2")
+def r5_f2_two_approvals():
+    with lab() as L:
+        root = L.project(session=SEED)
+        original = (root / "project_session.md").read_bytes()
+        ea = L.envelope(root, scope=["project_session.md"])
+        eb = L.envelope(root, scope=["project_session.md"])
+        text = entry().replace("Checked synthetic evidence.", "Documented another synthetic change.")
+        aa = L.approve(ea, L.freeze(ea, entry()))
+        ab = L.approve(eb, L.freeze(eb, text))
+        assert L.append(ea, aa)["session_number"] == 3
+        (root / "project_session.md").write_bytes(original)
+        before = tree(root)
+        L.refused("closingtime", *L.append_args(eb, ab, text), code="ESTALE")
+        assert tree(root) == before
+        L.ok("closingtime", "resume", root)
+
+
+@case("R5 F2/F4 allocation", "R4 F4 A25; REPAIR-DECISIONS-R5 rev2 step 2")
+def r5_f4_forged_number():
+    with lab() as L:
+        root = L.project(session=SEED)
+        e = L.envelope(root, scope=["project_session.md"])
+        e["local_snapshot"]["session"]["latest_session_number"] = 99
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e, entry()), code="ESTALE")
+        assert tree(root) == before
+
+
+# --------------------------------------------------------------------------
+# R5 F3 exact adoption
+# --------------------------------------------------------------------------
+
+@case("R5 F3 exact adoption", "R4 F3 C21 ceiling; REPAIR-DECISIONS-R5 rev2 step 3")
+def r5_f3_ceiling():
+    with lab() as L:
+        root = L.project(session=SEED)
+        L.close(root)
+        policy = json.dumps({"grandfather_session_ceiling": 999}) + "\n"
+        e = L.envelope(root, scope=[POLICY], hashes={POLICY: sha_bytes(policy.encode())})
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e), code="EDRAFTMISMATCH")
+        assert tree(root) == before and not (root / POLICY).exists()
+
+
+@case("R5 F3 exact adoption", "R4 F3 C21 fabricated history; REPAIR-DECISIONS-R5 rev2 step 3")
+def r5_f3_fabricated():
+    with lab() as L:
+        root = L.project(session=SEED)
+        L.close(root)
+        _, policy, _, _ = adopt(L, root)
+        value = json.loads(policy)
+        value["historical_entries"].append({"session_number": 9, "entry_sha256": "sha256:" + "0" * 64})
+        policy = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+        e = L.envelope(root, scope=[POLICY], hashes={POLICY: sha_bytes(policy.encode())})
+        before = tree(root)
+        L.refused("closingtime", *L.freeze_args(e), code="EDRAFTMISMATCH")
+        assert tree(root) == before
+
+
+@case("R5 F3 exact adoption", "R4 F3 stale proposal; REPAIR-DECISIONS-R5 rev2 step 3")
+def r5_f3_stale():
+    with lab() as L:
+        root = L.project(session=SEED)
+        L.close(root)
+        _, policy, digest, _ = adopt(L, root)
+        e = L.envelope(root, scope=[POLICY], hashes={POLICY: digest})
+        a = L.approve(e, L.freeze(e))
+        session = root / "project_session.md"
+        session.write_text(session.read_text().replace("Checked synthetic evidence.", "Corrected synthetic evidence.", 1))
+        before = tree(root)
+        journal = sorted(p.name for p in (root / POLICY).parent.iterdir())
+        L.refused("closingtime", *L.write_args(e, a, POLICY, policy, expect="absent"), code="EDRAFTMISMATCH")
+        assert not (root / POLICY).exists() and tree(root) == before
+        assert sorted(p.name for p in (root / POLICY).parent.iterdir()) == journal
+
+
+@case("R5 F3 exact adoption", "R4 F3 v1 exception guard; REPAIR-DECISIONS-R5 rev2 step 3")
+def r5_f3_exception_metadata():
+    with lab() as L:
+        root = L.project(session=SEED)
+        audit = L.audit(root)
+        evidence = "private-artifacts/session-journal/historical-exceptions/s2.md"
+        note = root / evidence
+        note.parent.mkdir(parents=True)
+        note.write_text("Synthetic historical entry, original append unverified.\n")
+        exceptions = [{"session_number": 2, "entry_sha256": audit["unjournaled"][1]["entry_sha256"],
+                       "evidence_path": evidence, "evidence_sha256": sha(note)}]
+        recorded = "2026-10-21T00:00:00Z"
+        (root / POLICY).write_text(json.dumps({"schema_version": "1.0", "grandfather_session_ceiling": 0,
+                                             "recorded_at": recorded, "documented_unverified_exceptions": exceptions}))
+        L.close(root)
+        _, policy, digest, _ = adopt(L, root)
+        value = json.loads(policy)
+        assert value["schema_version"] == "2.0" and value["recorded_at"] == recorded
+        assert value["documented_unverified_exceptions"] == exceptions
+        write_policy(L, root, policy, digest, sha(root / POLICY))
+        audit = L.audit(root)
+        assert numbers(audit["historical"]) == [1] and numbers(audit["documented_unverified"]) == [2], audit
+        assert not audit["unjournaled"] and not audit["orphan_records"] and not audit["errors"], audit
+
+
+# --------------------------------------------------------------------------
+# R5 F6 non-ASCII digits
+# --------------------------------------------------------------------------
+
+@case("R5 F6 non-ASCII digits", "R4 F6 A17 eight forms; REPAIR-DECISIONS-R5 rev2 step 4")
+def r5_f6_non_ascii():
+    for heading in ("## Session ３", "## Session #３", "## Session ٣", "## Sesión ３",
+                    "#### Session ３", "## Session 1３", "## Session ３ | 2026-10-21",
+                    "## Session ２０２６-１０-２２ notes"):
+        with lab() as L:
+            root = L.project(session="# Session Log\n\n## Session 1\nFirst\n\n## Session 2\nSecond\n\n" + heading + "\nThird\n")
+            history_refused(L, root, "session_number_non_ascii")
+            e = L.envelope(root, scope=["project_session.md"])
+            out = L.refused("closingtime", *L.freeze_args(e, entry()), code="EHISTORY")
+            assert out["error"]["detail"] == "non-ASCII digits in a session heading number; rewrite it with ASCII digits", out
+
+
+@case("R5 F6 non-ASCII digits", "R4 F6 A17 ASCII controls; REPAIR-DECISIONS-R5 rev2 step 4")
+def r5_f6_controls():
+    for heading in ("## Sessions overview", "## Session notes", "## Session 2026-10-22 notes"):
+        with lab() as L:
+            root = L.project(session=SEED + "\n" + heading + "\nSynthetic notes.\n")
+            e = L.envelope(root, scope=["project_session.md"])
+            assert "session_number_non_ascii" not in e["local_snapshot"]["parse_warnings"]
+            assert L.append(e, L.approve(e, L.freeze(e, entry())))["session_number"] == 3
+
+
+# --------------------------------------------------------------------------
+# R5 F8 opening routing
+# --------------------------------------------------------------------------
+
+def _r5_continuation(L):
+    root = L.project(session=SEED)
+    e = L.envelope(root, scope=["project_session.md", "project_index.md"])
+    out = L.append(e, L.approve(e, L.freeze(e, entry(), INDEX)))
+    parent = Path(out["journal_record_path"]).relative_to(root).as_posix()
+    (root / "project_index.md").write_text(INDEX + "\nConcurrent.\n")
+    return root, parent
+
+
+@case("R5 F8 opening routing", "R4 F8 NB-continue; REPAIR-DECISIONS-R5 rev2 step 5")
+def r5_f8_nb_continue():
+    with lab() as L:
+        root, parent = _r5_continuation(L)
+        before = tree(root)
+        L.ok("newbeginning", "resume", root)
+        assert tree(root) == before
+        e = L.envelope(root, "newbeginning", scope=["project_index.md"])
+        L.refused("newbeginning", *L.freeze_args(e, index=INDEX, cont=parent), code="ESKILL")
+        assert tree(root) == before
+        e = L.envelope(root, scope=["project_index.md"])
+        a = L.approve(e, L.freeze(e, index=INDEX, cont=parent))
+        L.write(e, a, "project_index.md", INDEX, expect=a["m2_preimages"]["project_index.md"])
+        assert L.ok("closingtime", "snapshot", root)["unfinished_operations"] == []
+
+
+@case("R5 F8 opening routing", "R4 F8 crafted 2.3.0 intent; REPAIR-DECISIONS-R5 rev2 step 5")
+def r5_f8_old_intent():
+    with lab() as L:
+        root, parent = _r5_continuation(L)
+        e = L.envelope(root, scope=["project_index.md"])
+        a = L.approve(e, L.freeze(e, index=INDEX, cont=parent))
+        crash = """
+real = helpers._move_record
+def crash(path, suffix):
+    if suffix == '.done' and json.loads(path.read_text()).get('kind') == 'write_intent':
+        os._exit(89)
+    return real(path, suffix)
+helpers._move_record = crash
+envelope, receipt = (json.loads(pathlib.Path(p).read_text()) for p in sys.argv[2:4])
+helpers.write_approved_file(envelope, receipt, 'project_index.md', pathlib.Path(sys.argv[4]).read_text(),
+                            expect=receipt['m2_preimages']['project_index.md'])
+"""
+        rc, out = L.inject("closingtime", crash, L.save("e.json", e), L.save("a.json", a), L.save("index.md", INDEX))
+        assert rc == 89, (rc, out)
+        intent = next(p for p in (root / POLICY).parent.glob("*.pending") if json.loads(p.read_text())["kind"] == "write_intent")
+        rec = json.loads(intent.read_text())
+        rec["approved_envelope"]["skill"] = rec["approved_draft"]["skill"] = "newbeginning"
+        rec["approved_draft"]["receipt_sha256"] = H._receipt_digest(rec["approved_draft"])
+        rec["draft_receipt_sha256"] = rec["approved_draft"]["receipt_sha256"]
+        rec["record_sha256"] = H._intent_digest(rec)
+        intent.write_text(json.dumps(rec))
+        before = tree(root)
+        out = L.ok("newbeginning", "resume", root)
+        assert tree(root) == before and "closingtime" in json.dumps(out), out
+        L.refused("newbeginning", "resume", root, "--abandon", intent.relative_to(root), "--owner-reply", "X", code="ESKILL")
+        assert tree(root) == before
+
+
+@case("R5 F8 opening routing", "R4 F8 crafted 2.3.0 receipts; REPAIR-DECISIONS-R5 rev2 step 5")
+def r5_f8_old_receipt():
+    with lab() as L:
+        root, parent = _r5_continuation(L)
+        e = L.envelope(root, scope=["project_index.md"])
+        d = L.freeze(e, index=INDEX, cont=parent)
+        d["skill"] = "newbeginning"
+        d["receipt_sha256"] = H._receipt_digest(d)
+        before = tree(root)
+        L.refused("newbeginning", "approve-draft", L.save("draft.json", d), d["scope_lines"], "--owner-reply", OWNER, code="ESKILL")
+        assert tree(root) == before
+    with lab() as L:
+        root, parent = _r5_continuation(L)
+        e = L.envelope(root, scope=["project_index.md"])
+        a = L.approve(e, L.freeze(e, index=INDEX, cont=parent))
+        e["skill"] = a["skill"] = "newbeginning"
+        a["receipt_sha256"] = H._receipt_digest(a)
+        H._atomic_record(H._approval_path(root, e["invocation_id"]), {"workspace_root": str(root), "receipt_sha256": a["receipt_sha256"]})
+        before = tree(root)
+        L.refused("newbeginning", *L.write_args(e, a, "project_index.md", INDEX, expect=a["m2_preimages"]["project_index.md"]), code="ESKILL")
+        assert tree(root) == before
+
+
+@case("R5 F8 opening routing", "R4 F8 continuation docs; REPAIR-DECISIONS-R5 rev2 step 5")
+def r5_f8_docs():
+    paths = [SKILLS / "newbeginning" / name for name in ("SKILL.md", "HANDOFF.md")]
+    paths += [HERE / name for name in ("recovery.md", "envelope_examples.md", "runtime_contract.md")]
+    for path in paths:
+        for line in path.read_text().splitlines():
+            if "--continue" in line:
+                assert "closingtime" in line, (path.name, line)
+
+
+@case("R5 F8 opening routing", "R4 F8 bootstrap blocked guard; REPAIR-DECISIONS-R5 rev2 step 5")
+def r5_f8_opening_blocked():
+    with lab() as L:
+        root, _ = _r5_continuation(L)
+        e = L.envelope(root, "newbeginning", scope=["project_index.md"])
+        L.refused("newbeginning", *L.freeze_args(e, index=INDEX), code="EUNFINISHED")
+
+
+# --------------------------------------------------------------------------
+# R5 F5 documented grammar limit
+# --------------------------------------------------------------------------
+
+@case("R5 F5 documented grammar limit", "R4 F5 A20; REPAIR-DECISIONS-R5 rev2 step 6")
+def r5_f5_docs():
+    with lab() as L:
+        root = L.project(session=SEED + "\n## Session 2026 retrospective\nAnnual notes.\n")
+        e = L.envelope(root, scope=["project_session.md"])
+        d = L.freeze(e, entry())
+        assert "(Session #2027)" in d["scope_lines"], d["scope_lines"]
+        assert L.append(e, L.approve(e, d))["session_number"] == 2027
+    assert "`## Session 2026 retrospective` is Session 2026" in (HERE / "recovery.md").read_text()
+
 
 def results():
     rows = []

@@ -171,6 +171,15 @@ def _last_session_entries(text: str, count: int = 2) -> tuple[str, int]:
     return (text[min(selected):].strip() if selected else ""), latest
 
 
+def _next_session_number(root: Path, text: str) -> tuple[int, list[int]]:
+    """Current append intents reserve their numbers even after hand removal."""
+    reserved = {r["session_number"] for p, r in _load_intents(root)
+                if r["kind"] == "append_intent" and p.suffix != ".abandoned"}
+    entries, _ = S.parse_history(text)
+    present = {e["session_number"] for e in entries} | set(S.legacy_session_numbers(text))
+    return max(_last_session_entries(text)[1], max(reserved, default=0)) + 1, sorted(reserved - present)
+
+
 def _contained(root: Path, path: Path) -> Path:
     try:
         resolved = path.resolve()
@@ -731,11 +740,17 @@ def _check_invocation(root: Path, receipt: dict) -> None:
         raise HelperError("EINVOCATIONUSED", "invocation already has a different approved draft")
 
 
+def _history_detail(warnings: list[str], fallback: str) -> str:
+    if "session_number_non_ascii" in warnings:
+        return "non-ASCII digits in a session heading number; rewrite it with ASCII digits"
+    return fallback
+
+
 def _preflight(root: Path, envelope: dict, operations: list[dict], expected: dict | None = None) -> None:
     snapshot = envelope["local_snapshot"]
     current = capture_local_snapshot(root)
     if any(w in S.HISTORY_ERRORS for w in current["parse_warnings"]) or current["session"]["alternates"]:
-        raise HelperError("EHISTORY", "ambiguous or malformed session history")
+        raise HelperError("EHISTORY", _history_detail(current["parse_warnings"], "ambiguous or malformed session history"))
     for op in operations:
         if op["class"] != "M2":
             if envelope.get("skill") == "newbeginning":
@@ -747,6 +762,7 @@ def _preflight(root: Path, envelope: dict, operations: list[dict], expected: dic
         if op["operation"] == "append":
             if envelope.get("skill") != "closingtime" or name not in SESSION_NAMES:
                 raise HelperError("ESKILL", "only closingtime appends a session")
+            _refuse_links(root, name)
             _session_path_from_envelope(root, envelope)
             obs = snapshot.get("session") or {}
             actual = _file_state(_contained(root, root / name))["sha256"]
@@ -822,12 +838,14 @@ def _unfinished(root: Path) -> list[str]:
 def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str | None = None, continue_parent: str | None = None) -> dict:
     if not envelope:
         raise HelperError(S.MISSING_RECEIPT, "envelope absent")
+    if envelope.get("skill") == "newbeginning" and continue_parent is not None:
+        raise HelperError("ESKILL", "continuation finishes a closing operation; run closingtime")
     _fresh(envelope.get("local_snapshot") or {}, envelope.get("invocation_started_at"))
     root = _workspace_binding(envelope)
     verdict = S.validate_envelope(envelope, envelope.get("returned_rows_by_capability") or {})
     codes = {f["code"] for f in verdict["failures"]} - {S.SCOPE_UNAPPROVED}
     if "EHISTORY" in codes:
-        raise HelperError("EHISTORY", "ambiguous or malformed session history")
+        raise HelperError("EHISTORY", _history_detail(envelope["local_snapshot"].get("parse_warnings", []), "ambiguous or malformed session history"))
     if codes:
         raise HelperError("EINVALIDENVELOPE", ",".join(sorted(codes)))
     root = _workspace_binding(envelope)
@@ -836,6 +854,14 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
     operations = _scope_operations(envelope)
     targets = _observed_targets(envelope)
     _preflight(root, envelope, operations)
+    historical_count = None
+    if any(op.get("path") == POLICY_PATH for op in operations):
+        proposal = adopt_history(root)
+        observed = envelope["local_snapshot"].get("audit_policy") or {}
+        preimage = observed.get("sha256") if observed.get("present") else "absent"
+        if (envelope.get("local_payload_hashes") or {}).get(POLICY_PATH) != proposal["policy_sha256"] or preimage != proposal["preimage"]:
+            raise HelperError("EDRAFTMISMATCH", "policy payload is not the current adopt-history proposal")
+        historical_count = int(re.search(r"\(adopt ([0-9]+) historical entries\)", proposal["scope_line"])[1])
     if entry_text is not None and any(op["class"] == "M2" and op["operation"] != "append" and op["path"] != targets["index"] and op != {"class": "M2", "operation": "stage", "path": "pending_learnings.md"} for op in operations):
         raise HelperError("EINPUT", "parent close permits session, index and optional pending stage only")
     if any(op["operation"] == "stage" for op in operations) and not any(op["operation"] == "append" for op in operations):
@@ -869,15 +895,23 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
     if any(op.get("path") == POLICY_PATH for op in operations):
         if any(op.get("path") == POLICY_PATH and op["operation"] != "replace" for op in operations) or not re.fullmatch(r"sha256:[a-f0-9]{64}", (envelope.get("local_payload_hashes") or {}).get(POLICY_PATH, "")):
             raise HelperError("EDRAFTMISMATCH", "policy replacement requires exact payload hash")
+    session_number = None
+    if any(op["operation"] == "append" for op in operations):
+        path = _session_path_from_envelope(root, envelope)
+        text = _read_text(root, path if path.exists() else None)
+        tail, latest = _last_session_entries(text, 2)
+        observed = envelope["local_snapshot"].get("session") or {}
+        if latest != observed.get("latest_session_number") or _sha256_text(tail) != observed.get("tail_sha256"):
+            raise HelperError("ESTALE", "snapshot session number or tail differs from the live log")
+        session_number, _ = _next_session_number(root, text)
     if entry_text is not None:
-        _render_entry(entry_text, (envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1)
+        _render_entry(entry_text, session_number or (envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1)
     elif any(op["operation"] == "append" for op in operations):
         raise HelperError("EENTRYFORMAT", "append scope requires entry")
     preimages = {}
     for field, name in targets.items():
         obs = envelope["local_snapshot"].get(field) or {}
         preimages[name] = obs.get("sha256") if obs.get("present") else "absent"
-    historical_count = len(audit_session_log(root)["unjournaled"]) if any(op.get("path") == POLICY_PATH for op in operations) else None
     receipt = {
         "schema_version": S.SCHEMA_VERSION, "kind": DRAFT_RECEIPT_KIND, "recovery_version": 2,
         "invocation_id": envelope.get("invocation_id"), "skill": envelope.get("skill"), "workspace_root": str(root),
@@ -893,8 +927,8 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
         "index_draft": index_text,
         "m2_preimages": preimages, "scope_operations": operations,
         "local_payload_hashes": envelope.get("local_payload_hashes") or {},
-        "scope_lines": _scope_text(operations, session_number=(envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1, historical_count=historical_count),
-        "scope_sha256": _sha256_text(_scope_text(operations, session_number=(envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1, historical_count=historical_count)),
+        "scope_lines": _scope_text(operations, session_number=session_number, historical_count=historical_count),
+        "scope_sha256": _sha256_text(_scope_text(operations, session_number=session_number, historical_count=historical_count)),
         "drafted_at": _utc_now(), "approved_at": None, "scope_string": None, "owner_reply": None,
     }
     receipt["receipt_sha256"] = _receipt_digest(receipt)
@@ -904,6 +938,8 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
 def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> dict:
     if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND or receipt.get("recovery_version") != 2:
         raise HelperError("EDRAFTRECEIPT", "not a current draft receipt; freeze again")
+    if receipt.get("skill") == "newbeginning" and receipt.get("continue_parent") is not None:
+        raise HelperError("ESKILL", "continuation finishes a closing operation; run closingtime")
     if receipt.get("receipt_sha256") != _receipt_digest(receipt):
         raise HelperError("EDRAFTRECEIPT", "modified receipt")
     if receipt.get("approved_at"):
@@ -939,7 +975,7 @@ def _check_approved_draft(envelope: dict, entry_text: str | None, receipt: dict 
         raise HelperError("EDRAFTRECEIPT", "modified or unapproved draft receipt")
     legacy = "snapshot_captured_at" not in receipt
     scope = _scope_text(_scope_operations(envelope, legacy=legacy), legacy=legacy,
-                        session_number=((envelope["local_snapshot"].get("session") or {}).get("latest_session_number", 0) + 1) if re.search(r" \(Session #[0-9]+\)", receipt.get("scope_lines", "")) else None,
+                        session_number=int(re.search(r" \(Session #([0-9]+)\)", receipt["scope_lines"])[1]) if re.search(r" \(Session #[0-9]+\)", receipt.get("scope_lines", "")) else None,
                         historical_count=int(re.search(r"\(adopt ([0-9]+) historical entries\)", receipt["scope_lines"])[1]) if re.search(r"\(adopt ([0-9]+) historical entries\)", receipt.get("scope_lines", "")) else None)
     snapshot_matches = receipt.get("snapshot_sha256") == _snapshot_digest(envelope.get("local_snapshot"))
     if legacy:
@@ -1086,7 +1122,7 @@ def _append_classification(record: dict, final: bool = False, root: Path | None 
 
 
 def _append_bytes(path: Path, data: bytes) -> None:
-    with path.open("ab") as stream:
+    with path.open("ab" if os.path.lexists(path) else "xb") as stream:
         if stream.write(data) != len(data):
             raise OSError("short append")
         stream.flush()
@@ -1168,12 +1204,18 @@ def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict |
             _, alternates = _named_observation(root, SESSION_NAMES)
             current_text = _read_text(root, session_path if session_path.exists() else None)
             history = _parse_warnings("", current_text)
-            if alternates or any(w in history for w in ("session_unparseable", "duplicate_session_number", "session_header_malformed")):
-                raise HelperError("EHISTORY", "ambiguous or malformed session history")
+            if alternates or any(w in S.HISTORY_ERRORS for w in history):
+                raise HelperError("EHISTORY", _history_detail(history, "ambiguous or malformed session history"))
             tail, latest = _last_session_entries(current_text, 2)
             if _sha256_text(tail) != approved_draft["observed_tail_sha256"]:
                 raise HelperError("ESTALE", "session tail changed after draft")
-            chunk = _render_entry(entry_text, latest + 1)
+            number, reserved_missing = _next_session_number(root, current_text)
+            approved_number = re.search(r" \(Session #([0-9]+)\)", approved_draft["scope_lines"])
+            if approved_number and int(approved_number[1]) != number:
+                raise HelperError("ESTALE", f"approved Session #{approved_number[1]}, next unreserved is #{number}; freeze again")
+            if reserved_missing:
+                warnings.append("ALLOCATION_GAP")
+            chunk = _render_entry(entry_text, number)
             date = dt.date.fromisoformat(SESSION_HEADER_RE.search(chunk).group("date"))
             local_date = dt.date.fromisoformat(envelope["local_snapshot"]["local_date"])
             if abs((date-local_date).days) > 1:
@@ -1183,7 +1225,7 @@ def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict |
             data = (prefix + chunk).encode("utf-8")
             m2 = {name: {"preimage": expected, "payload_sha256": approved_draft["index_draft_sha256"] if name == _observed_targets(envelope)["index"] else (approved_draft.get("local_payload_hashes") or {}).get(name)} for name, expected in approved_draft["m2_preimages"].items() if any(op.get("path") == name for op in approved_draft["scope_operations"])}
             record = {"schema_version": S.SCHEMA_VERSION, "kind": "append_intent", "workspace_root": str(root),
-                      "target": relative, "preimage": preimage, "session_number": latest + 1,
+                      "target": relative, "preimage": preimage, "session_number": number,
                       "entry_sha256": _sha256_text(chunk), "append_sha256": _sha256_bytes(data), "append_length": len(data),
                       "append_bytes": base64.b64encode(data).decode(), "invocation_id": envelope["invocation_id"],
                       "draft_receipt_sha256": approved_draft["receipt_sha256"], "approved_scope": approved_draft["scope_lines"],
@@ -1199,8 +1241,9 @@ def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict |
                 # Recheck after intent I/O as well as under the shared lock.
                 if not _state_matches(session_path, preimage):
                     raise HelperError("EPARTIAL_APPEND", f"preimage changed after intent: {pending}")
+                _refuse_links(root, relative)
                 _append_bytes(session_path, data)
-                readback = _readback_entry(session_path, latest + 1)
+                readback = _readback_entry(session_path, number)
                 if readback is None or _sha256_text(readback) != record["entry_sha256"] or _append_classification(record, root=root) != "appended":
                     raise OSError("appended bytes did not read back")
             except (OSError, UnicodeError) as exc:
@@ -1208,15 +1251,26 @@ def append_session_entry(envelope: dict, entry_text: str, approved_draft: dict |
                     rolled_back = _conditional_rollback(record, pending, root)
                 except (OSError, HelperError):
                     rolled_back = False
-                raise HelperError("EREADBACK" if rolled_back else "EPARTIAL_APPEND", str(exc), rolled_back=rolled_back, pending_record=str(pending), session_number=latest + 1, entry_sha256=record["entry_sha256"], state="not_appended" if rolled_back else "partial_or_conflicted") from exc
+                raise HelperError("EREADBACK" if rolled_back else "EPARTIAL_APPEND", str(exc), rolled_back=rolled_back, pending_record=str(pending), session_number=number, entry_sha256=record["entry_sha256"], state="not_appended" if rolled_back else "partial_or_conflicted") from exc
             try:
                 final = _move_record(pending, ".done")
             except OSError as exc:
-                raise HelperError("EPARTIAL_APPEND", str(exc), pending_record=str(pending), session_number=latest + 1, entry_sha256=record["entry_sha256"], state="appended") from exc
-            result = {"session_number": latest + 1, "entry_sha256": record["entry_sha256"], "journal_record_path": str(final), "readback_ok": True, "warnings": warnings}
+                raise HelperError("EPARTIAL_APPEND", str(exc), pending_record=str(pending), session_number=number, entry_sha256=record["entry_sha256"], state="appended") from exc
+            result = {"session_number": number, "entry_sha256": record["entry_sha256"], "journal_record_path": str(final), "readback_ok": True, "warnings": warnings}
+            if reserved_missing:
+                result["reserved_missing"] = reserved_missing
         return result
     except OSError as exc:
         raise HelperError("EPARTIAL_APPEND", f"inspect retained intent via resume: {exc}") from exc
+
+
+def _refuse_links(root: Path, relative: str) -> None:
+    """Refuse links below a resolved root, including the final component."""
+    path = root.resolve()
+    for component in Path(relative).parts:
+        path = path / component
+        if path.is_symlink():
+            raise HelperError("EPERM", "symlinked continuity path: " + relative)
 
 
 def _writer_target(root: Path, envelope: dict, relative_path: str) -> tuple[Path, str]:
@@ -1224,6 +1278,7 @@ def _writer_target(root: Path, envelope: dict, relative_path: str) -> tuple[Path
         raise HelperError("ESKILL", "opening only writes the approved index")
     if Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
         raise HelperError("EPERM", "relative contained target required")
+    _refuse_links(root, relative_path)
     if relative_path == POLICY_PATH:
         if envelope.get("skill") != "closingtime":
             raise HelperError("ESKILL", "only closingtime writes audit policy")
@@ -1316,6 +1371,8 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                         operation: str = "replace", expect: str | None = None,
                         mirror_rows: list[dict] | None = None, owner_reply: str = "") -> dict:
     root = _approved_context(envelope, receipt)
+    if (envelope.get("skill") == "newbeginning" or receipt.get("skill") == "newbeginning") and receipt.get("continue_parent") is not None:
+        raise HelperError("ESKILL", "continuation finishes a closing operation; run closingtime")
     if operation not in {"replace", "delete", "stage"} or expect is None or (expect != "absent" and not re.fullmatch(r"sha256:[a-f0-9]{64}", expect)):
         raise HelperError("EINPUT", "replace/delete/stage and explicit --expect sha256|absent required")
     if {"class": "M2", "operation": operation, "path": relative_path} not in receipt["scope_operations"]:
@@ -1327,8 +1384,12 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
             _check_conflicts(root)
             current = capture_local_snapshot(root)
             if any(w in S.HISTORY_ERRORS for w in current["parse_warnings"]):
-                raise HelperError("EHISTORY", "history changed or malformed")
+                raise HelperError("EHISTORY", _history_detail(current["parse_warnings"], "history changed or malformed"))
             target, field = _writer_target(root, envelope, relative_path)
+            if field == "audit_policy":
+                proposal = adopt_history(root)
+                if _sha256_text(content or "") != proposal["policy_sha256"] or proposal["policy_sha256"] != receipt.get("local_payload_hashes", {}).get(relative_path) or expect != proposal["preimage"]:
+                    raise HelperError("EDRAFTMISMATCH", "adopt-history proposal changed; run adopt-history and freeze again")
             records = _load_intents(root)
             stage_parent = None
             if operation == "stage":
@@ -1482,7 +1543,7 @@ def _inspect_recovery(root: Path, records: list[tuple[Path, dict]], receipt: dic
 
 def _opening_resume(root: Path, receipt: dict | None, abandon: str | None, owner_reply: str) -> dict:
     records = _load_intents(root)
-    own = lambda p, r: p.suffix == ".pending" and r["kind"] == "write_intent" and r["relative_path"] in INDEX_NAMES and r["approved_envelope"].get("skill") == "newbeginning"
+    own = lambda p, r: p.suffix == ".pending" and r["kind"] == "write_intent" and r["relative_path"] in INDEX_NAMES and r["approved_envelope"].get("skill") == "newbeginning" and not r["approved_draft"].get("continue_parent")
     if abandon and not any(str(p.relative_to(root)) == abandon and own(p, r) for p, r in records):
         raise HelperError("ESKILL", "opening only recovers its own approved index; use closingtime resume")
     warnings = []

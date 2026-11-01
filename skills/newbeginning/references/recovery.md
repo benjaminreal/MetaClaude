@@ -1,4 +1,4 @@
-# Recovery and persistence contract (newbeginning 2.3.0 / closingtime 3.3.0)
+# Recovery and persistence contract (newbeginning 2.3.1 / closingtime 3.3.1)
 
 All helpers require Python 3 and shell access; the runtime uses only the standard
 library. Continuity files remain v1-readable. Hashes check consistency, not
@@ -85,7 +85,7 @@ helper cannot know which pre-approval freeze was revoked in conversation.
 --expect SHA256|absent [--mirror-rows ROWS] --owner-reply TEXT` requires explicit
 preconditions; absent and empty differ. The allowlist is independent of snapshot
 labels: `project_index.md`, `Project_Index.md`, `project.md`, `index.md`,
-`pending_learnings.md`, `project_decisions_archive.md`. The session log is never a writer target. Closingtime additionally permits replacement of the fixed `private-artifacts/session-journal/_policy.json`, bound by exact payload hash; all other journal targets remain forbidden. Newbeginning further restricts writes to index replacement.
+`pending_learnings.md`, `project_decisions_archive.md`. The session log is never a writer target. Writers refuse `EPERM` when the target or any folder between the project root and it is a symlink; a missing session log is created exclusively. Closingtime adoption accepts only the exact current proposal; rerun `adopt-history` if anything changed. Closingtime additionally permits replacement of the fixed `private-artifacts/session-journal/_policy.json`, bound by exact payload hash; all other journal targets remain forbidden. Newbeginning further restricts writes to index replacement.
 Snapshot aliases: session `project_session.md`, `Project_Session.md`,
 `session_log.md`, `sessions.md`; pending `pending_learnings.md`, `Pending_Learnings.md`.
 An existing noncanonical pending alias must be reconciled separately before a
@@ -128,7 +128,7 @@ later edits can be reported without blocking new closes.
 If the index changed, do not reuse its old preimage:
 
 1. Observe a fresh envelope, containing only the remaining index replacement.
-2. Run `freeze-draft ENVELOPE --index-draft INDEX --continue
+2. In closingtime, run `freeze-draft ENVELOPE --index-draft INDEX --continue
    private-artifacts/session-journal/<parent>.done`.
 3. Present the new draft and `scope_lines`, obtain owner approval, run `approve-draft RECEIPT SCOPE --owner-reply "<owner words>"`,
    then `write-approved ... --expect <current-sha256>`.
@@ -150,10 +150,13 @@ inside its approval/write chain. Bound interrupted recovery remains exempt.
 
 ## History, projection and conflicts
 
+A bare four-digit number is a session number: `## Session 2026 retrospective` is Session 2026; write year notes under another heading word.
+
+Finished numbers stay reserved: after a removed entry the next close takes the next unreserved number and warns `ALLOCATION_GAP`. `ERECOVERY: multiple conflicting intent matches` comes only from older releases: stop and ask the owner. Old final `.json` records whose entry is missing still refuse `ERECOVERY`.
+
 One parser feeds snapshot, validation, append and audit. Writers emit `---`, a
 blank line, then `### Session #N | YYYY-MM-DD | Mode (Tool)`. The legacy first
-entry may follow `# Session Log` directly and is counted. Numbers/dates use ASCII
-digits. Strict duplicate numbers, malformed headers and impossible dates refuse
+entry may follow `# Session Log` directly and is counted. Numbers use ASCII digits; a heading number with other digits refuses `EHISTORY` (`session_number_non_ascii`). Dates also use ASCII digits. Strict duplicate numbers, malformed headers and impossible dates refuse
 `EHISTORY`; non-monotonic numbers warn `session_non_monotonic` in the brief.
 Entries need populated Focus, Done, Next, Blockers; Decisions is optional.
 `Session #[N]` is substituted; embedded headers/separators are refused.
@@ -181,20 +184,21 @@ and OneDrive host-suffix names remain undetected. Unrelated numbered files and
 | ESTALEEVIDENCE | new work needs fresh evidence; only bound interrupted recovery is exempt |
 | EINVOCATIONUSED | invocation already approved another draft; use the approved draft or a genuinely new invocation |
 | EWORKSPACEMISMATCH / WORKSPACE_MISMATCH | different journal identity or inconsistent legacy snapshot root; correct workspace |
-| EDRAFTMISMATCH / EDRAFTRECEIPT / ESKILL | correct skill, scope, receipt or payload; refreeze with approval |
+| EDRAFTMISMATCH / EDRAFTRECEIPT / ESKILL | correct skill, scope, receipt or payload; adoption requires the exact current adopt-history proposal; refreeze with approval |
 | ESTAGE | invalid candidate suffix/prefix change, wrong target, missing close or already consumed staging permission; use separate approval for edits/dispositions |
 | SCOPE_UNAPPROVED | approval missing/different, or pending revision lacks owner words; obtain exact approval |
-| ESOURCECHANGED / ESTALE | changed preimage, tail or allocated entry number; pre-append refreeze; post-append continue index or abandon child |
+| ESOURCECHANGED / ESTALE | changed preimage or tail; snapshot number or approved number differs; pre-append refreeze; post-append continue index or abandon child |
 | EUNFINISHED | resume; only remaining-target continuation bypasses fresh-freeze block |
 | EENTRYFORMAT / EWORDCAP | correct complete rendered entry once; no log write |
 | ECHRONOLOGY / INVALID_TIME | correct timezone-aware observation/draft/approval order |
 | EINPUT / EBADROWS | correct CLI input or returned-row shape |
-| ENOROOT / EPERM | resolve an existing contained root/file; no traversal, directories or symlink escapes |
+| ENOROOT / EPERM | resolve an existing contained root/file; no traversal, directories, symlink escapes or symlinked write path |
 | EMISSINGVERSION | use constructor-derived package version |
 | EPROJECTIONCAP | projection metadata cannot fit; report unavailable, do not hand-truncate evidence |
 | EJOURNAL | intent not durable; inspect path; log untouched before intent |
 | EREADBACK | conditional rollback verified; inspect retained intent via resume |
 | EPARTIAL_APPEND / EPARTIAL_WRITE / ERECOVERY | preserve evidence; resume; ambiguous bytes require reconciliation |
+| ALLOCATION_GAP | warning: reserved numbers are missing from the log; inspect reserved_missing |
 | ENTRY_DATE_SKEW | warning; show actual date discrepancy |
 | ENOJOURNAL / EBADPOLICY / EUNMATCHED_EXCEPTION | audit historical coverage/configuration; do not fabricate receipts |
 | BAD_STATUS / MISSING_RECEIPT / STALE_RECEIPT / FUTURE_RECEIPT / CONTRADICTORY / FOREIGN_ROWS / FINGERPRINT_MISMATCH | no authoritative external claim; correct evidence once |

@@ -1,4 +1,4 @@
-# Standalone envelope recipes (2.3.0 / 3.3.0)
+# Standalone envelope recipes (2.3.1 / 3.3.1)
 
 Use `python3 scripts/runtime_cli.py new-envelope ROOT` from this package first.
 It derives skill/version and a helper-stamped start from the snapshot. The
@@ -36,7 +36,7 @@ The static timestamps below demonstrate shapes and are stale for new work.
 Use constructor timestamps (including captured_at), actual observed receipts
 and helper approvals in a live invocation; new evidence has a six-hour lifetime.
 Only bound interrupted recovery reuses its original receipt; see recovery.md for
-`freeze-draft --continue <parent-intent>` and unfinished child abandonment.
+closingtime `freeze-draft --continue <parent-intent>` and unfinished child abandonment.
 
 The four complete envelopes below demonstrate nesting: schema_version belongs
 at the envelope, capability_profile and every MCP receipt, not inside local
@@ -131,7 +131,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.3.0",
+  "skill_version": "2.3.1",
   "returned_rows_by_capability": {}
 }
 ```
@@ -223,7 +223,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "2.3.0",
+  "skill_version": "2.3.1",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -334,7 +334,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.3.0",
+  "skill_version": "3.3.1",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
@@ -445,7 +445,7 @@ is allowed in both directions. Never type live start/approval timestamps.
     "index": "aaa",
     "session_tail": "bbb"
   },
-  "skill_version": "3.3.0",
+  "skill_version": "3.3.1",
   "returned_rows_by_capability": {
     "tasks_mcp": [
       {
