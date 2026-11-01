@@ -152,6 +152,18 @@ These rules exist already. This section collects them; it does not invent any.
   Say which one you ran.
 - A session-skill candidate is frozen only after it passes every earlier round's
   reproductions.
+- Every review brief states the threat model, and the reviewer judges blocking
+  findings against it:
+  - In scope: one owner on a local machine, agents that misread instructions
+    or files, hand edits to continuity files, and interrupted or failed writes.
+  - Out of scope: a hostile process acting at the same time as the skill, such
+    as swapping a folder or file mid-write (filesystem races).
+  - A finding outside the threat model is recorded in the backlog, not counted
+    as a blocker.
+- A repair review checks the repaired findings, re-runs the gate and earlier
+  reproductions, and looks for regressions. A new finding blocks only if it is
+  in the threat model and at least medium severity. Lower findings go to the
+  backlog.
 
 ### E. Versions and changelog
 - Version bumps:
