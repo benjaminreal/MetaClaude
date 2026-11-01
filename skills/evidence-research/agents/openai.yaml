@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence Research"
+  short_description: "Research decisions with traceable evidence"
+  default_prompt: "Use $evidence-research to answer this question from the available sources, preserving material uncertainty."
