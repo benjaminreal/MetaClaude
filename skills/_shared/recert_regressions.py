@@ -1296,3 +1296,10 @@ if __name__ == "__main__":
             print("       " + problem.replace("\n", " ")[:300])
     print(f"\n{sum(p is None for _, _, p in rows)} passed, {sum(p is not None for _, _, p in rows)} failed, {len(rows)} cases")
     sys.exit(1 if any(p for _, _, p in rows) else 0)
+
+# Approval-friction request: additive synthetic protections and positive controls.
+# Kept after the legacy CLI entry point so the historical corpus stays byte intact.
+@case("Approval friction", "constructors, cleanup and approval lineage safety")
+def approval_friction_contracts():
+    import friction_fixtures
+    assert not (bad := friction_fixtures.run()), bad
