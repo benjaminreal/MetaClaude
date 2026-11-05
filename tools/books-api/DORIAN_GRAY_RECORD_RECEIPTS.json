@@ -1,0 +1,166 @@
+{
+  "google_books": {
+    "status": "ok",
+    "provider": "google_books",
+    "request_url": "https://www.googleapis.com/books/v1/volumes/WfxrfuDUAYgC?country=MX",
+    "retrieved_at": "2026-10-03T05:12:46.987854Z",
+    "cache_hit": false,
+    "raw_sha256": "38fb21dae1ab521e7c3dd58deee173196337e924ebfb95e2ea46970d03faa297",
+    "raw": {
+      "kind": "books#volume",
+      "id": "WfxrfuDUAYgC",
+      "etag": "G3bvhjNEKhk",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/WfxrfuDUAYgC",
+      "volumeInfo": {
+        "title": "The Picture of Dorian Gray",
+        "authors": [
+          "Oscar Wilde"
+        ],
+        "publisher": "Oxford University Press",
+        "publishedDate": "1998",
+        "description": "\"This revised Norton Critical Edition, like its predecessor, is the only edition available that includes both the 1890 Lippincott's and the 1891 book version of The Picture of Dorian Gray. Under the editorial guidance of Wilde scholar Michael Patrick Gillespie, students have the opportunity to read comparatively both published versions of this controversial novel.\" \"\"Backgrounds\" and \"Reviews and Reactions\" allow readers to gauge The Picture of Dorian Gray's sensational reception when the 1890 version appeared and to consider the heated public debate over art and morality that followed its publication. Joris-Karl Huysmans, Walter Pater, and Oscar Wilde offer a sense of the diverse opinions on these topics. Eight contemporary reviews and comments on the novel are reprinted, among them four opinions from the St. James's Gazette immediately after publication in 1890, each followed by Oscar Wilde's vehement reply.\" \"\"Criticism\" includes seven new essays on the novel that reflect key changes in interpretive theory in recent years and reveal the broad range of perspectives associated with Wilde and The Picture of Dorian Gray. Simon Joyce, Donald L. Lawler, Sheldon W. Liebman, Maureen O'Connor, Ellie Ragland-Sullivan, John Paul Riquelme, and Michael Patrick Gillespie provide their varied assessments. A Chronology and a Selected Bibliography are also included.\"--BOOK JACKET.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "0192833650"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9780192833655"
+          }
+        ],
+        "readingModes": {
+          "text": false,
+          "image": true
+        },
+        "pageCount": 236,
+        "printedPageCount": 230,
+        "dimensions": {
+          "height": "20.00 cm",
+          "width": "12.40 cm",
+          "thickness": "1.30 cm"
+        },
+        "printType": "BOOK",
+        "categories": [
+          "Fiction / Literary"
+        ],
+        "averageRating": 3.5,
+        "ratingsCount": 5,
+        "maturityRating": "NOT_MATURE",
+        "allowAnonLogging": false,
+        "contentVersion": "0.5.6.0.preview.1",
+        "panelizationSummary": {
+          "containsEpubBubbles": false,
+          "containsImageBubbles": false
+        },
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=5&edge=curl&imgtk=AFLRE71O61NTgl307SzfyImzJccQzynBkUdtyO2ryiMbRFscydOck0L1C6KUXVN7vp9P_1rMfPov9ICAltvE-SdBYa_4E4D5ZurpmS4-dvKclF7JRiwlu1u0mM0jdESLuTeDMztPtUYU&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=1&edge=curl&imgtk=AFLRE70TtDUJBC8e6fDIbha34jtGWSUZGezohDF63Vsug66QGgjJR4nLuqza28hyAH-fqytuiFsLz8gOfd_9tG_KXnTqTzVhz8d5iR_0_9u7hzNAiP6Np_uaILycBJMQCLsMaJXWhUTl&source=gbs_api",
+          "small": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=2&edge=curl&imgtk=AFLRE717-KRdDG13oHEhnnal1yYDEn0FSEmq_TKaYlEtAyB1gBvozvQqs0k6R3nIb8JGYXVAbm6F9IsRP8q8B-av6oaH1e4cKkPJd35U8iPZ4VCaQR8Yd1VN8uQe_p-AwsyKxQ_cpd-p&source=gbs_api",
+          "medium": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=3&edge=curl&imgtk=AFLRE71zVNG1r6NLzKWohjOIA5NGyxFKQ_Gaj5aUWrW7_g9VU79St5JUdMOIlw5C9G-7fNWpo7LnQLq7VlU6vd-ZYtTj_tjRTTv5Zbqt1eWGZW_6Mh9BMg8R7B6yoQLeU-aOmspudCSl&source=gbs_api",
+          "large": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=4&edge=curl&imgtk=AFLRE72zO5OaDbE7Xw6c2yxejDdaZx7W3BRe4ONSq6_2xrTNfBedjtVEtHq_-WkPo2ZrNBZUSPwjpM7mJyJj3szKUcVkUnZHUSy5j0RYmv2cy0_zHxf3KTzQmAg8PQNHg2kx50T2RF_7&source=gbs_api",
+          "extraLarge": "http://books.google.com/books/content?id=WfxrfuDUAYgC&printsec=frontcover&img=1&zoom=6&edge=curl&imgtk=AFLRE71Ta25_5aw5TC6PNe7MJrjrReawxgxt58vYy24wdNOeAJNAdVLIvlXZMrraVPuZWeWlTo2jVLUElUtD9XrhD-PtoC46c-dlfQtqsI7J30mvNqJZmrcdq5cZXYjeNxA6NwrClkxv&source=gbs_api"
+        },
+        "language": "en",
+        "previewLink": "http://books.google.com.mx/books?id=WfxrfuDUAYgC&hl=&source=gbs_api",
+        "infoLink": "https://play.google.com/store/books/details?id=WfxrfuDUAYgC&source=gbs_api",
+        "canonicalVolumeLink": "https://play.google.com/store/books/details?id=WfxrfuDUAYgC"
+      },
+      "saleInfo": {
+        "country": "MX",
+        "saleability": "NOT_FOR_SALE",
+        "isEbook": false
+      },
+      "accessInfo": {
+        "country": "MX",
+        "viewability": "PARTIAL",
+        "embeddable": true,
+        "publicDomain": false,
+        "textToSpeechPermission": "ALLOWED",
+        "epub": {
+          "isAvailable": false
+        },
+        "pdf": {
+          "isAvailable": true,
+          "acsTokenLink": "http://books.google.com.mx/books/download/The_Picture_of_Dorian_Gray-sample-pdf.acsm?id=WfxrfuDUAYgC&format=pdf&output=acs4_fulfillment_token&dl_type=sample&source=gbs_api"
+        },
+        "webReaderLink": "http://play.google.com/books/reader?id=WfxrfuDUAYgC&hl=&source=gbs_api",
+        "accessViewStatus": "SAMPLE",
+        "quoteSharingAllowed": false
+      }
+    }
+  },
+  "open_library": {
+    "status": "ok",
+    "provider": "open_library",
+    "request_url": "https://openlibrary.org/books/OL7577096M.json",
+    "retrieved_at": "2026-10-03T05:12:47.301523Z",
+    "cache_hit": false,
+    "raw_sha256": "8af257f72b9d85a665bc2d6dad8f4ed02ad3034b992e9dbff6293933731c4788",
+    "raw": {
+      "identifiers": {
+        "goodreads": [
+          "68142"
+        ],
+        "librarything": [
+          "2190037"
+        ]
+      },
+      "title": "The Picture of Dorian Gray",
+      "subtitle": "and Selected Stories",
+      "authors": [
+        {
+          "key": "/authors/OL20646A"
+        }
+      ],
+      "publish_date": "1983",
+      "publishers": [
+        "Signet Classics"
+      ],
+      "languages": [
+        {
+          "key": "/languages/eng"
+        }
+      ],
+      "contributions": [
+        "Gerald Weales (Foreword)"
+      ],
+      "covers": [
+        14314589
+      ],
+      "type": {
+        "key": "/type/edition"
+      },
+      "ocaid": "pictureofdoriang0000wild_g3j5",
+      "isbn_10": [
+        "0451523849"
+      ],
+      "isbn_13": [
+        "9780451523846"
+      ],
+      "oclc_numbers": [
+        "24843574"
+      ],
+      "source_records": [
+        "amazon:0451523849"
+      ],
+      "key": "/books/OL7577096M",
+      "number_of_pages": 302,
+      "works": [
+        {
+          "key": "/works/OL118853W"
+        }
+      ],
+      "latest_revision": 16,
+      "revision": 16,
+      "created": {
+        "type": "/type/datetime",
+        "value": "2008-04-29T13:35:46.876380"
+      },
+      "last_modified": {
+        "type": "/type/datetime",
+        "value": "2026-01-12T01:02:05.535911"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "harness": "Claude Code (T3 Code), fresh model session, this Mac",
+  "session_date_local": "2026-11-05",
+  "tool_discovery": "books_status, books_search, books_get_record discovered via deferred-tool search without manual registration",
+  "books_status": {"status": "ok", "version": "0.1.0", "google_books": "configured_unverified (static label; status makes no network call)", "open_library": "available_unverified"},
+  "calls": [
+    {"tool": "books_search", "provider": "google_books", "query": "title=The Picture of Dorian Gray; author=Oscar Wilde; limit=3", "status": "ok", "retrieved_at": "2026-11-05T20:56:39.601832Z", "cache_hit": false, "raw_sha256": "e867df7994b838e3bd238388e54eafc3556d93ef982fc2fecfa49bffff843428", "candidate_ids": ["Ut2PzgEACAAJ", "rzP-DwAAQBAJ", "12IevgAACAAJ"]},
+    {"tool": "books_search", "provider": "open_library", "query": "title=The Picture of Dorian Gray; author=Oscar Wilde; limit=3", "status": "ok", "retrieved_at": "2026-11-05T20:56:40.183585Z", "cache_hit": false, "raw_sha256": "0cf57d8414f6d29031b0773b2eaf8a7dd75bac3d401f25a3b154ab6290bde2c6", "candidate_ids": ["/books/OL46984115M", "/books/OL7577096M", "/books/OL8668014M"]},
+    {"tool": "books_get_record", "provider": "google_books", "record_id": "Ut2PzgEACAAJ", "status": "ok", "retrieved_at": "2026-11-05T20:56:43.555925Z", "cache_hit": false, "raw_sha256": "2a7ae4d2ee17268613a7ca9279a86ffb61a6dea65488910da8c44f7b856e3c5c", "observed": {"isbn_13": "9798516848766", "pageCount": 217}},
+    {"tool": "books_get_record", "provider": "open_library", "record_id": "/books/OL7577096M", "status": "ok", "retrieved_at": "2026-11-05T20:56:44.111429Z", "cache_hit": false, "raw_sha256": "8af257f72b9d85a665bc2d6dad8f4ed02ad3034b992e9dbff6293933731c4788", "observed": {"isbn_13": "9780451523846", "number_of_pages": 302}}
+  ],
+  "result": "PASS for Claude Code fresh-session acceptance (both providers, search and record)",
+  "not_covered": "Codex/T3 fresh session; other Macs, OpenCode, Gemini, claude.ai/web; ReadingAnalisis enrichment; CaptureBooks changes"
+}

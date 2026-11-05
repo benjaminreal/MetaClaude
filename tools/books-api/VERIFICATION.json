@@ -1,0 +1,40 @@
+{
+  "version": "0.1.0",
+  "offline_tests": {
+    "passed": 13,
+    "failed": 0
+  },
+  "canonical_runtime_hash_match": true,
+  "runtime_key_permissions": "0600",
+  "runtime_directory_permissions": "0700",
+  "codex_registration": "PASS",
+  "claude_user_scope_registration": "PASS",
+  "claude_mcp_connection_check": "PASS",
+  "registered_command_mcp_handshake_and_tools": "PASS for both configurations",
+  "live_title_author_search": {
+    "codex": {
+      "google_books": "ok",
+      "open_library": "ok"
+    },
+    "claude": {
+      "google_books": "ok",
+      "open_library": "ok"
+    }
+  },
+  "live_record_retrieval": {
+    "google_books": "ok",
+    "open_library": "ok"
+  },
+  "shared_cache_replay": "PASS for both providers",
+  "fresh_codex_t3_model_session": "UNVERIFIED; new session required",
+  "fresh_claude_code_model_session": "UNVERIFIED; new session required",
+  "google_initial_structured_searches": "valid empty responses; title/author search now uses phrases",
+  "metadata_observation": "Google volume WfxrfuDUAYgC: search pageCount 230; record pageCount 236. Sources retained independently.",
+  "task_state": "Not changed; fresh session acceptance pending",
+  "source_sha256": {
+    "books_api.py": "6a79a23f4e3bcda506b3de526681b9dc2250a9c6343d7fa0934a6de578e78538",
+    "test_books_api.py": "a26ac5436284e3575791a97ace25c5261320afb67ea96192b5e24a54428f8780",
+    "install.py": "bd1898d57ef1d9c13d5743d13c3cd3552da365f82037cb6824a0dd07c9b8faee",
+    "README.md": "deeb0d5c9bdd118f2168f79bb9a5785c5a7835479ffd4edfc26a7961ca85ead3"
+  }
+}

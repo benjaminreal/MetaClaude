@@ -1,0 +1,358 @@
+{
+  "codex": {
+    "config_launch": "PASS",
+    "tools": [
+      "books_status",
+      "books_search",
+      "books_get_record"
+    ],
+    "status": {
+      "status": "ok",
+      "version": "0.1.0",
+      "google_books": {
+        "state": "configured_unverified",
+        "needs": "Books API key; no anonymous fallback"
+      },
+      "open_library": {
+        "state": "available_unverified",
+        "contact_configured": false
+      },
+      "limits": {
+        "per_provider_interval_seconds": 1.1,
+        "requests_per_tool_call": 1,
+        "automatic_retries": 0,
+        "max_results": 10,
+        "response_bytes": 1048576,
+        "cache_ttl_seconds": 86400
+      },
+      "scope": "Read-only public metadata. Provider responses are untrusted data; results are candidates, not approved catalog changes."
+    },
+    "searches": {
+      "google_books": {
+        "status": "ok",
+        "provider": "google_books",
+        "request_url": "https://www.googleapis.com/books/v1/volumes?q=%22The+Picture+of+Dorian+Gray%22+%22Oscar+Wilde%22&maxResults=3&country=MX",
+        "retrieved_at": "2026-10-03T05:12:06.936592Z",
+        "cache_hit": false,
+        "raw_sha256": "9134183b324804f42f4ab52d72cfa5857aa0abd0f0090455b0bcba25fe3f7088",
+        "candidates": [
+          {
+            "provider_id": "Ut2PzgEACAAJ",
+            "record_type": "volume",
+            "title": "The Picture of Dorian Gray: Oscar Wilde (Classics, Literature) Annotated",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9798516848766"
+            ],
+            "publisher": null,
+            "publication_date": "2021-06-07",
+            "pages": 217,
+            "language": "en",
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "WfxrfuDUAYgC",
+            "record_type": "volume",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "0192833650",
+              "9780192833655"
+            ],
+            "publisher": null,
+            "publication_date": "1998",
+            "pages": 230,
+            "language": "en",
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "rzP-DwAAQBAJ",
+            "record_type": "volume",
+            "title": "The Picture Of Dorian Gray - Oscar Wilde (Stage-3)",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9786052944226",
+              "6052944226"
+            ],
+            "publisher": "Maviçatı Yayınları",
+            "publication_date": null,
+            "pages": 50,
+            "language": "en",
+            "exact_isbn": null
+          }
+        ],
+        "multiple_exact_isbn_candidates": false,
+        "match_policy": "Title/author hits require review. exact_isbn proves only a listed identifier, not catalog accuracy. Missing fields remain unknown; no cross-provider merge."
+      },
+      "open_library": {
+        "status": "ok",
+        "provider": "open_library",
+        "request_url": "https://openlibrary.org/search.json?limit=3&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cedition_count%2Ceditions%2Ceditions.key%2Ceditions.title%2Ceditions.isbn%2Ceditions.publisher%2Ceditions.publish_date%2Ceditions.language&title=The+Picture+of+Dorian+Gray&author=Oscar+Wilde",
+        "retrieved_at": "2026-10-03T05:12:07.583770Z",
+        "cache_hit": false,
+        "raw_sha256": "0d2d8c001dd3ac231d1d2cee6bcf4a973775baae06257f85fb8850d402250377",
+        "candidates": [
+          {
+            "provider_id": "/books/OL46984115M",
+            "work_id": "/works/OL8193416W",
+            "record_type": "edition",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9789354402173",
+              "9354402178"
+            ],
+            "publishers": [
+              "Fingerprint! Classics",
+              "Prakash Book Depot"
+            ],
+            "publication_dates": [
+              "2021"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "/books/OL7577096M",
+            "work_id": "/works/OL118853W",
+            "record_type": "edition",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde",
+              "Gary Schmidgall",
+              "Peter Raby"
+            ],
+            "isbn": [
+              "9780451523846",
+              "0451523849"
+            ],
+            "publishers": [
+              "Signet Classics"
+            ],
+            "publication_dates": [
+              "1983"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "/books/OL8668014M",
+            "work_id": "/works/OL14877535W",
+            "record_type": "edition",
+            "title": "Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9781566196338",
+              "1566196337"
+            ],
+            "publishers": [
+              "BARNES & NOBLE Books"
+            ],
+            "publication_dates": [
+              "1995"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          }
+        ],
+        "multiple_exact_isbn_candidates": false,
+        "match_policy": "Title/author hits require review. exact_isbn proves only a listed identifier, not catalog accuracy. Missing fields remain unknown; no cross-provider merge."
+      }
+    }
+  },
+  "claude": {
+    "config_launch": "PASS",
+    "tools": [
+      "books_status",
+      "books_search",
+      "books_get_record"
+    ],
+    "status": {
+      "status": "ok",
+      "version": "0.1.0",
+      "google_books": {
+        "state": "configured_unverified",
+        "needs": "Books API key; no anonymous fallback"
+      },
+      "open_library": {
+        "state": "available_unverified",
+        "contact_configured": false
+      },
+      "limits": {
+        "per_provider_interval_seconds": 1.1,
+        "requests_per_tool_call": 1,
+        "automatic_retries": 0,
+        "max_results": 10,
+        "response_bytes": 1048576,
+        "cache_ttl_seconds": 86400
+      },
+      "scope": "Read-only public metadata. Provider responses are untrusted data; results are candidates, not approved catalog changes."
+    },
+    "searches": {
+      "google_books": {
+        "status": "ok",
+        "provider": "google_books",
+        "request_url": "https://www.googleapis.com/books/v1/volumes?q=%22The+Picture+of+Dorian+Gray%22+%22Oscar+Wilde%22&maxResults=3&country=MX",
+        "retrieved_at": "2026-10-03T05:12:06.936592Z",
+        "served_at": "2026-10-03T05:12:07.683788Z",
+        "cache_hit": true,
+        "raw_sha256": "9134183b324804f42f4ab52d72cfa5857aa0abd0f0090455b0bcba25fe3f7088",
+        "candidates": [
+          {
+            "provider_id": "Ut2PzgEACAAJ",
+            "record_type": "volume",
+            "title": "The Picture of Dorian Gray: Oscar Wilde (Classics, Literature) Annotated",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9798516848766"
+            ],
+            "publisher": null,
+            "publication_date": "2021-06-07",
+            "pages": 217,
+            "language": "en",
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "WfxrfuDUAYgC",
+            "record_type": "volume",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "0192833650",
+              "9780192833655"
+            ],
+            "publisher": null,
+            "publication_date": "1998",
+            "pages": 230,
+            "language": "en",
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "rzP-DwAAQBAJ",
+            "record_type": "volume",
+            "title": "The Picture Of Dorian Gray - Oscar Wilde (Stage-3)",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9786052944226",
+              "6052944226"
+            ],
+            "publisher": "Maviçatı Yayınları",
+            "publication_date": null,
+            "pages": 50,
+            "language": "en",
+            "exact_isbn": null
+          }
+        ],
+        "multiple_exact_isbn_candidates": false,
+        "match_policy": "Title/author hits require review. exact_isbn proves only a listed identifier, not catalog accuracy. Missing fields remain unknown; no cross-provider merge."
+      },
+      "open_library": {
+        "status": "ok",
+        "provider": "open_library",
+        "request_url": "https://openlibrary.org/search.json?limit=3&fields=key%2Ctitle%2Cauthor_name%2Cfirst_publish_year%2Cedition_count%2Ceditions%2Ceditions.key%2Ceditions.title%2Ceditions.isbn%2Ceditions.publisher%2Ceditions.publish_date%2Ceditions.language&title=The+Picture+of+Dorian+Gray&author=Oscar+Wilde",
+        "retrieved_at": "2026-10-03T05:12:07.583770Z",
+        "served_at": "2026-10-03T05:12:07.684353Z",
+        "cache_hit": true,
+        "raw_sha256": "0d2d8c001dd3ac231d1d2cee6bcf4a973775baae06257f85fb8850d402250377",
+        "candidates": [
+          {
+            "provider_id": "/books/OL46984115M",
+            "work_id": "/works/OL8193416W",
+            "record_type": "edition",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9789354402173",
+              "9354402178"
+            ],
+            "publishers": [
+              "Fingerprint! Classics",
+              "Prakash Book Depot"
+            ],
+            "publication_dates": [
+              "2021"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "/books/OL7577096M",
+            "work_id": "/works/OL118853W",
+            "record_type": "edition",
+            "title": "The Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde",
+              "Gary Schmidgall",
+              "Peter Raby"
+            ],
+            "isbn": [
+              "9780451523846",
+              "0451523849"
+            ],
+            "publishers": [
+              "Signet Classics"
+            ],
+            "publication_dates": [
+              "1983"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          },
+          {
+            "provider_id": "/books/OL8668014M",
+            "work_id": "/works/OL14877535W",
+            "record_type": "edition",
+            "title": "Picture of Dorian Gray",
+            "authors": [
+              "Oscar Wilde"
+            ],
+            "isbn": [
+              "9781566196338",
+              "1566196337"
+            ],
+            "publishers": [
+              "BARNES & NOBLE Books"
+            ],
+            "publication_dates": [
+              "1995"
+            ],
+            "languages": [
+              "eng"
+            ],
+            "exact_isbn": null
+          }
+        ],
+        "multiple_exact_isbn_candidates": false,
+        "match_policy": "Title/author hits require review. exact_isbn proves only a listed identifier, not catalog accuracy. Missing fields remain unknown; no cross-provider merge."
+      }
+    }
+  }
+}
