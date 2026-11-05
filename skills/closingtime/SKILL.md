@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.4.0"
+  version: "3.5.0"
 ---
 
 # closingtime
@@ -63,20 +63,20 @@ not provenance; a later snapshot can adopt an undetectable direct write. Use
 
 ### `OBSERVATION_GATE`
 
-Run `new-envelope <workspace-root>` after this skill is invoked; it captures
-start and `captured_at`. Use a new envelope for each later helper call chain;
-never copy start times. One approval covers one envelope chain; each later chain in this conversation needs a new envelope and approval. Replace `unprobed` states before validation. The helper reads whole files and emits a bounded projection. Use the
+Run `new-invocation <workspace-root>` after invocation for a new envelope and
+unique scratch directory. It captures start and `captured_at`; never copy start times.
+Replace `unprobed` states with observed evidence using `service-receipt` and
+`attach-evidence` (gateway: `gateway-receipt`). A later chain needs a new envelope;
+only `refresh-approval` can carry unchanged authority forward. Local-only pending
+cleanup uses `new-invocation --local-only`, claiming no current service state. The helper reads whole files and emits a bounded projection. Use the
 index projection (name truncation), latest session state, git result or explicit no-git result,
 parse warnings, and sync-conflict scan. Add conversation and bounded transcript
 signals without treating memory as a file receipt. State the branch and changed
 files only from the snapshot's `git` fields.
 
 Resolve Tasks DB state. When working, read `references/task_operations.md`, run
-the current project slice, and fingerprint returned rows (use
-`fingerprint-rows -` on stdin when scratch writes are blocked). Use its
-`fingerprinted_at` as the receipt time unless the tool result carries its own;
-never type a time. Rows that cannot
-be fingerprinted give no current receipt: make no current task claim and keep
+the current project slice, and construct/attach its receipt from raw results per
+`references/envelope_examples.md`. Unverifiable rows give no current claim; keep
 task operations pending. Otherwise record the exact state and wording:
 
 - `absent`: "Tasks DB isn't available in this harness."
@@ -106,7 +106,8 @@ A current receipt regenerates `## Active TODOs` with `render-mirror`, even
 without task changes;
 without one, the mirror stays untouched. Include optional M2 `stage` permission
 for `pending_learnings.md` unless learning is skipped; candidate wording waits
-for `LEARNING_GATE`. Edits, dispositions and deletion need separate scopes.
+for `LEARNING_GATE`. Add explicit conditional `resolve` scope for cleanup after
+recorded dispositions. Edits and captures keep their separate approval scopes.
 
 Do not write project files, the DB, Open Brain, or repository state yet.
 
@@ -168,7 +169,7 @@ approved chain; only then may the close index draft drop the archived decision.
 
 Show the entire draft and itemize mutation scope by class:
 
-- M2: session, index and optional pending `stage`; other learning/archive writes need separate approval;
+- M2: session, index, optional pending `stage` and conditional `resolve`; other learning/archive writes need separate approval;
 - M3: each task operation and Open Brain intent;
 - M4: normally empty unless separately requested.
 
@@ -176,15 +177,17 @@ Obtain explicit approval for the stated scope. Corrections return to
 `DRAFT_GATE`. Approval for one class never implies another.
 
 Before showing the draft, save the entry and index and run `freeze-draft
-<draft-envelope> <entry> <index-draft>` (omit skipped index). After the last edit,
+<draft-envelope> <entry> <index-draft> --refreshable` (omit skipped index). After the last edit,
 run `count-words` on the exact final entry sent; state only that word count.
 After explicit approval, run
-`approve-draft <draft-receipt> "<exact scope_lines>" --owner-reply "<owner words>"`; the helper stamps the time.
-Show helper-rendered `scope_lines` verbatim; an exclusion requires revise and
-freeze again. An exclusion or correction is not approval: after re-freezing,
-show the new `scope_lines` and stop until the owner approves them. Owner words are recorded, not authenticated. Never type approval/start times.
-Add approval/scope to the draft envelope; keep `local_snapshot` unchanged,
-include returned rows, and `validate` again.
+`approve-draft <draft-receipt> --owner-reply "<owner words>"`;
+then `bind-approval <draft-envelope> <approved-receipt>` and `validate`.
+Show helper-rendered `scope_lines` verbatim. Clear "Approved, skip/except X"
+approves only an unambiguous unchanged remainder; the helper removes X.
+A correction alone is not approval: re-freeze, show the new scope, and wait.
+For expired evidence or optional stage drift, use `refresh-approval` with a fresh
+envelope; material differences still need new owner words. See recovery.md.
+Owner words are recorded, not authenticated; never type approval/start times.
 
 ### `CONCURRENCY_GATE` and persistence
 
@@ -195,8 +198,8 @@ approved. Then:
    helper verifies the receipt, entry and draft-time snapshot, locks locally,
    rechecks the observed tail hash (frozen at draft time) and sync conflicts,
    allocates the next number, appends, reads back, and journals. Stop on any
-   refusal; a changed draft returns to `DRAFT_GATE` and needs a new freeze and
-   approval.
+   refusal; material changes return to `DRAFT_GATE` for fresh approval. Only
+   witnessed unchanged refreshes may carry approval forward.
 2. Apply approved Tasks DB operations with `returning`, then rerun the current
    slice; uncertain inserts reuse their reserved UUID and need fresh approval.
 3. Run one `write-approved` index transition with the frozen index draft and
@@ -228,7 +231,7 @@ are empty. Never count them as journaled or claim their original append verified
 ### `LEARNING_GATE` — `PENDING_LEARNING_LIFECYCLE`
 
 Learning is optional. Skips/zero candidates leave no child intent or unfinished
-close; existing pending bytes stay untouched. Begin after attempted writes verify.
+close; existing pending bytes stay untouched except approved conditional resolution. Begin after attempted writes verify.
 For `SKIP-learning`, acknowledge it, record Open Brain as `not_used` and create no candidates. Otherwise:
 
 1. read `references/candidate_quality_contract.md`; identify at least two
@@ -243,15 +246,16 @@ For `SKIP-learning`, acknowledge it, record Open Brain as `not_used` and create 
    staging was excluded, show a separate replacement's frozen `scope_lines`
    and obtain approval first. Failed staging is a resumable/abandonable child;
 4. present types, wording and connections exactly as read back. Keep needs no
-   write. When asking for edit/discard/delete, show that transition's frozen
-   `scope_lines` in the same message, so the reply can approve it;
+   write. Present disposition choices in the same message. If conditional resolution
+   is absent, show the edit/discard/delete transition's frozen `scope_lines`;
 5. after owner edits, reapply the quality contract to the complete wording;
    obtain fresh approval for repairs. Write/read back edits before capture;
-6. separately approve edits/mixed disposition with current `--expect` and
-   non-empty `--owner-reply`; bind replacement hashes (delete: `absent`) before
-   each new freeze/approval. Retain unresolved blocks and unknown fields.
-   Delete only after all dispositions; approval expires after six hours.
-   Capture only explicitly approved items.
+6. use `pending-blocks` and `resolve-pending` for conditional cleanup: only exact
+   hash-checked blocks with recorded discarded/successfully saved dispositions
+   may disappear. Retain unresolved blocks and unknown fields. No second owner
+   round is needed within approved `resolve` scope; capture stays separately
+   approved. Other edits bind exact payload hashes before fresh approval.
+   See recovery.md for disposition records and the six-hour evidence limit.
 
 Language precedence is explicit user preference, then the dominant session
 language when it is English or Spanish, then English. Keep volatile session
@@ -317,7 +321,8 @@ No model or harness name changes mutation authority, gates, or receipt rules.
 
 | Situation | Action |
 |---|---|
-| User corrects or excludes | Revise, re-freeze, show new scope; wait for approval |
+| Clear approval with exclusions | Helper approves the unambiguous unchanged remainder |
+| User only corrects | Revise, re-freeze, show new scope; wait for approval |
 | User skips a branch | Emit its acknowledgement; preserve independent branches |
 | Task or tail precondition changed | Stop; reconcile and request new approval |
 | Sync-conflict artifact appears | Enter `conflicted`; no project mutation |
@@ -360,6 +365,12 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.5.0 — 2026-11-05 — candidate**
+
+- Construct receipts/envelopes and isolated scratch; derive scope at approval.
+- Resolve only hash-bound disposed blocks within approved conditional scope.
+- Carry witnessed unchanged approvals across fresh evidence; bind exclusions and revoke superseded chains.
 
 **v3.4.0 — 2026-11-01 — candidate**
 

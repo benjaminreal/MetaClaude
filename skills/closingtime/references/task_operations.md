@@ -24,8 +24,8 @@ runtime_cli.py gateway-receipt <result.json> <operation.json> --project <project
 ```
 
 The expected service reference comes from resolved instructions, not the
-response. Copy the emitted `receipt` into `mcp_receipts` and its
-`returned_rows_by_capability` into the envelope. Preserve the retained
+response. Set the independently intended envelope project and run
+`attach-evidence ENVELOPE PACKET` with the emitted packet. Preserve the retained
 `gateway_result`, operation, transport, timestamp and truncation flag unchanged;
 run `validate`. Only a successful urgency result can establish current task
 state. A truncated result is a bounded slice, never a complete backlog. Server

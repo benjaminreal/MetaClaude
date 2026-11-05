@@ -1,3 +1,5 @@
+Current source candidate: 2.5.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
+
 # newbeginning 2.3.1 — candidate
 
 This package is canonical source, not installed or certified for deployment.

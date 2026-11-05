@@ -1,19 +1,26 @@
-# Session runtime contract (2.3.1 / 3.3.1)
+# Session runtime contract (2.5.0 / 3.5.0)
 
 Run the bundled `scripts/runtime_cli.py` with `python3` (standard library only).
 Python is required for every helper path. Without it, output entry, index and
 task drafts; nothing is persisted. No manual append fallback.
 
 ```text
+new-invocation <workspace-root> [--local-only]  # local-only: closingtime pending resolve only
 new-envelope <workspace-root>
+service-receipt tasks_mcp|open_brain RAW OPERATION IDENTITY --tool-result-id ID
+attach-evidence ENVELOPE PACKET
+bind-approval ENVELOPE APPROVED
+refresh-approval PARENT FRESH_ENV [--entry ENTRY] [--index-draft INDEX] [--owner-reply TEXT]
+pending-blocks FILE
+resolve-pending ENVELOPE APPROVED DISPOSITIONS --expect HASH
 snapshot <workspace-root> --entries 2
 fingerprint-rows <rows.json|->
 gateway-receipt <result.json|-> <operation.json|-> --project <project|portfolio> --project-ref <expected-service-ref>
 fingerprint-operation <query.sql|->
 validate <envelope.json|->
-freeze-draft <envelope.json> [<entry.md>] [<index.md>]
+freeze-draft <envelope.json> [<entry.md>] [<index.md>] [--refreshable]
 freeze-draft <envelope.json> --index-draft <index.md> [--continue <parent-intent>]  # closingtime only for continuation
-approve-draft <draft-receipt.json> "<exact scope_lines>" --owner-reply "<owner words>"
+approve-draft <draft-receipt.json> --owner-reply "<owner words>"
 append <envelope.json> <entry.md|-> <approved-receipt.json>
 write-approved <envelope.json> <approved-receipt.json> <observed-relative-path> [<payload|->] --operation replace|delete|stage --expect <sha256|absent> --owner-reply "<owner words>"
 resume <workspace-root> [<approved-receipt.json>]
@@ -81,13 +88,11 @@ stop persistence and the opening brief; reconcile only with separate approval.
 Freeze binds workspace identity, snapshot/entry/index, scope kinds and relative paths;
 snapshot and envelope roots must agree after resolution; matching workspace ids do not bypass that check. Bound relocation recovery rewrites both roots. New evidence expires after six hours (future
 skew at most 120 seconds), except bound interrupted recovery. One draft approval
-per envelope chain; each later chain in the same conversation needs a new envelope and approval. Discard pre-approval superseded proposals in conversation. Show scope_lines
-verbatim. An exclusion requires a revised freeze; owner_reply is recorded
-separately, not interpreted or authenticated. Append is closingtime-only.
+per envelope chain; later chains use new evidence and approval or the witnessed unchanged refresh below. Discard pre-approval superseded proposals in conversation. Show scope_lines
+verbatim. Unambiguous affirmative exclusions are reduced by the helper; correction-only replies require a revised freeze and approval. Owner words are recorded, not authenticated. Append is closingtime-only.
 write-approved is the sanctioned non-session writer and takes the same lock.
 Journal effects appear in local scope lines. The parent close covers session,
-index and optional stage permission for pending_learnings.md; edits, dispositions,
-deletion and archive writes need separate scopes. A plain pending M2 path defaults
+index, optional stage and explicit conditional resolve permission for pending_learnings.md. Edits, captures and archive writes keep separate scopes. A plain pending M2 path defaults
 to stage beside the session, replace otherwise; delete is never added implicitly.
 Archive overflow must name
 project_decisions_archive.md in M2 and bind its payload SHA-256 in
@@ -123,8 +128,7 @@ blocks only, once per close, after its verified append, with current --expect.
 It creates no child until attempted. Durable failures are resumable/abandonable
 children; the verified append stays journaled. Keep needs no write after readback.
 Show any edit/discard/delete transition's frozen scope_lines with its question.
-Pending edits/dispositions/deletion require non-empty --owner-reply and approval
-at most six hours old; stage uses the close's approved owner words. A close
+Arbitrary pending edits/deletion require exact payload hashes and non-empty owner words; conditional resolve uses the approved close plus recorded per-block dispositions. Evidence remains limited to six hours. A close
 waiting only on learning dispositions ends with the ritual unless SKIP-ritual.
 
 ## Gateway receipt variant
@@ -142,3 +146,9 @@ capability, approval, mutation and mirror checks still apply. Consistency checks
 do not authenticate supplied output, prove live availability, or certify an
 installed client. Removing every evidence marker and inventing a different SQL
 receipt is fabrication; no offline validator can authenticate that history.
+
+Deterministic constructors, abstention for local-only cleanup, disposition format
+and witnessed refresh are specified in recovery.md. `not_claimed` never means a
+service is absent. Strict working-service validation is unchanged. No index-byte
+exceptions apply on refresh; only snapshot observation/date metadata and optional
+stage preimage can change. Capture remains separately approved.

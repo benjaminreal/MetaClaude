@@ -82,7 +82,7 @@ def validate_capability_profile(profile: dict) -> list[dict]:
     for cap in ("tasks_mcp", "open_brain"):
         if cap not in external:
             issues.append({"code": "MISSING_EXTERNAL_CAP", "detail": cap})
-        elif external[cap] not in EXTERNAL_STATES and not (cap == "open_brain" and external[cap] == "not_used"):
+        elif external[cap] not in EXTERNAL_STATES and external[cap] != "not_claimed" and not (cap == "open_brain" and external[cap] == "not_used"):
             # A boolean here is the specific defect the four-state model exists
             # to prevent -- it cannot distinguish unauthenticated from wrong-scope.
             issues.append({"code": "EXTERNAL_CAP_NOT_FOUR_STATE",
@@ -436,6 +436,15 @@ def validate_envelope(envelope: dict, returned_rows_by_capability: dict | None =
     if (start_time and start_time > now + skew) or (snap_time and snap_time > now + skew):
         failures.append({"code": FUTURE_RECEIPT, "detail": "start/snapshot later than helper clock + 120s"})
     external = (envelope.get("capability_profile") or {}).get("external", {})
+    local_only = envelope.get("evidence_mode") == "local_only"
+    if local_only or "not_claimed" in external.values():
+        local_scope = (envelope.get("mutation_scope") or {})
+        allowed = all(isinstance(op, dict) and op == {"path": "pending_learnings.md", "operation": "resolve"}
+                      for op in local_scope.get("M2", []))
+        if (not local_only or set(external.values()) != {"not_claimed"} or envelope.get("mcp_receipts")
+                or returned_rows_by_capability or envelope.get("mirror_receipt") or envelope.get("skill") != "closingtime"
+                or local_scope.get("M3") or local_scope.get("M4") or not allowed):
+            failures.append({"code": "LOCAL_ONLY", "detail": "local-only claims no service state and permits pending resolution only"})
     details = (envelope.get("capability_profile") or {}).get("external_detail", {})
     seen = {}
     current = set()

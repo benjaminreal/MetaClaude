@@ -1,3 +1,5 @@
+Current source candidate: 2.5.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
+
 # newbeginning
 
 > *"Every new beginning comes from some other beginning's end."*

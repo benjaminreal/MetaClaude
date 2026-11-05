@@ -9,8 +9,8 @@ conversation authority, authenticity or provenance.
 Opening writes only an approved bootstrap/reconstructed index. Task creation,
 pending-learning edits/dispositions/deletion and Open Brain capture belong during
 the session or closingtime: route the request there and stop. Searches remain reads.
-A close covers session append, index and optional pending stage permission.
-Learning edits/dispositions/deletion and archive writes require separate approval. Zero candidates or skipping learning leaves
+A close covers session append, index, optional pending stage and explicit conditional resolve permission.
+Arbitrary learning edits/deletion and archive writes require separate approval; conditional resolve uses the close scope and recorded dispositions. Zero candidates or skipping learning leaves
 nothing unfinished, and existing pending files remain untouched unless named.
 
 Journal: `private-artifacts/session-journal/`. On the first approved journaled
@@ -75,9 +75,8 @@ opening. Every approved local target is resolved and its aliases/preimage checke
 at freeze and again before append's first byte. The result binds snapshot, entry,
 index draft, exact operations, preimages and canonical `scope_lines`/`scope_sha256`.
 Journal metadata is part of the local approval scope. Show those exact lines.
-`approve-draft RECEIPT SCOPE --owner-reply TEXT` requires exact scope equality and non-empty trimmed owner words.
-An exclusion means revise, freeze and present again; the exclusion reply is not
-approval. One approval covers one envelope chain; each later chain in the same conversation needs a new envelope and approval. Each invocation gets one approved draft (`EINVOCATIONUSED` for another
+`approve-draft RECEIPT --owner-reply TEXT` requires exact scope equality and non-empty trimmed owner words.
+A clear affirmative reply with an unambiguous exclusion approves the strictly reduced remainder. Correction-only replies are not approval. One approval covers one envelope chain; each later chain needs a new envelope and approval or a witnessed unchanged refresh. Each invocation gets one approved draft (`EINVOCATIONUSED` for another
 approval or a different receipt). Discard superseded unapproved proposals: the
 helper cannot know which pre-approval freeze was revoked in conversation.
 
@@ -110,9 +109,9 @@ start on a new line and contain only `## Candidate <ASCII number>` blocks with
 non-empty Type, Insight and Connection/Connects to fields; optional Status must
 be pending. Existing bytes (including unknown fields/line endings) are opaque
 and unchanged; no legacy parser or semantic-quality guarantee is imposed.
-Read back before presenting. Keep needs no write; show frozen scope_lines with
-any further edit/discard/delete question. Those transitions require their own
-approval, current --expect and non-empty --owner-reply per revision. Pending
+Read back before presenting. Keep needs no write. Arbitrary edits/deletion require
+their own frozen scope and approval, current --expect and non-empty --owner-reply.
+Conditional resolve below uses the close scope plus recorded block dispositions. Pending
 approval expires after six hours. Open Brain capture stays separately approved.
 
 ## Interrupted operations and stale-index continuation
@@ -130,7 +129,7 @@ If the index changed, do not reuse its old preimage:
 1. Observe a fresh envelope, containing only the remaining index replacement.
 2. In closingtime, run `freeze-draft ENVELOPE --index-draft INDEX --continue
    private-artifacts/session-journal/<parent>.done`.
-3. Present the new draft and `scope_lines`, obtain owner approval, run `approve-draft RECEIPT SCOPE --owner-reply "<owner words>"`,
+3. Present the new draft and `scope_lines`, obtain owner approval, run `approve-draft RECEIPT --owner-reply "<owner words>"`,
    then `write-approved ... --expect <current-sha256>`.
 
 `EUNFINISHED` permits this continuation, not a duplicate append or unrelated write.
@@ -223,6 +222,125 @@ Opening `resume` is read-only for closing operations: no lock, directory, child,
 
 ## Adopting historical entries (closingtime)
 
-Run `adopt-history ROOT` after all unfinished operations are resolved. It reads only and returns exact policy_text, policy_sha256, preimage and a proposed scope line. Save those exact policy bytes. Create a fresh closingtime envelope with M2 replace `private-artifacts/session-journal/_policy.json` and bind policy_sha256 at that path in local_payload_hashes. Freeze, show the policy and frozen scope_lines, then run `approve-draft RECEIPT SCOPE --owner-reply "<exact owner words>"`. Write the saved bytes with `write-approved ENV RECEIPT private-artifacts/session-journal/_policy.json POLICY --expect <preimage>`. Audit again. No policy grants no exemptions; legacy ceilings and documented exceptions retain their meaning.
+Run `adopt-history ROOT` after all unfinished operations are resolved. It reads only and returns exact policy_text, policy_sha256, preimage and a proposed scope line. Save those exact policy bytes. Create a fresh closingtime envelope with M2 replace `private-artifacts/session-journal/_policy.json` and bind policy_sha256 at that path in local_payload_hashes. Freeze, show the policy and frozen scope_lines, then run `approve-draft RECEIPT --owner-reply "<exact owner words>"`. Write the saved bytes with `write-approved ENV RECEIPT private-artifacts/session-journal/_policy.json POLICY --expect <preimage>`. Audit again. No policy grants no exemptions; legacy ceilings and documented exceptions retain their meaning.
 
 Version-2 policies add hash-bound historical_entries and superseded_records. Matching historical entries do not make a close partial, but are never called journaled. Editing one again exposes it as unjournaled. Superseded orphan records remain on disk and are listed separately. Finished append edits/removals report edited_after_close/missing_after_close during resume without blocking other operations. Pending records still require strict byte classification.
+
+## Deterministic construction and conditional resolution (2.5.0 / 3.5.0)
+
+Use `new-invocation ROOT` first. Its JSON contains `envelope` and a freshly
+created, realpath-resolved `scratch_dir`. Save each result under a new filename
+there; consume it only after exit zero. `new-envelope ROOT` remains the
+no-scratch constructor. Set the independently intended `project` before adding
+Tasks evidence. Neither command contacts a service.
+
+For a current SQL Tasks read or Open Brain search, save the raw tool result,
+the exact operation/query text, and observed service identity as separate inputs:
+
+```text
+service-receipt tasks_mcp RAW OPERATION IDENTITY --tool-result-id RESULT_ID
+service-receipt open_brain RAW OPERATION IDENTITY --tool-result-id RESULT_ID
+attach-evidence ENVELOPE PACKET
+```
+
+RAW may be a list of row objects, `rows`, `results`, `data`, `structuredContent`,
+or one MCP text content block containing that JSON. Errors and unknown shapes
+refuse; do not invent empty rows to repair them. The constructor hashes/counts
+actual rows, preserves an explicit `--observed-at` from the service when present,
+and otherwise stamps the immediate local observation. Never use it to restamp
+an earlier invocation's read. IDENTITY names observed service/account/project_ref
+as applicable, plus Tasks project/scope. Supply expected identity from resolved
+instructions and keep it independent of the response. `attach-evidence` checks
+receipt freshness, inserts exact rows/receipt, and sets the matching profile
+state/detail. The existing gateway constructor feeds the same attachment command;
+do not convert gateway output into a generic SQL receipt. These operations prove
+consistency, not authenticity. Unavailable service states still require honest
+capability discovery, never invented unavailable receipts.
+
+For a later local cleanup that claims no current Tasks or Open Brain state, use
+`new-invocation ROOT --local-only`. `not_claimed` is an evidence abstention, not
+a fifth service availability state. Validation permits only closingtime pending
+`resolve`, no task operations, index/mirror claims, service receipts or rows.
+Opening continues to use normal evidence; its Tasks access stays read-only.
+
+Freeze before showing: `freeze-draft ENV ENTRY INDEX --refreshable` (omit skipped
+entry/index). This opt-in records a durable `.draft` witness under the journal,
+included in the displayed journal effects. Use it for new closes. The legacy
+unwitnessed path remains for compatibility and cannot carry approval forward.
+Run `approve-draft FROZEN --owner-reply TEXT`, then
+`bind-approval ENV APPROVED`. The latter constructs the approved envelope,
+including a reduced scope when appropriate; do not manually copy scope fields.
+The optional legacy SCOPE argument still checks exact equality.
+
+The intentionally narrow affirmative grammar accepts Approved/Approve, Yes,
+Aprobado or Sí, optionally followed by `, skip X` or `, except X`. `X` is either
+`learning`/`learnings` (displayed pending stage/resolve operations), or one exact
+operation identifier such as `M3 update synthetic-task expected v1`. Unknown,
+ambiguous or corrective language refuses. Interpret the owner's meaning before
+calling: a correction alone is not approval. Never turn it into affirmative
+words. Content, destination and unchanged remainder stay frozen. The old freeze
+cannot be approved again after the reduced receipt is issued.
+
+Conditional cleanup is explicit M2
+`{"path":"pending_learnings.md","operation":"resolve"}`; it is never inferred
+from staging. It may be included beside stage in the close's displayed scope.
+`pending-blocks FILE` reads exact text and SHA-256 per canonical Candidate block.
+Record a JSON list of dispositions for only those blocks the owner resolved:
+
+```json
+[{"block_sha256":"<exact block hash>","disposition":"discarded","owner_reply":"<actual disposition words>"}]
+```
+
+A saved disposition additionally needs `capture_approval` with non-empty
+`owner_reply` and `payload_sha256`, and `capture_result` with `status: success`,
+returned `id`, and the identical `payload_sha256`. Here the capture payload is
+the exact block bytes, including heading/metadata; bind the separately approved
+capture request and its successful result to those bytes. Other capture formats
+need separate exact-payload handling; do not relabel or fabricate a capture.
+These local records do not authenticate supplied owner words or service results.
+Open Brain capture is always separately approved; `resolve` never calls it.
+
+Run `resolve-pending ENV APPROVED DISPOSITIONS --expect CURRENT_HASH` after
+verified append (and staging if used). The writer checks the frozen preimage,
+or the verified staged postimage in that same chain, under the shared lock. It
+computes the only allowed payload; there is no arbitrary replacement input.
+Only exact blocks with recorded dispositions can disappear; unresolved blocks,
+preamble bytes, unknown fields and extra headings remain byte-identical. If no
+content remains it deletes the file. Readback and a durable write intent cover
+replacement/deletion, and resume handles an interrupted resolution. One resolve
+transition per approval, including abandoned attempts. A standalone local-only
+cleanup also needs explicit resolve authority. Ordinary edits/replacements keep
+the exact payload-hash binding and fresh owner words. No second cleanup-only
+approval is needed when resolve was included in the close. Evidence and pending
+approval remain limited to six hours; keep unresolved work visible on expiry.
+
+## Witnessed unchanged refresh
+
+Before any chain mutation, obtain genuinely fresh local and service evidence in
+a new invocation, retaining intended operations, entry and index bytes. Run:
+
+```text
+refresh-approval PARENT FRESH_ENV --entry ENTRY --index-draft INDEX
+```
+
+PARENT may be the approved receipt, or a witnessed unapproved freeze whose owner
+reply arrived after expiry; the latter requires `--owner-reply TEXT`. For an
+exclusion reply, first reduce FRESH_ENV to the displayed unchanged remainder.
+The helper checks the durable parent, newer captured_at, fresh validation and
+live preimages. Then it compares exact entry/index hashes, operations, payload
+hashes, destinations, project/service identities, task expected versions and
+all task rows, plus log/index/archive/policy source identities and hashes.
+No index narrative, mirror or Updated-date byte exception is implemented: only
+snapshot observation/date metadata may change. Task row comparison is deliberately
+conservative. Only a scoped optional stage preimage may differ; resolution
+preimages remain strict. Backdated/copied capture timestamps refuse. The six-hour
+lifetime is unchanged; old evidence cannot authorize a new write.
+
+The new receipt names `parent_approval_sha256`. Under the local project lock the
+helper invalidates the parent before registering the child; an interruption may
+require new approval, but cannot leave two executable approvals. Started chains
+must use resume, not refresh. A consumed or superseded parent cannot fork again,
+and a refreshed chain executes once through the existing journal. Use
+`bind-approval FRESH_ENV CHILD`, validate, then persist normally. Any material
+difference needs a new displayed proposal and new owner words. Copying times or
+editing a parent cannot recreate its durable witness.

@@ -1,4 +1,4 @@
-# Standalone envelope recipes (2.3.1 / 3.3.1)
+# Standalone envelope recipes (2.5.0 / 3.5.0)
 
 Use `python3 scripts/runtime_cli.py new-envelope ROOT` from this package first.
 It derives skill/version and a helper-stamped start from the snapshot. The
@@ -14,8 +14,8 @@ states (or Open Brain `not_used` when chosen); retain empty scope and approval f
 `project`, observed working state, matching receipt identity and actual rows.
 Closing draft: add M2 paths and exact M3 operations; validate before scope is
 added, then freeze. A draft with unapproved scope correctly fails only
-SCOPE_UNAPPROVED. Closing approved: run `approve-draft RECEIPT SCOPE --owner-reply "<owner words>"` with exact scope_lines,
-copy that string into approval, retain the original snapshot and validate.
+SCOPE_UNAPPROVED. Closing approved: run `approve-draft RECEIPT --owner-reply "<owner words>"` with exact scope_lines,
+use `bind-approval ENVELOPE APPROVED`, retain the original snapshot and validate.
 For index-only opening omit entry and pass `--index-draft INDEX`. Opening has no
 task creation or pending/capture mutation scope. A close may include
 "pending_learnings.md" beside the session/index in M2; it renders optional stage
@@ -23,19 +23,22 @@ permission (or use {"path":"pending_learnings.md","operation":"stage"}).
 Pending-only scopes default to replace. Explicit delete is never auto-added;
 archive scopes also render only requested operations. Each later independent
 chain uses new-envelope for both timestamps; capture over fifteen minutes after
-start refuses ESTALEEVIDENCE. Never copy an earlier start. Each pending
-edit/disposition/delete needs non-empty `write-approved --owner-reply "<words>"`
+start refuses ESTALEEVIDENCE. Never copy an earlier start. Each arbitrary pending
+edit/delete needs non-empty `write-approved --owner-reply "<words>"`
 and current `--expect`; approvals older than six hours cannot authorize a revision.
 Stage uses the close approval once after append verification:
 `write-approved ENVELOPE RECEIPT pending_learnings.md CONTENT --operation stage
 --expect <current-sha256|absent>`. Preserve all current bytes and append only
 new candidate blocks; read back before showing them. Keep needs no write.
-For other dispositions show their frozen scope_lines with the question.
+For conditional cleanup include explicit resolve scope; use pending-blocks and
+resolve-pending as specified in recovery.md. Other edits still require their own
+frozen scope_lines with the question.
 
 The static timestamps below demonstrate shapes and are stale for new work.
 Use constructor timestamps (including captured_at), actual observed receipts
 and helper approvals in a live invocation; new evidence has a six-hour lifetime.
-Only bound interrupted recovery reuses its original receipt; see recovery.md for
+Bound interrupted recovery reuses its receipt; witnessed unchanged refresh can
+carry authority to fresh evidence as specified in recovery.md. See that reference for
 closingtime `freeze-draft --continue <parent-intent>` and unfinished child abandonment.
 
 The four complete envelopes below demonstrate nesting: schema_version belongs
@@ -494,3 +497,7 @@ mutation scope empty, and validate. The result's database timestamp is retained
 with microseconds. A validated bounded slice can be rendered with render-mirror;
 it does not authorize changing the Markdown mirror during opening. No synthetic
 example is evidence of a working gateway.
+
+For current runs prefer new-invocation, service-receipt and attach-evidence;
+the static envelopes above illustrate nesting only. Complete constructor, local-only,
+conditional resolve and witnessed refresh recipes are in recovery.md.

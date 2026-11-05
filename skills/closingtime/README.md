@@ -1,3 +1,5 @@
+Current source candidate: 3.5.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
+
 # closingtime
 
 > *"You don't have to go home, but you can't stay here."*

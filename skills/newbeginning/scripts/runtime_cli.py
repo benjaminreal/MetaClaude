@@ -51,6 +51,36 @@ def _parser() -> argparse.ArgumentParser:
     snapshot.add_argument("--entries", type=int, default=2)
     constructor = commands.add_parser("new-envelope", help="capture incomplete envelope from package identity")
     constructor.add_argument("workspace_root")
+    constructor.add_argument("--local-only", action="store_true")
+    invocation = commands.add_parser("new-invocation", help="fresh envelope and unique scratch directory")
+    invocation.add_argument("workspace_root")
+    invocation.add_argument("--local-only", action="store_true")
+    service = commands.add_parser("service-receipt", help="construct complete evidence from a raw service read")
+    service.add_argument("capability", choices=("tasks_mcp", "open_brain"))
+    service.add_argument("raw_result")
+    service.add_argument("operation_text")
+    service.add_argument("identity_json")
+    service.add_argument("--tool-result-id", required=True)
+    service.add_argument("--observed-at")
+    attach = commands.add_parser("attach-evidence")
+    attach.add_argument("envelope_json")
+    attach.add_argument("packet_json")
+    bind = commands.add_parser("bind-approval")
+    bind.add_argument("envelope_json")
+    bind.add_argument("approved_draft_json")
+    refresh = commands.add_parser("refresh-approval")
+    refresh.add_argument("draft_receipt_json")
+    refresh.add_argument("envelope_json")
+    refresh.add_argument("--entry")
+    refresh.add_argument("--index-draft")
+    refresh.add_argument("--owner-reply", default="")
+    resolve = commands.add_parser("resolve-pending")
+    resolve.add_argument("envelope_json")
+    resolve.add_argument("approved_draft_json")
+    resolve.add_argument("dispositions_json")
+    resolve.add_argument("--expect", required=True)
+    blocks = commands.add_parser("pending-blocks", help="read exact current blocks and hashes")
+    blocks.add_argument("pending_file")
     fingerprint = commands.add_parser("fingerprint-operation")
     fingerprint.add_argument("text_file")
     gateway = commands.add_parser("gateway-receipt", help="bind actual urgency output to independently intended scope")
@@ -84,11 +114,12 @@ def _parser() -> argparse.ArgumentParser:
     freeze.add_argument("entry_markdown", nargs="?")
     freeze.add_argument("index_markdown", nargs="?")
     freeze.add_argument("--index-draft")
+    freeze.add_argument("--refreshable", action="store_true")
     freeze.add_argument("--continue", dest="continue_parent", help="finish a remaining index (closingtime only)")
 
     approve = commands.add_parser("approve-draft", help="stamp approval after explicit approval; non-empty --owner-reply required")
     approve.add_argument("draft_receipt_json")
-    approve.add_argument("scope_string")
+    approve.add_argument("scope_string", nargs="?")
     approve.add_argument("--owner-reply", default="")
 
     append = commands.add_parser("append", help="CAS append and journal a session entry")
@@ -122,13 +153,30 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        file_fields = ("envelope_json", "entry_markdown", "index_markdown", "index_draft", "draft_receipt_json", "approved_draft_json", "content", "mirror_rows", "rows_json", "text_file", "gateway_response", "gateway_operation")
+        file_fields = ("envelope_json", "entry_markdown", "index_markdown", "index_draft", "draft_receipt_json", "approved_draft_json", "content", "mirror_rows", "rows_json", "text_file", "gateway_response", "gateway_operation", "raw_result", "operation_text", "identity_json", "packet_json", "dispositions_json", "entry", "pending_file")
         if sum(getattr(args, field, None) == "-" for field in file_fields) > 1:
             raise helpers.HelperError("EINPUT", "one stdin argument per call")
         if args.command == "snapshot":
             result = helpers.capture_local_snapshot(args.workspace_root, entries=args.entries)
         elif args.command == "new-envelope":
-            result = helpers.new_envelope(args.workspace_root)
+            result = helpers.new_envelope(args.workspace_root, args.local_only)
+        elif args.command == "new-invocation":
+            result = helpers.new_invocation(args.workspace_root, args.local_only)
+        elif args.command == "service-receipt":
+            result = helpers.service_receipt(args.capability, _json_file(args.raw_result), _text_file(args.operation_text),
+                                             _json_file(args.identity_json), args.tool_result_id, args.observed_at)
+        elif args.command == "attach-evidence":
+            result = helpers.attach_evidence(_json_file(args.envelope_json), _json_file(args.packet_json))
+        elif args.command == "bind-approval":
+            result = helpers.bind_approval(_json_file(args.envelope_json), _json_file(args.approved_draft_json))
+        elif args.command == "refresh-approval":
+            result = helpers.refresh_approval(_json_file(args.draft_receipt_json), _json_file(args.envelope_json),
+                       _text_file(args.entry) if args.entry else None, _text_file(args.index_draft) if args.index_draft else None, args.owner_reply)
+        elif args.command == "resolve-pending":
+            result = helpers.resolve_pending(_json_file(args.envelope_json), _json_file(args.approved_draft_json),
+                                              _json_file(args.dispositions_json), args.expect)
+        elif args.command == "pending-blocks":
+            result = helpers.pending_blocks(_text_file(args.pending_file, preserve_newlines=True))
         elif args.command == "fingerprint-operation":
             result = {"operation_fingerprint": schemas.fingerprint_operation(_text_file(args.text_file))}
         elif args.command == "gateway-receipt":
@@ -150,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             envelope = _json_file(args.envelope_json)
             entry = _text_file(args.entry_markdown) if args.entry_markdown else None
             index_arg = args.index_draft or args.index_markdown
-            result = helpers.freeze_draft(envelope, entry, _text_file(index_arg) if index_arg else None, args.continue_parent)
+            result = helpers.freeze_draft(envelope, entry, _text_file(index_arg) if index_arg else None, args.continue_parent, args.refreshable)
         elif args.command == "approve-draft":
             result = helpers.approve_draft(_json_file(args.draft_receipt_json), args.scope_string, args.owner_reply)
         elif args.command == "append":

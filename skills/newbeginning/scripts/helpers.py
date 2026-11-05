@@ -801,9 +801,9 @@ def _scope_operations(envelope: dict, legacy: bool = False) -> list[dict]:
                     default = ["append"] if name == session else (["replace", "delete"] if name == pending else ["replace"])
                 kinds = [item["operation"]] if isinstance(item, dict) and "operation" in item else default
                 for kind in kinds:
-                    if kind not in {"append", "replace", "delete", "stage"}:
+                    if kind not in {"append", "replace", "delete", "stage", "resolve"}:
                         raise HelperError("EINPUT", "unknown local operation kind")
-                    if kind == "stage" and name != "pending_learnings.md":
+                    if kind in {"stage", "resolve"} and name != "pending_learnings.md":
                         raise HelperError("ESTAGE", "stage is limited to pending_learnings.md")
                     result.append({"class": cls, "operation": kind, "path": name})
             else:
@@ -818,6 +818,7 @@ def _scope_text(operations: list[dict], legacy: bool = False, session_number: in
                      (f" (adopt {historical_count} historical entries)" if historical_count is not None and op.get("path") == POLICY_PATH else "") +
                      (f" (Session #{session_number})" if session_number is not None and op["operation"] == "append" else "") +
                      (" (optional; new candidate blocks only)" if op["operation"] == "stage" else "") +
+                     (" (conditional; exact disposed blocks only)" if op["operation"] == "resolve" else "") +
                      (" (+ journal receipt under private-artifacts/session-journal/)" if op["class"] == "M2" and (not legacy or op["operation"] == "append") else "") for op in operations)
 
 
@@ -835,7 +836,7 @@ def _unfinished(root: Path) -> list[str]:
             (p.suffix == ".json" and p.name not in {GRANDFATHER_POLICY, "workspace.json"} and _is_intent_file(p))]
 
 
-def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str | None = None, continue_parent: str | None = None) -> dict:
+def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str | None = None, continue_parent: str | None = None, refreshable: bool = False) -> dict:
     if not envelope:
         raise HelperError(S.MISSING_RECEIPT, "envelope absent")
     if envelope.get("skill") == "newbeginning" and continue_parent is not None:
@@ -862,7 +863,7 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
         if (envelope.get("local_payload_hashes") or {}).get(POLICY_PATH) != proposal["policy_sha256"] or preimage != proposal["preimage"]:
             raise HelperError("EDRAFTMISMATCH", "policy payload is not the current adopt-history proposal")
         historical_count = int(re.search(r"\(adopt ([0-9]+) historical entries\)", proposal["scope_line"])[1])
-    if entry_text is not None and any(op["class"] == "M2" and op["operation"] != "append" and op["path"] != targets["index"] and op != {"class": "M2", "operation": "stage", "path": "pending_learnings.md"} for op in operations):
+    if entry_text is not None and any(op["class"] == "M2" and op["operation"] != "append" and op["path"] != targets["index"] and op not in ({"class": "M2", "operation": "stage", "path": "pending_learnings.md"}, {"class": "M2", "operation": "resolve", "path": "pending_learnings.md"}) for op in operations):
         raise HelperError("EINPUT", "parent close permits session, index and optional pending stage only")
     if any(op["operation"] == "stage" for op in operations) and not any(op["operation"] == "append" for op in operations):
         raise HelperError("ESTAGE", "stage requires the same close's parent append")
@@ -931,11 +932,19 @@ def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str 
         "scope_sha256": _sha256_text(_scope_text(operations, session_number=session_number, historical_count=historical_count)),
         "drafted_at": _utc_now(), "approved_at": None, "scope_string": None, "owner_reply": None,
     }
+    if refreshable:
+        receipt["refresh_binding"] = _refresh_binding(envelope)
     receipt["receipt_sha256"] = _receipt_digest(receipt)
+    if refreshable:
+        with _advisory_lock(root, receipt["invocation_id"]):
+            witness = _approval_path(root, receipt["invocation_id"]).with_suffix(".draft")
+            if witness.exists() or _approval_path(root, receipt["invocation_id"]).exists():
+                raise HelperError("EINVOCATIONUSED", "refreshable invocation already frozen")
+            _atomic_record(witness, receipt)
     return receipt
 
 
-def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> dict:
+def approve_draft(receipt: dict, scope_string: str | None = None, owner_reply: str = "") -> dict:
     if not isinstance(receipt, dict) or receipt.get("kind") != DRAFT_RECEIPT_KIND or receipt.get("recovery_version") != 2:
         raise HelperError("EDRAFTRECEIPT", "not a current draft receipt; freeze again")
     if receipt.get("skill") == "newbeginning" and receipt.get("continue_parent") is not None:
@@ -944,6 +953,12 @@ def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> di
         raise HelperError("EDRAFTRECEIPT", "modified receipt")
     if receipt.get("approved_at"):
         raise HelperError("EINVOCATIONUSED", "invocation already approved")
+    original_digest = receipt.get("receipt_sha256")
+    if scope_string is not None and scope_string != receipt.get("scope_lines"):
+        raise HelperError(S.SCOPE_UNAPPROVED, "approval must equal exact rendered scope")
+    if scope_string is None or re.search(r"\b(?:skip|except)\b", owner_reply, re.I):
+        receipt = _approval_selection(receipt, owner_reply)
+        scope_string = receipt["scope_lines"]
     if not scope_string or scope_string != receipt.get("scope_lines"):
         raise HelperError(S.SCOPE_UNAPPROVED, "approval must equal exact rendered scope; exclusions require a new freeze")
     if not isinstance(owner_reply, str) or not owner_reply.strip():
@@ -964,7 +979,7 @@ def approve_draft(receipt: dict, scope_string: str, owner_reply: str = "") -> di
             raise HelperError("EINVOCATIONUSED", "one approved draft per invocation")
         approved = dict(receipt, warnings=["ELOCK_STALE_RECOVERED"] if recovered else [], workspace_id=_workspace_id(root, create=True), approved_at=now.isoformat().replace("+00:00", "Z"), scope_string=scope_string, owner_reply=owner_reply)
         approved["receipt_sha256"] = _receipt_digest(approved)
-        _atomic_record(path, {"workspace_root": str(root), "receipt_sha256": approved["receipt_sha256"]})
+        _atomic_record(path, {"workspace_root": str(root), "receipt_sha256": approved["receipt_sha256"], "approved_draft": approved, "frozen_sha256": original_digest})
     return approved
 
 
@@ -1369,15 +1384,15 @@ def _resume_stage(root: Path, path: Path, record: dict, records: list[tuple[Path
 
 def write_approved_file(envelope: dict, receipt: dict, relative_path: str, content: str | None = None,
                         operation: str = "replace", expect: str | None = None,
-                        mirror_rows: list[dict] | None = None, owner_reply: str = "") -> dict:
+                        mirror_rows: list[dict] | None = None, owner_reply: str = "", dispositions: list[dict] | None = None) -> dict:
     root = _approved_context(envelope, receipt)
     if (envelope.get("skill") == "newbeginning" or receipt.get("skill") == "newbeginning") and receipt.get("continue_parent") is not None:
         raise HelperError("ESKILL", "continuation finishes a closing operation; run closingtime")
-    if operation not in {"replace", "delete", "stage"} or expect is None or (expect != "absent" and not re.fullmatch(r"sha256:[a-f0-9]{64}", expect)):
+    if operation not in {"replace", "delete", "stage", "resolve"} or expect is None or (expect != "absent" and not re.fullmatch(r"sha256:[a-f0-9]{64}", expect)):
         raise HelperError("EINPUT", "replace/delete/stage and explicit --expect sha256|absent required")
     if {"class": "M2", "operation": operation, "path": relative_path} not in receipt["scope_operations"]:
         raise HelperError(S.SCOPE_UNAPPROVED, "target/operation not in approved scope")
-    if operation in {"replace", "stage"} and content is None or operation == "delete" and content is not None:
+    if operation in {"replace", "stage"} and content is None or operation in {"delete", "resolve"} and content is not None:
         raise HelperError("EINPUT", "replace/stage needs payload; delete has none")
     try:
         with _advisory_lock(root, envelope["invocation_id"]) as recovered:
@@ -1401,12 +1416,24 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
             previous = [(p, r) for p, r in records if r["kind"] == "write_intent" and r["draft_receipt_sha256"] == receipt["receipt_sha256"] and r["relative_path"] == relative_path]
             if any(p.suffix == ".pending" and r["kind"] != "remaining_intent" for p, r in records):
                 raise HelperError("EUNFINISHED", "resume pending intent before writing")
-            if previous and operation != "stage":
+            if previous and operation not in {"stage", "resolve"}:
                 raise HelperError("EDRAFTMISMATCH", "one transition per path per approved draft")
+            if operation == "resolve":
+                if field != "pending_learnings" or envelope.get("skill") != "closingtime":
+                    raise HelperError("ESKILL", "only closingtime resolves pending learnings")
+                if any(r["operation"] == "resolve" for _, r in previous):
+                    raise HelperError("EDRAFTMISMATCH", "one resolution per approval")
+                if any(op["operation"] == "append" for op in receipt["scope_operations"]):
+                    _stage_parent(root, receipt["receipt_sha256"], records)
+                if _file_state(target)["sha256"] != expect:
+                    raise HelperError("ESOURCECHANGED", "resolution preimage changed")
+                resolved = resolved_pending_payload(target.read_bytes() if target.exists() else b"", dispositions or [])
+                content = resolved.decode("utf-8") if resolved is not None else None
+                owner_reply = receipt["owner_reply"]
             if field == "pending_learnings":
-                if operation != "stage" and receipt.get("local_payload_hashes", {}).get(relative_path) != (_sha256_text(content) if operation == "replace" else "absent"):
+                if operation not in {"stage", "resolve"} and receipt.get("local_payload_hashes", {}).get(relative_path) != (_sha256_text(content) if operation == "replace" else "absent"):
                     raise HelperError("EDRAFTMISMATCH", "pending payload differs from approved hash")
-                if operation != "stage" and not owner_reply.strip():
+                if operation not in {"stage", "resolve"} and not owner_reply.strip():
                     raise HelperError(S.SCOPE_UNAPPROVED, "every pending revision needs --owner-reply")
                 if dt.datetime.now(dt.timezone.utc) - _parse_utc(receipt["approved_at"]) > dt.timedelta(hours=6):
                     raise HelperError("ESTALEEVIDENCE", "pending approval older than six hours")
@@ -1456,6 +1483,7 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                       "preimage": preimage, "postimage": postimage, "payload_sha256": postimage["sha256"],
                       "draft_receipt_sha256": receipt["receipt_sha256"], "invocation_id": envelope["invocation_id"],
                       "approved_scope": receipt["scope_lines"], "owner_reply": owner_reply or (receipt.get("owner_reply", "") if operation == "stage" else ""),
+                      "dispositions": dispositions if operation == "resolve" else None,
                       "transition_id": uuid.uuid4().hex, "written_at": _utc_now(),
                       "payload_bytes": base64.b64encode(payload).decode() if payload is not None else None,
                       "approved_envelope": envelope, "approved_draft": receipt}
@@ -1689,7 +1717,7 @@ def resume_append(workspace_root: str | os.PathLike[str], receipt: dict | None =
         raise HelperError("ERECOVERY", f"preserve recovery evidence: {exc}") from exc
 
 
-def new_envelope(workspace_root: str | os.PathLike[str]) -> dict:
+def new_envelope(workspace_root: str | os.PathLike[str], local_only: bool = False) -> dict:
     skill_md = Path(__file__).resolve().parent.parent / "SKILL.md"
     if not skill_md.is_file():
         raise HelperError("ESKILL", "new-envelope must run from a packaged skill")
@@ -1704,7 +1732,7 @@ def new_envelope(workspace_root: str | os.PathLike[str]) -> dict:
             temporary_available = True
     except OSError:
         temporary_available = False
-    return {"schema_version": S.SCHEMA_VERSION, "skill": name.group(1), "skill_version": version.group(1),
+    result = {"schema_version": S.SCHEMA_VERSION, "skill": name.group(1), "skill_version": version.group(1),
             "invocation_id": str(uuid.uuid4()), "invocation_started_at": snapshot["observed_at"],
             "workspace_root": snapshot["workspace_root"], "project": None, "local_snapshot": snapshot,
             "capability_profile": {"schema_version": S.SCHEMA_VERSION,
@@ -1713,6 +1741,12 @@ def new_envelope(workspace_root: str | os.PathLike[str]) -> dict:
                 "external": {"tasks_mcp": "unprobed", "open_brain": "unprobed"}},
             "mcp_receipts": [], "returned_rows_by_capability": {}, "mutation_scope": {"M2": [], "M3": [], "M4": []},
             "approval": {"granted": False, "scope_string": None}}
+    if local_only and result["skill"] != "closingtime":
+        raise HelperError("ESKILL", "local-only mode is closingtime pending resolution only")
+    if local_only:
+        result["evidence_mode"] = "local_only"
+        result["capability_profile"]["external"] = {"tasks_mcp": "not_claimed", "open_brain": "not_claimed"}
+    return result
 
 
 def _parse_session_entries(text: str) -> list[dict]:
@@ -1937,7 +1971,7 @@ def audit_session_log(workspace_root: str | os.PathLike[str]) -> dict:
     if _sync_conflicts(root):
         errors.append(S.SYNC_CONFLICT)
     known_suffixes = {".json", ".done", ".pending", ".abandoned", ".abandon-note"}
-    foreign_files = [str(p) for p in journal_dir.iterdir() if p.is_file() and p.name != ".lock" and p.suffix not in known_suffixes | {".approval"}]
+    foreign_files = [str(p) for p in journal_dir.iterdir() if p.is_file() and p.name != ".lock" and p.suffix not in known_suffixes | {".approval", ".draft"}]
     legacy_records = [str(p) for p, r in records if r.get("kind") != "append_intent"]
     return {
         "pending_records": pending_records, "pending_journal": pending_journal,
@@ -1997,3 +2031,210 @@ def verify_skill_sync(canonical_dir: str | os.PathLike[str],
         "targets": targets,
         "matches_all": bool(targets) and all(t["matches_canonical"] for t in targets),
     }
+
+
+# Constructors and lineage operations deliberately retain all normal validators.
+def _tool_rows(raw: object) -> list[dict]:
+    if isinstance(raw, dict):
+        if raw.get('isError') or raw.get('error'):
+            raise HelperError('EBADROWS', 'tool reported an error')
+        if 'structuredContent' in raw:
+            return _tool_rows(raw['structuredContent'])
+        for key in ('rows', 'results', 'data'):
+            if key in raw:
+                return _tool_rows(raw[key])
+        content = raw.get('content')
+        if isinstance(content, list) and len(content) == 1 and content[0].get('type') == 'text':
+            return _tool_rows(json.loads(content[0]['text']))
+    if isinstance(raw, list) and all(isinstance(row, dict) for row in raw):
+        return raw
+    raise HelperError('EBADROWS', 'expected row list, rows/results/data, structuredContent, or one JSON text block')
+
+
+def service_receipt(capability: str, raw: object, operation: str, identity: dict,
+                    tool_result_id: str, observed_at: str | None = None) -> dict:
+    if capability not in {'tasks_mcp', 'open_brain'} or not operation.strip() or not identity or not tool_result_id:
+        raise HelperError('EINPUT', 'capability, exact operation, observed identity and tool result id required')
+    rows = _tool_rows(raw)
+    receipt = {'schema_version': S.SCHEMA_VERSION, 'capability': capability, 'identity': identity,
+               'tool_result_id': tool_result_id, 'observed_at': observed_at or _utc_now(),
+               'operation_fingerprint': S.fingerprint_operation(operation), 'row_count': len(rows),
+               'row_fingerprint': S.canonical_row_fingerprint(rows), 'status': 'current'}
+    return {'receipt': receipt, 'returned_rows_by_capability': {capability: rows}}
+
+
+def attach_evidence(envelope: dict, packet: dict) -> dict:
+    result = copy.deepcopy(envelope)
+    receipt = packet['receipt']; cap = receipt['capability']
+    rows = packet['returned_rows_by_capability'][cap]
+    failures = S.validate_receipt(receipt, rows, result['invocation_started_at'])
+    if failures:
+        raise HelperError('EINVALIDENVELOPE', json.dumps(failures))
+    result['mcp_receipts'] = [r for r in result.get('mcp_receipts', []) if r.get('capability') != cap] + [receipt]
+    result.setdefault('returned_rows_by_capability', {})[cap] = rows
+    profile = result['capability_profile']
+    profile['external'][cap] = 'working' if receipt['status'] == 'current' else receipt['capability_state']
+    profile.setdefault('external_detail', {})[cap] = receipt['identity']
+    if cap == 'tasks_mcp':
+        intended = result.get('project')
+        project = 'portfolio' if receipt['identity'].get('scope') == 'portfolio' else receipt['identity'].get('project')
+        if not intended or project != intended or project != 'portfolio' and any(r.get('project') != intended for r in rows):
+            raise HelperError('FOREIGN_ROWS', 'set intended project before attaching matching task evidence')
+    if envelope.get('evidence_mode') == 'local_only':
+        raise HelperError('LOCAL_ONLY', 'local transition makes no current service claims')
+    return result
+
+
+def new_invocation(workspace_root: str, local_only: bool = False) -> dict:
+    envelope = new_envelope(workspace_root, local_only)
+    scratch = Path(tempfile.mkdtemp(prefix='session-' + envelope['invocation_id'] + '-')).resolve()
+    return {'envelope': envelope, 'scratch_dir': str(scratch)}
+
+
+def bind_approval(envelope: dict, receipt: dict) -> dict:
+    result = copy.deepcopy(envelope)
+    result['mutation_scope'] = {cls: [({'path': op['path'], 'operation': op['operation']} if cls == 'M2' else op['operation'])
+                                    for op in receipt['scope_operations'] if op['class'] == cls] for cls in ('M2','M3','M4')}
+    result['approval'] = {'granted': True, 'scope_string': receipt['scope_string']}
+    _check_approved_draft(result, None, receipt)
+    return result
+
+
+def _approval_selection(receipt: dict, owner_reply: str) -> dict:
+    # Intentional small grammar: ambiguous or corrective language never grants authority.
+    match = re.fullmatch(r'\s*(?:approve[d]?|yes|aprobado|s[ií])(?: cleanup)?(?:[.!])?\s*(?:,?\s*(?:skip|except)\s+(.+?))?\s*[.!]?\s*', owner_reply, re.I)
+    if not match:
+        raise HelperError(S.SCOPE_UNAPPROVED, 'explicit approval or approve, skip/except <displayed operation> required')
+    target = match[1]
+    if not target:
+        return receipt
+    target = target.strip().rstrip('.!').lower()
+    ops = receipt['scope_operations']
+    if target in {'learning','learnings'}:
+        excluded = [op for op in ops if op.get('path') == 'pending_learnings.md' and op['operation'] in {'stage','resolve'}]
+    else:
+        excluded = [op for op in ops if target == (op['class'] + ' ' + op['operation'] + (' ' + op['path'] if 'path' in op else '')).lower()]
+    if not excluded or target not in {'learning','learnings'} and len(excluded) != 1:
+        raise HelperError(S.SCOPE_UNAPPROVED, 'exclusion must identify displayed operations unambiguously')
+    selected = [op for op in ops if op not in excluded]
+    if not selected:
+        raise HelperError(S.SCOPE_UNAPPROVED, 'no remainder')
+    result = dict(receipt, scope_operations=selected, parent_frozen_sha256=receipt['receipt_sha256'])
+    number = re.search(r'\(Session #([0-9]+)\)', receipt['scope_lines'])
+    result['scope_lines'] = _scope_text(selected, session_number=int(number[1]) if number else None)
+    result['scope_sha256'] = _sha256_text(result['scope_lines'])
+    result['receipt_sha256'] = _receipt_digest(result)
+    return result
+
+
+def _refresh_binding(envelope: dict) -> dict:
+    snap = envelope['local_snapshot']
+    return {'project': envelope.get('project'), 'skill': envelope['skill'],
+            'sources': {key: {f: (snap.get(key) or {}).get(f) for f in ('path','present','sha256','tail_sha256','latest_session_number')}
+                        for key in ('session','index','decisions_archive','audit_policy')},
+            'task_expected_versions': envelope.get('task_expected_versions', {}),
+            # Conservative: every task row stays identical, including version and identity.
+            'task_rows': envelope.get('returned_rows_by_capability', {}).get('tasks_mcp', []),
+            'identities': {r['capability']: r.get('identity') for r in envelope.get('mcp_receipts', [])},
+            'external': envelope['capability_profile']['external'],
+            'source_hashes_used_for_draft': envelope.get('source_hashes_used_for_draft', {})}
+
+
+def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None,
+                     index_text: str | None = None, owner_reply: str = '') -> dict:
+    root = _workspace_binding(envelope)
+    if parent.get('receipt_sha256') != _receipt_digest(parent) or not parent.get('refresh_binding'):
+        raise HelperError('EDRAFTRECEIPT', 'refresh requires an intact witnessed freeze')
+    _check_identity(root, parent)
+    if not S._same_root(parent.get('workspace_root'), str(root)) or parent.get('invocation_id') == envelope.get('invocation_id'):
+        raise HelperError('EDRAFTMISMATCH', 'refresh needs a fresh invocation at the same destination')
+    path = _approval_path(root, parent['invocation_id'])
+    witness = path if parent.get('approved_at') else path.with_suffix('.draft')
+    if not witness.exists():
+        raise HelperError('EDRAFTRECEIPT', 'missing durable parent witness')
+    if not parent.get('approved_at') and path.exists():
+        raise HelperError('EINVOCATIONUSED', 'freeze already approved or superseded; use its approval')
+    stored = json.loads(witness.read_text())
+    if stored.get('receipt_sha256') != parent['receipt_sha256'] or stored.get('superseded_by'):
+        raise HelperError('EINVOCATIONUSED', 'parent changed or superseded')
+    if any(r.get('draft_receipt_sha256') == parent['receipt_sha256'] for _, r in _load_intents(root)):
+        raise HelperError('EINVOCATIONUSED', 'started chains use resume, not refresh')
+    if not parent.get('approved_at'):
+        parent_selected = _approval_selection(parent, owner_reply)
+    else:
+        parent_selected = parent
+    captured = _parse_utc(envelope['local_snapshot'].get('captured_at'))
+    if not captured or captured <= _parse_utc(parent['snapshot_captured_at']):
+        raise HelperError('ECHRONOLOGY', 'refresh cannot copy or backdate capture time')
+    if _refresh_binding(envelope) != parent['refresh_binding']:
+        raise HelperError('EDRAFTMISMATCH', 'material sources, tasks, identities or intent changed')
+    fresh = freeze_draft(envelope, entry_text, index_text)
+    keys = ('entry_sha256','index_draft_sha256','scope_operations','local_payload_hashes','continue_parent','observed_tail_sha256')
+    if any(fresh.get(key) != parent_selected.get(key) for key in keys):
+        raise HelperError('EDRAFTMISMATCH', 'refresh changed approved content or operations')
+    # Only the optional stage preimage may differ. Resolution remains hash-bound.
+    stage_paths = {op['path'] for op in fresh['scope_operations'] if op['operation'] == 'stage'}
+    if any(value != fresh['m2_preimages'].get(key) and key not in stage_paths for key, value in parent['m2_preimages'].items()):
+        raise HelperError('EDRAFTMISMATCH', 'non-stage preimage changed')
+    now = _utc_now()
+    approved = dict(fresh, refresh_binding=parent['refresh_binding'], parent_approval_sha256=parent['receipt_sha256'],
+                    owner_reply=parent.get('owner_reply') or owner_reply, approved_at=now, scope_string=fresh['scope_lines'])
+    approved['receipt_sha256'] = _receipt_digest(approved)
+    with _advisory_lock(root, envelope['invocation_id']):
+        stored = json.loads(witness.read_text())
+        if stored.get('receipt_sha256') != parent['receipt_sha256'] or stored.get('superseded_by'):
+            raise HelperError('EINVOCATIONUSED', 'parent already superseded')
+        if any(r.get('draft_receipt_sha256') == parent['receipt_sha256'] for _, r in _load_intents(root)):
+            raise HelperError('EINVOCATIONUSED', 'started chains use resume, not refresh')
+        target = _approval_path(root, envelope['invocation_id'])
+        if target.exists():
+            raise HelperError('EINVOCATIONUSED', 'fresh invocation already approved')
+        # Invalidate parent first. An interruption can lose authority, never duplicate it.
+        _atomic_record(path, dict(stored, receipt_sha256='superseded', superseded_by=approved['receipt_sha256']))
+        if witness != path:
+            _atomic_record(witness, dict(stored, superseded_by=approved['receipt_sha256']))
+        _atomic_record(target, {'workspace_root':str(root), 'receipt_sha256':approved['receipt_sha256'], 'approved_draft':approved})
+    return approved
+
+
+def resolved_pending_payload(current: bytes, dispositions: list[dict]) -> bytes | None:
+    """Remove only exact disposed blocks. Unknown content remains byte-for-byte."""
+    text = current.decode('utf-8')
+    starts = [m.start() for m in re.finditer(r'(?m)^## Candidate [0-9]+[^\S\n]*\r?$', text)]
+    blocks = [text[start:starts[i+1] if i+1 < len(starts) else len(text)] for i,start in enumerate(starts)]
+    by_hash = {}
+    for d in dispositions:
+        key = d.get('block_sha256')
+        if key in by_hash or not isinstance(d.get('owner_reply'),str) or not d['owner_reply'].strip() or d.get('disposition') not in {'discarded','saved'}:
+            raise HelperError('ERESOLUTION', 'unique exact block hash and non-empty disposition words required')
+        if d['disposition'] == 'saved':
+            approval, capture = d.get('capture_approval') or {}, d.get('capture_result') or {}
+            if (not approval.get('owner_reply','').strip() or approval.get('payload_sha256') != key
+                or capture.get('payload_sha256') != key or capture.get('status') != 'success' or not capture.get('id')):
+                raise HelperError('ERESOLUTION', 'saved requires separately approved exact payload and successful capture result')
+        by_hash[key] = d
+    hashes = [_sha256_text(block) for block in blocks]
+    if any(hashes.count(key) != 1 for key in by_hash):
+        raise HelperError('ERESOLUTION', 'disposition must identify one unique current block')
+    if set(by_hash) - set(hashes):
+        raise HelperError('ERESOLUTION', 'disposition is not for a current exact block')
+    kept = text[:starts[0]] if starts else text
+    for block in blocks:
+        fields = set(re.findall(r'(?m)^\*\*([^*]+):\*\*', block))
+        unknown = fields - {'Type','Insight','Connection','Connects to','Status'}
+        headings = re.findall(r'(?m)^#{1,6} .*', block)
+        unknown_lines = any(line.strip() and not re.fullmatch(r'## Candidate [0-9]+[ \t]*|\*\*(?:Type|Insight|Connection|Connects to|Status):\*\*.*', line) for line in block.splitlines())
+        if _sha256_text(block) not in by_hash or unknown or unknown_lines or len(headings) != 1:
+            kept += block
+    return kept.encode('utf-8') if kept.strip() else None
+
+
+def resolve_pending(envelope: dict, receipt: dict, dispositions: list[dict], expect: str) -> dict:
+    return write_approved_file(envelope, receipt, 'pending_learnings.md', operation='resolve', expect=expect, dispositions=dispositions)
+
+
+def pending_blocks(text: str) -> list[dict]:
+    starts = [m.start() for m in re.finditer(r'(?m)^## Candidate [0-9]+[^\S\n]*\r?$', text)]
+    return [{'block_sha256': _sha256_text(block), 'text': block}
+            for i,start in enumerate(starts)
+            for block in [text[start:starts[i+1] if i+1 < len(starts) else len(text)]]]

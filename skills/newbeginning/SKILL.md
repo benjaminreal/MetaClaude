@@ -2,7 +2,7 @@
 name: newbeginning
 description: "Session-opening brief for multi-session projects. Reads bounded project continuity notes, obtains current Tasks DB evidence when available, handles bootstrap and index-reconstruction recovery, and returns a concise status brief without starting work. MUST trigger on: 'newbeginning', 'new beginning', 'where did we leave off', 'what were we working on', 'pick up where we left off', 'catch me up', 'start session', 'open session', 'resume work', 'whats the status', 'brief me on this project'. Sibling skill: closingtime — use it when wrapping up a session."
 metadata:
-  version: "2.4.0"
+  version: "2.5.0"
 ---
 
 # newbeginning
@@ -69,7 +69,7 @@ projection, validation, or conflict checks ran.
 
 ### `OBSERVATION_GATE` — snapshot and branch
 
-Run `new-envelope <workspace-root>` to capture evidence and helper-stamped
+Run `new-invocation <workspace-root>` for isolated scratch, a new envelope and helper-stamped
 start and `captured_at`. For each later helper call chain use a new envelope;
 never copy start times. One approval covers one envelope chain; each later chain in this conversation needs a new envelope and approval. Replace `unprobed` states before validation.
 Use `snapshot <workspace-root> --entries 10` for reconstruction. Treat its projection, hashes, filename
@@ -234,6 +234,10 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 `OBSERVATION_GATE`. On wording or length failure, patch the brief in place.
 
 ## 7. Version & Changelog
+
+**v2.5.0 — 2026-11-05 — candidate**
+
+- Share deterministic service-receipt, envelope and scratch constructors; retain read-only Tasks access and approved index recovery only.
 
 **v2.4.0 — 2026-11-01 — candidate**
 
