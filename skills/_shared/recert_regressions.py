@@ -1288,6 +1288,14 @@ def run():
     return [problem for _, _, bad in run_groups() for problem in bad]
 
 
+# Standalone loads the complete module before the historical exit below, so
+# additive cases after that exit register too. No existing case is moved/edited.
+if __name__ == "__main__":
+    import recert_regressions as _complete_corpus
+    CHECKS = _complete_corpus.CHECKS
+    results = _complete_corpus.results
+
+
 if __name__ == "__main__":
     rows = results()
     for group, label, problem in rows:
@@ -1303,3 +1311,9 @@ if __name__ == "__main__":
 def approval_friction_contracts():
     import friction_fixtures
     assert not (bad := friction_fixtures.run()), bad
+
+
+@case("Approval repair", "F1 wording/capture, prose receipts, carry cap and backlog guards")
+def approval_repair_contracts():
+    import approval_repair_fixtures
+    assert not (bad := approval_repair_fixtures.run()), bad

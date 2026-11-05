@@ -839,6 +839,8 @@ def _unfinished(root: Path) -> list[str]:
 def freeze_draft(envelope: dict, entry_text: str | None = None, index_text: str | None = None, continue_parent: str | None = None, refreshable: bool = False) -> dict:
     if not envelope:
         raise HelperError(S.MISSING_RECEIPT, "envelope absent")
+    if refreshable and (envelope.get("skill") == "newbeginning" or _package_skill() == "newbeginning"):
+        raise HelperError("ESKILL", "opening cannot write a pre-approval freeze witness")
     if envelope.get("skill") == "newbeginning" and continue_parent is not None:
         raise HelperError("ESKILL", "continuation finishes a closing operation; run closingtime")
     _fresh(envelope.get("local_snapshot") or {}, envelope.get("invocation_started_at"))
@@ -988,6 +990,8 @@ def _check_approved_draft(envelope: dict, entry_text: str | None, receipt: dict 
         raise HelperError("EDRAFTRECEIPT", "requires current approved draft receipt")
     if receipt.get("receipt_sha256") != _receipt_digest(receipt) or not receipt.get("approved_at"):
         raise HelperError("EDRAFTRECEIPT", "modified or unapproved draft receipt")
+    if receipt.get("carry_origin_at"):
+        _check_carry_age(receipt["carry_origin_at"])
     legacy = "snapshot_captured_at" not in receipt
     scope = _scope_text(_scope_operations(envelope, legacy=legacy), legacy=legacy,
                         session_number=int(re.search(r" \(Session #([0-9]+)\)", receipt["scope_lines"])[1]) if re.search(r" \(Session #[0-9]+\)", receipt.get("scope_lines", "")) else None,
@@ -2034,7 +2038,35 @@ def verify_skill_sync(canonical_dir: str | os.PathLike[str],
 
 
 # Constructors and lineage operations deliberately retain all normal validators.
+def _reject_truncated(raw: object) -> None:
+    if isinstance(raw, dict):
+        if any(raw.get(key) for key in ('truncated', 'isTruncated', 'is_truncated', 'has_more', 'hasMore')):
+            raise HelperError('EBADROWS', 'explicitly truncated service result')
+        for value in raw.values():
+            _reject_truncated(value)
+    elif isinstance(raw, list):
+        for value in raw:
+            _reject_truncated(value)
+    elif isinstance(raw, str) and re.search(r'(?im)\[(?:output |content )?truncated[^\]\n]*\]|^.*\b(?:tokens?|characters?|lines?) truncated\b|^\s*(?:output |content )?truncated\s*[:=]\s*true\s*$', raw):
+        raise HelperError('EBADROWS', 'explicit text truncation marker')
+
+
+def _service_json(text: str) -> object:
+    try:
+        return json.loads(text)
+    except (ValueError, UnicodeError) as exc:
+        raise HelperError('EBADROWS', 'service result/operation is not valid JSON') from exc
+
+
 def _tool_rows(raw: object) -> list[dict]:
+    _reject_truncated(raw)
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode('utf-8')
+        except UnicodeError as exc:
+            raise HelperError('EBADROWS', 'service result must be UTF-8') from exc
+    if isinstance(raw, str):
+        return _tool_rows(_service_json(raw))
     if isinstance(raw, dict):
         if raw.get('isError') or raw.get('error'):
             raise HelperError('EBADROWS', 'tool reported an error')
@@ -2044,23 +2076,101 @@ def _tool_rows(raw: object) -> list[dict]:
             if key in raw:
                 return _tool_rows(raw[key])
         content = raw.get('content')
-        if isinstance(content, list) and len(content) == 1 and content[0].get('type') == 'text':
-            return _tool_rows(json.loads(content[0]['text']))
+        if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict) and content[0].get('type') == 'text':
+            return _tool_rows(_service_json(content[0]['text']))
     if isinstance(raw, list) and all(isinstance(row, dict) for row in raw):
         return raw
     raise HelperError('EBADROWS', 'expected row list, rows/results/data, structuredContent, or one JSON text block')
+
+
+def _open_brain_text(raw: object) -> str | None:
+    _reject_truncated(raw)
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode('utf-8')
+        except UnicodeError as exc:
+            raise HelperError('EBADROWS', 'service result must be UTF-8') from exc
+    if isinstance(raw, str):
+        # Retain compatibility with earlier JSON row receipts.
+        if raw.lstrip().startswith(('{', '[')):
+            return _open_brain_text(_service_json(raw))
+        return raw
+    if isinstance(raw, dict):
+        if raw.get('isError') or raw.get('error'):
+            raise HelperError('EBADROWS', 'tool reported an error')
+        content = raw.get('content')
+        if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict) and content[0].get('type') == 'text':
+            return _open_brain_text(content[0].get('text'))
+    return None
+
+
+def _capture_succeeded(text: object) -> bool:
+    return isinstance(text, str) and bool(re.fullmatch(r'Captured as [^\r\n]+(?:\r?\n)?', text))
+
+
+def _open_brain_rows(text: str, operation: str) -> tuple[list[dict], str, dict | None]:
+    if text.startswith(('Failed to capture:', 'Search error:', 'Error:')):
+        outcome = 'failed' if text.startswith('Failed to capture:') else 'error'
+        raise HelperError('EBADROWS', 'Open Brain returned a non-working result',
+                          outcome=outcome, result_sha256=_sha256_text(text))
+    if re.fullmatch(r'No thoughts found(?: matching "[^\r\n]*")?\.(?:\r?\n)?', text):
+        return [], 'no_results', None
+    found = re.match(r'(?:Found ([0-9]+) thought\(s\)|([0-9]+) recent thought\(s\)):\r?\n\r?\n', text)
+    if found:
+        count = int(found[1] or found[2])
+        body = text[found.end():]
+        starts = list(re.finditer(r'(?m)^--- Result ([0-9]+) \([0-9]+(?:\.[0-9]+)?% match\) ---\r?$', body))
+        if found[2]:
+            starts = list(re.finditer(r'(?m)^([0-9]+)\. \[[^\r\n]+\] \([^\r\n]+\)\r?$', body))
+        if count < 1 or len(starts) != count or starts[0].start() != 0 or [int(m[1]) for m in starts] != list(range(1, count+1)):
+            raise HelperError('EBADROWS', 'Open Brain result count/blocks differ')
+        rows = [{'text': body[m.start():starts[i+1].start() if i+1 < count else len(body)]}
+                for i, m in enumerate(starts)]
+        if found[1] and any(not re.search(r'(?m)^Captured: .+', row['text']) or not re.search(r'(?m)^Type: .+', row['text']) for row in rows):
+            raise HelperError('EBADROWS', 'incomplete Open Brain thought block')
+        return rows, 'found', None
+    if _capture_succeeded(text):
+        call = _service_json(operation)
+        args = call.get('arguments') if isinstance(call, dict) else None
+        content = args.get('content') if isinstance(args, dict) else None
+        if (not isinstance(call, dict) or (call.get('tool') or call.get('name')) != 'capture_thought'
+                or not isinstance(content, str) or not content.strip()):
+            raise HelperError('EBADROWS', 'capture success requires exact capture_thought operation and content argument')
+        capture = {'status': 'success', 'payload_sha256': _sha256_text(content),
+                   'result_text': text, 'result_sha256': _sha256_text(text),
+                   'operation_fingerprint': S.fingerprint_operation(operation)}
+        return [{'text': text}], 'captured', capture
+    # Statistics require the named operation and the documented population header.
+    if text.strip() and operation.lstrip().startswith('{'):
+        call = _service_json(operation)
+        if (isinstance(call, dict) and (call.get('tool') or call.get('name')) == 'thought_stats'
+                and re.match(r'Total thoughts: [0-9]+\r?\nDate range: [^\r\n]+\r?\n\r?\nTypes:', text)):
+            return [{'text': text}], 'stats', None
+    raise HelperError('EBADROWS', 'unrecognized Open Brain result format')
 
 
 def service_receipt(capability: str, raw: object, operation: str, identity: dict,
                     tool_result_id: str, observed_at: str | None = None) -> dict:
     if capability not in {'tasks_mcp', 'open_brain'} or not operation.strip() or not identity or not tool_result_id:
         raise HelperError('EINPUT', 'capability, exact operation, observed identity and tool result id required')
-    rows = _tool_rows(raw)
+    _reject_truncated(raw)
+    text = _open_brain_text(raw) if capability == 'open_brain' else None
+    capture = None
+    if text is not None:
+        _reject_truncated(text)
+        rows, outcome, capture = _open_brain_rows(text, operation)
+    else:
+        rows = _tool_rows(raw)
     receipt = {'schema_version': S.SCHEMA_VERSION, 'capability': capability, 'identity': identity,
                'tool_result_id': tool_result_id, 'observed_at': observed_at or _utc_now(),
                'operation_fingerprint': S.fingerprint_operation(operation), 'row_count': len(rows),
                'row_fingerprint': S.canonical_row_fingerprint(rows), 'status': 'current'}
-    return {'receipt': receipt, 'returned_rows_by_capability': {capability: rows}}
+    if text is not None:
+        receipt.update(result_sha256=_sha256_text(text), outcome=outcome)
+    packet = {'receipt': receipt, 'returned_rows_by_capability': {capability: rows}}
+    if capture is not None:
+        packet['capture_result'] = capture
+    return packet
 
 
 def attach_evidence(envelope: dict, packet: dict) -> dict:
@@ -2140,6 +2250,15 @@ def _refresh_binding(envelope: dict) -> dict:
             'source_hashes_used_for_draft': envelope.get('source_hashes_used_for_draft', {})}
 
 
+def _check_carry_age(origin: str) -> None:
+    stamp = _parse_utc(origin)
+    now = dt.datetime.now(dt.timezone.utc)
+    if stamp is None or stamp > now:
+        raise HelperError('ECHRONOLOGY', 'invalid original approval/freeze time')
+    if now - stamp > dt.timedelta(hours=24):
+        raise HelperError('ESTALEAPPROVAL', 'original approval/freeze is older than 24 hours; obtain new approval')
+
+
 def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None,
                      index_text: str | None = None, owner_reply: str = '') -> dict:
     root = _workspace_binding(envelope)
@@ -2159,6 +2278,8 @@ def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None
         raise HelperError('EINVOCATIONUSED', 'parent changed or superseded')
     if any(r.get('draft_receipt_sha256') == parent['receipt_sha256'] for _, r in _load_intents(root)):
         raise HelperError('EINVOCATIONUSED', 'started chains use resume, not refresh')
+    origin = parent.get('carry_origin_at') or parent.get('approved_at') or parent.get('drafted_at')
+    _check_carry_age(origin)
     if not parent.get('approved_at'):
         parent_selected = _approval_selection(parent, owner_reply)
     else:
@@ -2172,14 +2293,16 @@ def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None
     keys = ('entry_sha256','index_draft_sha256','scope_operations','local_payload_hashes','continue_parent','observed_tail_sha256')
     if any(fresh.get(key) != parent_selected.get(key) for key in keys):
         raise HelperError('EDRAFTMISMATCH', 'refresh changed approved content or operations')
-    # Only the optional stage preimage may differ. Resolution remains hash-bound.
-    stage_paths = {op['path'] for op in fresh['scope_operations'] if op['operation'] == 'stage'}
+    # Stage-only may tolerate drift; a scoped resolution keeps its pending preimage strict.
+    resolve_paths = {op['path'] for op in fresh['scope_operations'] if op['operation'] == 'resolve'}
+    stage_paths = {op['path'] for op in fresh['scope_operations'] if op['operation'] == 'stage'} - resolve_paths
     scoped_paths = {op['path'] for op in fresh['scope_operations'] if op['class'] == 'M2'}
     if any(value != fresh['m2_preimages'].get(key) and key not in stage_paths for key, value in parent['m2_preimages'].items() if key in scoped_paths):
         raise HelperError('EDRAFTMISMATCH', 'non-stage preimage changed')
     now = _utc_now()
     approved = dict(fresh, refresh_binding=parent['refresh_binding'], parent_approval_sha256=parent['receipt_sha256'],
-                    owner_reply=parent.get('owner_reply') or owner_reply, approved_at=now, scope_string=fresh['scope_lines'])
+                    carry_origin_at=origin, owner_reply=parent.get('owner_reply') or owner_reply,
+                    approved_at=now, scope_string=fresh['scope_lines'])
     approved['receipt_sha256'] = _receipt_digest(approved)
     with _advisory_lock(root, envelope['invocation_id']):
         stored = json.loads(witness.read_text())
@@ -2200,7 +2323,10 @@ def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None
 
 def resolved_pending_payload(current: bytes, dispositions: list[dict]) -> bytes | None:
     """Remove only exact disposed blocks. Unknown content remains byte-for-byte."""
-    text = current.decode('utf-8')
+    try:
+        text = current.decode('utf-8')
+    except UnicodeError as exc:
+        raise HelperError('ERESOLUTION', 'pending file must be UTF-8') from exc
     starts = [m.start() for m in re.finditer(r'(?m)^## Candidate [0-9]+[^\S\n]*\r?$', text)]
     blocks = [text[start:starts[i+1] if i+1 < len(starts) else len(text)] for i,start in enumerate(starts)]
     by_hash = {}
@@ -2210,9 +2336,19 @@ def resolved_pending_payload(current: bytes, dispositions: list[dict]) -> bytes 
             raise HelperError('ERESOLUTION', 'unique exact block hash and non-empty disposition words required')
         if d['disposition'] == 'saved':
             approval, capture = d.get('capture_approval') or {}, d.get('capture_result') or {}
-            if (not approval.get('owner_reply','').strip() or approval.get('payload_sha256') != key
-                or capture.get('payload_sha256') != key or capture.get('status') != 'success' or not capture.get('id')):
-                raise HelperError('ERESOLUTION', 'saved requires separately approved exact payload and successful capture result')
+            block = next((b for b in pending_blocks(text) if b['block_sha256'] == key), None)
+            canonical = block['capture_wording_sha256'] if block else None
+            payload = approval.get('payload_sha256')
+            edited = approval.get('wording')
+            edited_bound = (isinstance(edited, str) and bool(edited.strip())
+                            and approval.get('block_sha256') == key and payload == _sha256_text(edited))
+            if (not block or not isinstance(approval.get('owner_reply'), str) or not approval['owner_reply'].strip()
+                or not payload or not ((edited is None and payload == canonical) or edited_bound)
+                or approval.get('block_sha256') != key
+                or capture.get('payload_sha256') != payload or capture.get('status') != 'success'
+                or not _capture_succeeded(capture.get('result_text'))
+                or capture.get('result_sha256') != _sha256_text(capture['result_text'])):
+                raise HelperError('ERESOLUTION', 'saved requires block-bound approved wording and successful matching capture')
         by_hash[key] = d
     hashes = [_sha256_text(block) for block in blocks]
     if any(hashes.count(key) != 1 for key in by_hash):
@@ -2236,6 +2372,20 @@ def resolve_pending(envelope: dict, receipt: dict, dispositions: list[dict], exp
 
 def pending_blocks(text: str) -> list[dict]:
     starts = [m.start() for m in re.finditer(r'(?m)^## Candidate [0-9]+[^\S\n]*\r?$', text)]
-    return [{'block_sha256': _sha256_text(block), 'text': block}
+    return [{'block_sha256': _sha256_text(block), 'text': block,
+             'capture_wording': _capture_wording(block),
+             'capture_wording_sha256': _sha256_text(_capture_wording(block)) if _capture_wording(block) is not None else None}
             for i,start in enumerate(starts)
             for block in [text[start:starts[i+1] if i+1 < len(starts) else len(text)]]]
+
+
+def _capture_wording(block: str) -> str | None:
+    """Canonical capture is one nonempty Insight field, stripped at its edges.
+
+    Multiple fields or multiline legacy content are ambiguous: keep the block;
+    no normalization or guessed wording is an approval.
+    """
+    insights = re.findall(r'(?m)^\*\*Insight:\*\*([^\r\n]*)\r?$', block)
+    unknown = any(line.strip() and not re.fullmatch(
+        r'## Candidate [0-9]+[ \t]*|\*\*[^*]+:\*\*.*', line) for line in block.splitlines())
+    return insights[0].strip() if len(insights) == 1 and insights[0].strip() and not unknown else None

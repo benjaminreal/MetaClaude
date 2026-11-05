@@ -109,7 +109,9 @@ for `pending_learnings.md` unless learning is skipped; candidate wording waits
 for `LEARNING_GATE`. Add explicit conditional `resolve` scope for cleanup after
 recorded dispositions. Edits and captures keep their separate approval scopes.
 
-Do not write project files, the DB, Open Brain, or repository state yet.
+The pre-approval `--refreshable` freeze writes only its `.draft` witness under
+`private-artifacts/session-journal/` (and creates that directory if needed).
+Defer continuity, DB, Open Brain and other repository writes until approval.
 
 **Entry template — 300 words maximum:**
 
@@ -249,13 +251,14 @@ For `SKIP-learning`, acknowledge it, record Open Brain as `not_used` and create 
    write. Present disposition choices in the same message. If conditional resolution
    is absent, show the edit/discard/delete transition's frozen `scope_lines`;
 5. after owner edits, reapply the quality contract to the complete wording;
-   obtain fresh approval for repairs. Write/read back edits before capture;
+   obtain fresh approval for repairs; bind approved edited wording to its source
+   block hash. Ordinary pending replacements still need approval/readback;
 6. use `pending-blocks` and `resolve-pending` for conditional cleanup: only exact
-   hash-checked blocks with recorded discarded/successfully saved dispositions
+   blocks bound to approved/captured wording hashes or recorded discards
    may disappear. Retain unresolved blocks and unknown fields. No second owner
    round is needed within approved `resolve` scope; capture stays separately
    approved. Other edits bind exact payload hashes before fresh approval.
-   See recovery.md for disposition records and the six-hour evidence limit.
+   See recovery.md for records, six-hour evidence and 24-hour carry limits.
 
 Language precedence is explicit user preference, then the dominant session
 language when it is English or Spanish, then English. Keep volatile session
@@ -369,8 +372,8 @@ or a provenance/collision failure. Patch wording and length issues in place.
 **v3.5.0 — 2026-11-05 — candidate**
 
 - Construct receipts/envelopes and isolated scratch; derive scope at approval.
-- Resolve only hash-bound disposed blocks within approved conditional scope.
-- Carry witnessed unchanged approvals across fresh evidence; bind exclusions and revoke superseded chains.
+- Bind conditional resolution to canonical or approved edited capture wording; parse real Open Brain prose and reject failed/truncated results.
+- Carry unchanged approvals for at most 24 hours from original authority; keep resolution preimages strict and revoke superseded chains.
 
 **v3.4.0 — 2026-11-01 — candidate**
 

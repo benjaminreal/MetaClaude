@@ -243,10 +243,16 @@ service-receipt open_brain RAW OPERATION IDENTITY --tool-result-id RESULT_ID
 attach-evidence ENVELOPE PACKET
 ```
 
-RAW may be a list of row objects, `rows`, `results`, `data`, `structuredContent`,
-or one MCP text content block containing that JSON. Errors and unknown shapes
-refuse; do not invent empty rows to repair them. The constructor hashes/counts
-actual rows, preserves an explicit `--observed-at` from the service when present,
+Tasks RAW may be a list of row objects, `rows`, `results`, `data`,
+`structuredContent`, or one MCP text content block containing that JSON.
+Open Brain RAW is the exact UTF-8 text block (preserve newlines), or its single
+MCP text wrapper. Legacy JSON rows remain supported. The constructor hashes the
+exact text as `result_sha256`: no-results yields zero rows; found/recent formats
+yield one exact-text row per thought; named thought_stats yields one text row.
+Found counts/numbered blocks must agree. Explicit truncation markers, malformed
+JSON/UTF-8, unknown formats, `Failed to capture:`, `Search error:` and `Error:`
+refuse with EBADROWS, never a working receipt. Do not invent empty rows.
+It preserves an explicit `--observed-at` from the service when present,
 and otherwise stamps the immediate local observation. Never use it to restamp
 an earlier invocation's read. IDENTITY names observed service/account/project_ref
 as applicable, plus Tasks project/scope. Supply expected identity from resolved
@@ -284,7 +290,10 @@ cannot be approved again after the reduced receipt is issued.
 Conditional cleanup is explicit M2
 `{"path":"pending_learnings.md","operation":"resolve"}`; it is never inferred
 from staging. It may be included beside stage in the close's displayed scope.
-`pending-blocks FILE` reads exact text and SHA-256 per canonical Candidate block.
+`pending-blocks FILE` reads exact text and SHA-256 per Candidate block, plus
+`capture_wording` and `capture_wording_sha256`. Canonical wording is the single
+nonempty Insight field with edge whitespace stripped, without metadata; ambiguous
+or multiline legacy text yields null. Show and separately approve that wording.
 Record a JSON list of dispositions for only those blocks the owner resolved:
 
 ```json
@@ -292,13 +301,24 @@ Record a JSON list of dispositions for only those blocks the owner resolved:
 ```
 
 A saved disposition additionally needs `capture_approval` with non-empty
-`owner_reply` and `payload_sha256`, and `capture_result` with `status: success`,
-returned `id`, and the identical `payload_sha256`. Here the capture payload is
-the exact block bytes, including heading/metadata; bind the separately approved
-capture request and its successful result to those bytes. Other capture formats
-need separate exact-payload handling; do not relabel or fabricate a capture.
-These local records do not authenticate supplied owner words or service results.
-Open Brain capture is always separately approved; `resolve` never calls it.
+`owner_reply`, this source `block_sha256`, and `payload_sha256` equal to
+`capture_wording_sha256`. For edited
+wording, include the exact `wording`, its `payload_sha256` and this source
+`block_sha256` in that approval; the helper checks both bindings. Show and approve
+the complete edit; do not relabel evidence from another block. No pending rewrite
+is needed solely to capture the approved edit and resolve its original block.
+
+For capture, OPERATION is the exact JSON call, for example
+`{"tool":"capture_thought","arguments":{"content":"<approved wording>"}}`
+(`name` may replace `tool`). Pass the raw success text to `service-receipt
+open_brain`; it requires the `Captured as ` prefix and emits `capture_result`
+with `status: success`, `payload_sha256` from the sent content argument,
+`result_text`, `result_sha256` and the operation fingerprint. There is no returned
+id or content echo; never invent either. Copy that object into the disposition.
+Resolve requires the approved/captured wording hashes to agree and checks the
+success prefix/text hash. A failed or absent capture cannot resolve. These local
+records prove consistency, not authenticity of supplied words/results. Capture
+always needs separate approval; `resolve` never calls Open Brain.
 
 Run `resolve-pending ENV APPROVED DISPOSITIONS --expect CURRENT_HASH` after
 verified append (and staging if used). The writer checks the frozen preimage,
@@ -332,9 +352,17 @@ hashes, destinations, project/service identities, task expected versions and
 all task rows, plus log/index/archive/policy source identities and hashes.
 No index narrative, mirror or Updated-date byte exception is implemented: only
 snapshot observation/date metadata may change. Task row comparison is deliberately
-conservative. Only a scoped optional stage preimage may differ; resolution
-preimages remain strict. Backdated/copied capture timestamps refuse. The six-hour
+conservative. Only a stage-only pending preimage may differ. When resolve is
+also scoped, the pending preimage must match; this safer comparison refuses
+concurrent staging drift before carrying approval. Backdated/copied capture timestamps refuse. The six-hour
 lifetime is unchanged; old evidence cannot authorize a new write.
+
+Carry is limited to 24 hours on the helper clock from the ORIGINAL owner
+approval, or the original freeze's drafted_at for a late approval. The new
+receipt retains `carry_origin_at`; chained refreshes cannot reset it. Refresh
+and use of a carried receipt refuse after that limit (ESTALEAPPROVAL), even
+when its refreshed evidence is less than six hours old. Obtain new owner
+approval of a new freeze then. The six-hour evidence lifetime stays unchanged.
 
 The new receipt names `parent_approval_sha256`. Under the local project lock the
 helper invalidates the parent before registering the child; an interruption may

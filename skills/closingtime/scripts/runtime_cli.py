@@ -2,9 +2,9 @@
 """Command-line bridge for the session-skill runtime helpers.
 
 The CLI keeps fragile filesystem and hashing work out of model-authored scratch
-code. It has no network client and accepts evidence only as JSON files, or as
-JSON on stdin when the file argument is "-" (for harnesses that block scratch
-writes).
+code. It has no network client. Evidence uses JSON files, plus exact UTF-8
+Open Brain result text; a file argument of "-" reads stdin when scratch writes
+are unavailable.
 """
 
 from __future__ import annotations
@@ -36,6 +36,13 @@ def _text_file(path: str, preserve_newlines: bool = False) -> str:
     if path == "-":
         return sys.stdin.read()
     return Path(path).read_text(encoding="utf-8")
+
+
+def _service_input(path: str) -> str:
+    try:
+        return _text_file(path, preserve_newlines=True)
+    except UnicodeError as exc:
+        raise helpers.HelperError('EBADROWS', 'service result must be UTF-8') from exc
 
 
 def _emit(value: object) -> None:
@@ -163,8 +170,11 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "new-invocation":
             result = helpers.new_invocation(args.workspace_root, args.local_only)
         elif args.command == "service-receipt":
-            result = helpers.service_receipt(args.capability, _json_file(args.raw_result), _text_file(args.operation_text),
-                                             _json_file(args.identity_json), args.tool_result_id, args.observed_at)
+            try:
+                result = helpers.service_receipt(args.capability, _service_input(args.raw_result), _text_file(args.operation_text, preserve_newlines=True),
+                                                 _json_file(args.identity_json), args.tool_result_id, args.observed_at)
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise helpers.HelperError('EBADROWS', 'service inputs must be UTF-8 with valid identity JSON') from exc
         elif args.command == "attach-evidence":
             result = helpers.attach_evidence(_json_file(args.envelope_json), _json_file(args.packet_json))
         elif args.command == "bind-approval":
@@ -176,7 +186,10 @@ def main(argv: list[str] | None = None) -> int:
             result = helpers.resolve_pending(_json_file(args.envelope_json), _json_file(args.approved_draft_json),
                                               _json_file(args.dispositions_json), args.expect)
         elif args.command == "pending-blocks":
-            result = helpers.pending_blocks(_text_file(args.pending_file, preserve_newlines=True))
+            try:
+                result = helpers.pending_blocks(_text_file(args.pending_file, preserve_newlines=True))
+            except UnicodeError as exc:
+                raise helpers.HelperError('ERESOLUTION', 'pending file must be UTF-8') from exc
         elif args.command == "fingerprint-operation":
             result = {"operation_fingerprint": schemas.fingerprint_operation(_text_file(args.text_file))}
         elif args.command == "gateway-receipt":

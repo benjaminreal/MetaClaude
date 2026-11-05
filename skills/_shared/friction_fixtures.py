@@ -91,7 +91,10 @@ def cleanup_preserves_unknown():
          'capture_approval':{'payload_sha256':'sha256:other','owner_reply':'Approved capture'},
          'capture_result':{'status':'success','id':'synthetic-capture','payload_sha256':'sha256:other'}}
     refuses('ERESOLUTION', lambda: H.resolved_pending_payload(one.encode(), [d]))
-    d['capture_approval']['payload_sha256'] = d['capture_result']['payload_sha256'] = H._sha256_text(one)
+    # Amendment 1: capture canonical wording, with the service's prose success.
+    d['capture_approval']['block_sha256'] = H._sha256_text(one)
+    d['capture_approval']['payload_sha256'] = d['capture_result']['payload_sha256'] = H.pending_blocks(one)[0]['capture_wording_sha256']
+    d['capture_result'].update(result_text='Captured as observation', result_sha256=H._sha256_text('Captured as observation'))
     assert H.resolved_pending_payload(one.encode(), [d]) is None
     assert H.resolved_pending_payload(one.encode(), []) == one.encode()
     for suffix in ('**Custom:** preserve\n', 'unrecognized_metadata: preserve\n', '### Notes\nPreserve.\n'):

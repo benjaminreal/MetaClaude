@@ -2,8 +2,8 @@
 
 Mutation procedures here apply during session work or closingtime. Newbeginning
 may use the wording rules for read-only discussion/search, but never edits pending
-files or captures to Open Brain. Optional stage permission may be in the close;
-other learning writes need separate scopes. Skips/zero candidates leave files untouched.
+files or captures to Open Brain. Optional stage and conditional resolve permission may be in the close;
+ordinary edits and captures keep separate approval scopes. Skips/zero candidates leave files untouched.
 
 Read this reference only when generating, reviewing, or revising learning
 candidates. It adds wording-quality rules to the existing
@@ -71,13 +71,29 @@ Read the existing bytes; stage preserves them exactly and appends new numbered
 candidate blocks only. Do not renumber existing blocks under stage permission.
 Use the close's optional approved stage line once after verified append, with
 write-approved --operation stage --expect current SHA-256 (or absent initially).
-Stage recognizes only new block structure, never parses legacy content. Owner
-edit, mixed disposition and delete each need their own frozen scope, shown with
-the disposition question, and non-empty --owner-reply for the current revision.
-Keep needs no write once candidates are staged and read back. Write/read back edits
-before capture. After a mixed disposition retain only unresolved blocks with
-all their unknown fields. Delete only after all items have explicit disposition.
-No parser round-trip or semantic-quality guarantee is claimed.
+Stage recognizes only new block structure, never parses legacy content.
+`pending-blocks` emits the exact block hash plus `capture_wording` and
+`capture_wording_sha256`: one nonempty Insight field, with edge whitespace
+stripped and no heading or metadata. Ambiguous/multiline legacy wording returns
+null; do not guess. Present this complete wording before capture approval.
+Capture exactly the approved wording; never silently normalize it.
+
+A saved disposition binds the current block hash, separately approved wording
+hash and successful capture result. For owner-edited wording, include the exact
+`wording`, its `payload_sha256`, the source `block_sha256` and actual owner words
+in `capture_approval`; reapply this quality contract. Capture approval of that
+edited text does not authorize an ordinary pending-file replacement. Resolve can
+remove the original block using that explicit binding without first rewriting it.
+If the owner wants the pending file edited/retained, freeze the exact replacement
+and obtain approval; write/read back before capture.
+
+Keep needs no write. With approved conditional resolve scope, record discarded
+or successfully saved dispositions and run `resolve-pending`; partial cleanup
+retains unresolved/unknown bytes, and full cleanup deletes the empty file.
+No second cleanup-only owner round is needed within that scope. Without resolve
+scope, edits, mixed disposition or deletion need their own frozen scope and
+non-empty owner reply. Capture always needs separate approval. No parser
+round-trip or semantic-quality guarantee is claimed.
 
 Search before writing the proposed connection, then read back before presenting.
 A search is a read; "do not update/capture" does not skip it. An instruction not

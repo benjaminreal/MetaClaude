@@ -237,7 +237,7 @@ On fabrication, unapproved mutation, or provenance failure, restart from
 
 **v2.5.0 — 2026-11-05 — candidate**
 
-- Share deterministic service-receipt, envelope and scratch constructors; retain read-only Tasks access and approved index recovery only.
+- Share prose-aware service receipts and safe constructors; refuse pre-approval refresh witnesses and retain read-only Tasks access plus approved index recovery only.
 
 **v2.4.0 — 2026-11-01 — candidate**
 
