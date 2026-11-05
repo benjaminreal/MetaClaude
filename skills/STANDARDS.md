@@ -143,6 +143,11 @@ These rules exist already. This section collects them; it does not invent any.
 - Temporary paths must resolve symlinks.
 - Historical transcripts find failure modes. Proving a fix needs fresh
   controlled runs.
+- A change that targets an owner workflow needs at least one test that runs
+  that workflow end to end through the command-line helpers, with synthetic
+  inputs in the formats the real services return. For example: stage a
+  learning candidate, capture its approved wording, then resolve and delete
+  the pending file.
 
 ### D. Review and certification
 - The implementer cannot certify their own change.
