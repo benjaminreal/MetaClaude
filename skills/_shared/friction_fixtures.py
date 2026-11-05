@@ -197,7 +197,33 @@ def raw_receipt_cli():
         l.refused('closingtime','service-receipt','open_brain',l.save('error.json',{'isError':True}),l.save('op.txt','search synthetic'),l.save('id.json',{'service':'Synthetic'}),'--tool-result-id','synthetic-result',code='EBADROWS')
 
 
-CHECKS = (construction, approval_without_scope, cleanup, cleanup_preserves_unknown, refresh_and_exclusion, refresh_refusals, optional_stage_refresh, stage_then_resolve_cli, raw_receipt_cli)
+def late_exclusion_refresh():
+    with lab() as tmp:
+        l = R.Lab(Path(tmp).resolve()); root = l.project()
+        e = l.envelope(root, scope=['project_session.md','pending_learnings.md'])
+        f = H.freeze_draft(e, R.entry(), refreshable=True)
+        (root/'pending_learnings.md').write_text(R.PENDING)
+        real_now = dt.datetime.now
+        class Later(dt.datetime):
+            @classmethod
+            def now(cls,tz=None): return real_now(tz) + dt.timedelta(hours=7)
+        with mock.patch.object(H.dt,'datetime',Later), mock.patch.object(S._dt,'datetime',Later):
+            # Rebuild current envelope through the constructor's fresh observation,
+            # retaining the independently verified unavailable-service identity.
+            fresh = copy.deepcopy(e)
+            fresh['invocation_id'] += '-refresh'
+            fresh['local_snapshot'] = H.capture_local_snapshot(root)
+            fresh['invocation_started_at'] = fresh['local_snapshot']['observed_at']
+            fresh['mutation_scope']['M2'] = ['project_session.md']
+            fresh['mcp_receipts'][0]['observed_at'] = fresh['invocation_started_at']
+            a = H.refresh_approval(f,fresh,R.entry(),owner_reply='Approved, skip learnings')
+            assert len(a['scope_operations']) == 1
+            H.append_session_entry(H.bind_approval(fresh,a),R.entry(),a)
+            assert (root/'pending_learnings.md').read_text() == R.PENDING
+            refuses('EINVOCATIONUSED',lambda: H.refresh_approval(f,fresh,R.entry(),owner_reply='Approved'))
+
+
+CHECKS = (construction, approval_without_scope, cleanup, cleanup_preserves_unknown, refresh_and_exclusion, refresh_refusals, optional_stage_refresh, stage_then_resolve_cli, raw_receipt_cli, late_exclusion_refresh)
 
 
 def run():
@@ -209,5 +235,5 @@ def run():
 
 if __name__ == '__main__':
     bad = run()
-    print('\n'.join(bad) if bad else 'FRICTION FIXTURES: PASSED (9 groups)')
+    print('\n'.join(bad) if bad else 'FRICTION FIXTURES: PASSED (10 groups)')
     raise SystemExit(bool(bad))

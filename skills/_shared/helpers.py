@@ -2174,7 +2174,8 @@ def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None
         raise HelperError('EDRAFTMISMATCH', 'refresh changed approved content or operations')
     # Only the optional stage preimage may differ. Resolution remains hash-bound.
     stage_paths = {op['path'] for op in fresh['scope_operations'] if op['operation'] == 'stage'}
-    if any(value != fresh['m2_preimages'].get(key) and key not in stage_paths for key, value in parent['m2_preimages'].items()):
+    scoped_paths = {op['path'] for op in fresh['scope_operations'] if op['class'] == 'M2'}
+    if any(value != fresh['m2_preimages'].get(key) and key not in stage_paths for key, value in parent['m2_preimages'].items() if key in scoped_paths):
         raise HelperError('EDRAFTMISMATCH', 'non-stage preimage changed')
     now = _utc_now()
     approved = dict(fresh, refresh_binding=parent['refresh_binding'], parent_approval_sha256=parent['receipt_sha256'],
