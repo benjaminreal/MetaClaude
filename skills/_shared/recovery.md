@@ -107,7 +107,11 @@ resumable/abandonable child, without unjournaling the append. Abandoning consume
 that close's stage permission. Prefix changes refuse ESTAGE. A new suffix must
 start on a new line and contain only `## Candidate <ASCII number>` blocks with
 non-empty Type, Insight and Connection/Connects to fields; optional Status must
-be pending. Existing bytes (including unknown fields/line endings) are opaque
+be pending. Stage and resolve share the field list: Type, Insight, Connection,
+Connects to, Status, Source. Source is optional provenance. New blocks refuse
+unknown fields, prose continuations and extra headings with ESTAGE; each nonblank
+body line must be one supported field. This narrows new staging only. Existing
+bytes (including unknown fields/line endings) are opaque
 and unchanged; no legacy parser or semantic-quality guarantee is imposed.
 Read back before presenting. Keep needs no write. Arbitrary edits/deletion require
 their own frozen scope and approval, current --expect and non-empty --owner-reply.
@@ -185,6 +189,7 @@ and OneDrive host-suffix names remain undetected. Unrelated numbered files and
 | EWORKSPACEMISMATCH / WORKSPACE_MISMATCH | different journal identity or inconsistent legacy snapshot root; correct workspace |
 | EDRAFTMISMATCH / EDRAFTRECEIPT / ESKILL | correct skill, scope, receipt or payload; adoption requires the exact current adopt-history proposal; refreeze with approval |
 | ESTAGE | invalid candidate suffix/prefix change, wrong target, missing close or already consumed staging permission; use separate approval for edits/dispositions |
+| ERESOLUTIONNOOP | no disposed block removable; report kept_disposed hashes/reasons; no write intent or consumed resolve transition |
 | SCOPE_UNAPPROVED | approval missing/different, or pending revision lacks owner words; obtain exact approval |
 | ESOURCECHANGED / ESTALE | changed preimage or tail; snapshot number or approved number differs; pre-append refreeze; post-append continue index or abandon child |
 | EUNFINISHED | resume; only remaining-target continuation bypasses fresh-freeze block |
@@ -328,7 +333,19 @@ Only exact blocks with recorded dispositions can disappear; unresolved blocks,
 preamble bytes, unknown fields and extra headings remain byte-identical. If no
 content remains it deletes the file. Readback and a durable write intent cover
 replacement/deletion, and resume handles an interrupted resolution. One resolve
-transition per approval, including abandoned attempts. A standalone local-only
+transition per approval, including abandoned write intents. If no disposed block
+can be removed, ERESOLUTIONNOOP returns each kept disposed block in
+`kept_disposed` with its exact `block_sha256` and `reason`. It leaves the pending
+file and journal unchanged and consumes no resolve transition; the same approval
+can still resolve valid dispositions against the same preimage. Empty dispositions
+also refuse without a write. For mixed cleanup the helper removes what it can,
+writes and reads back, and returns `outcome: partial` plus `kept_disposed` and
+`removed_blocks`; the write intent retains this report. With no kept disposed
+blocks it returns `outcome: complete` (unresolved blocks may still remain).
+Report each kept hash/reason to the owner and never claim cleanup complete for
+partial/no-op results. A partial write consumes the one resolve transition;
+further cleanup needs fresh authority. Readback success proves the write, not
+complete disposal of all candidates. A standalone local-only
 cleanup also needs explicit resolve authority. Ordinary edits/replacements keep
 the exact payload-hash binding and fresh owner words. No second cleanup-only
 approval is needed when resolve was included in the close. Evidence and pending

@@ -1,4 +1,4 @@
-Current source candidate: 3.5.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
+Current source candidate: 3.6.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
 
 # closingtime
 
@@ -10,7 +10,7 @@ If you work on long-running projects across multiple sessions, you know the prob
 
 **closingtime** captures your session while the full context is still in the model's memory. It drafts a structured entry (~300 words), updates compact project narrative notes, writes task changes to the Supabase Tasks database, and extracts insights worth keeping long-term. Together with its sibling [`newbeginning`](../newbeginning/), this creates a continuity loop: closingtime writes the notes and task changes, newbeginning reads the notes and queries the task database — getting you back to productive work from a bounded projection instead of thousands of tokens spent scanning files and guessing at priorities.
 
-**Version:** 3.3.1 candidate
+**Version:** 3.6.0 candidate
 
 Phase 4 behavioral validation passed on earlier candidates; the repairs in
 this version still need a fresh behavioral check and an independent

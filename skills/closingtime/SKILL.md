@@ -2,7 +2,7 @@
 name: closingtime
 description: "Session-closing capture for multi-session projects. Builds current local and Tasks DB evidence, drafts an approval-gated closeout, persists and verifies the session/index/task state, stages learning candidates before review, and closes from receipts. MUST trigger on: 'closingtime', 'closing time', 'close session', 'wrap up', 'we are done for now', 'end session', 'log this session', 'save the session', 'lets close this out', 'time to wrap'. Sibling skill: newbeginning — use it when starting or resuming a session."
 metadata:
-  version: "3.5.0"
+  version: "3.6.0"
 ---
 
 # closingtime
@@ -257,7 +257,9 @@ For `SKIP-learning`, acknowledge it, record Open Brain as `not_used` and create 
    blocks bound to approved/captured wording hashes or recorded discards
    may disappear. Retain unresolved blocks and unknown fields. No second owner
    round is needed within approved `resolve` scope; capture stays separately
-   approved. Other edits bind exact payload hashes before fresh approval.
+   approved. Report every `kept_disposed` hash/reason on partial cleanup or
+   `ERESOLUTIONNOOP`; never claim cleanup complete. Other edits bind exact payload
+   hashes before fresh approval.
    See recovery.md for records, six-hour evidence and 24-hour carry limits.
 
 Language precedence is explicit user preference, then the dominant session
@@ -368,6 +370,10 @@ Restart from `OBSERVATION_GATE` after unapproved mutation, fabricated evidence,
 or a provenance/collision failure. Patch wording and length issues in place.
 
 ## 7. Version & Changelog
+
+**v3.6.0 — 2026-11-05 — candidate**
+
+- Share Source-aware stage/resolve fields; refuse no-op cleanup without consuming approval and report kept disposed blocks.
 
 **v3.5.0 — 2026-11-05 — candidate**
 

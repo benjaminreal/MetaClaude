@@ -56,7 +56,9 @@ that regex checks prove semantic quality.
 Existing pending blocks are opaque. Preserve them, unresolved wording
 and unknown metadata; do not silently standardize legacy text. Existing
 `Connection` or `Connects to`, with or without `Status`, remain valid layouts.
-New blocks may use this v1-readable form:
+New blocks use supported field lines only (no unknown fields or prose
+continuations). Source is optional; Connection is an alias of Connects to.
+This v1-readable form is accepted by both stage and resolve:
 
 ```markdown
 ## Candidate 1
@@ -90,6 +92,9 @@ and obtain approval; write/read back before capture.
 Keep needs no write. With approved conditional resolve scope, record discarded
 or successfully saved dispositions and run `resolve-pending`; partial cleanup
 retains unresolved/unknown bytes, and full cleanup deletes the empty file.
+Report every kept disposed hash/reason from partial cleanup or ERESOLUTIONNOOP;
+never claim cleanup complete for either outcome. A no-op consumes no resolve
+transition and writes no intent; see recovery.md.
 No second cleanup-only owner round is needed within that scope. Without resolve
 scope, edits, mixed disposition or deletion need their own frozen scope and
 non-empty owner reply. Capture always needs separate approval. No parser

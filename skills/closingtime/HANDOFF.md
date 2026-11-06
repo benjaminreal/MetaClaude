@@ -1,4 +1,4 @@
-Current source candidate: 3.5.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
+Current source candidate: 3.6.0. Evidence construction and approval lineage use references/recovery.md; installation requires independent review and owner approval.
 
 # closingtime 3.3.1 — candidate
 

@@ -1317,3 +1317,172 @@ def approval_friction_contracts():
 def approval_repair_contracts():
     import approval_repair_fixtures
     assert not (bad := approval_repair_fixtures.run()), bad
+
+
+# Resolve Source request: append-only, synthetic CLI reproductions.
+RESOLUTION_GROUP = "Pending resolution Source"
+SOURCE_PENDING = PENDING + "**Source:** synthetic session evidence\n"
+
+
+def _resolution_discard(block):
+    return {"block_sha256": sha_bytes(block.encode()), "disposition": "discarded",
+            "owner_reply": "Discard this synthetic candidate"}
+
+
+def _resolution_approval(L, root):
+    env = L.ok("closingtime", "new-envelope", root, "--local-only")
+    env["mutation_scope"]["M2"] = [{"path": "pending_learnings.md", "operation": "resolve"}]
+    approved = L.ok("closingtime", "approve-draft", L.save("frozen.json", L.freeze(env)),
+                    "--owner-reply", "Approve")
+    env = L.ok("closingtime", "bind-approval", L.save("env.json", env), L.save("approved.json", approved))
+    return env, approved
+
+
+def _resolution_args(L, env, approved, dispositions, target):
+    return ["resolve-pending", L.save("env.json", env), L.save("approved.json", approved),
+            L.save("dispositions.json", dispositions), "--expect", sha(target)]
+
+
+def _resolution_stage(L, root, payload):
+    env = L.envelope(root, scope=["project_session.md", "pending_learnings.md",
+                                 {"path": "pending_learnings.md", "operation": "resolve"}])
+    approved = L.ok("closingtime", "approve-draft", L.save("frozen.json", L.freeze(env, entry())),
+                    "--owner-reply", "Approve")
+    env = L.ok("closingtime", "bind-approval", L.save("env.json", env), L.save("approved.json", approved))
+    L.append(env, approved)
+    L.write(env, approved, "pending_learnings.md", payload, operation="stage", expect="absent", words=None)
+    return env, approved
+
+
+@case(RESOLUTION_GROUP, "stage Source -> pending-blocks -> discarded -> resolve deletes file (CLI)")
+def resolution_source_discard_cli():
+    with lab() as L:
+        root = L.project()
+        env, approved = _resolution_stage(L, root, SOURCE_PENDING)
+        target = root / "pending_learnings.md"
+        block = L.ok("closingtime", "pending-blocks", target)[0]
+        assert block["text"] == SOURCE_PENDING and block["block_sha256"] == sha(target)
+        out = L.ok("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(block["text"])], target))
+        assert out["readback_sha256"] == "absent" and out["readback_ok"] and not target.exists(), out
+        assert out["outcome"] == "complete" and out["kept_disposed"] == [], out
+        record = json.loads(Path(out["journal_record_path"]).read_text())
+        assert record["operation"] == "resolve" and not record["postimage"]["exists"]
+
+
+@case(RESOLUTION_GROUP, "saved Source uses Insight-only approval and real-format prose capture result (CLI)")
+def resolution_source_saved_cli():
+    with lab() as L:
+        root = L.project()
+        env, approved = _resolution_stage(L, root, SOURCE_PENDING)
+        target = root / "pending_learnings.md"
+        block = L.ok("closingtime", "pending-blocks", target)[0]
+        assert block["capture_wording"] == "Verify saved bytes before reporting success."
+        operation = {"tool": "capture_thought", "arguments": {"content": block["capture_wording"]}}
+        packet = L.ok("closingtime", "service-receipt", "open_brain",
+                      L.save("raw.txt", "Captured as observation — verification | Actions: check bytes"),
+                      L.save("operation.json", operation), L.save("identity.json", {"service": "Synthetic"}),
+                      "--tool-result-id", "synthetic-capture")
+        disposition = dict(_resolution_discard(SOURCE_PENDING), disposition="saved",
+                           capture_approval={"block_sha256": block["block_sha256"],
+                                             "payload_sha256": block["capture_wording_sha256"],
+                                             "owner_reply": "Approve this exact Insight wording"},
+                           capture_result=packet["capture_result"])
+        out = L.ok("closingtime", *_resolution_args(L, env, approved, [disposition], target))
+        assert out["readback_sha256"] == "absent" and not target.exists(), out
+
+
+@case(RESOLUTION_GROUP, "no-op refuses with each kept hash/reason, no write, same approval still resolves (CLI)")
+def resolution_noop_preserves_approval_cli():
+    with lab() as L:
+        root = L.project()
+        unknown = PENDING + "**Legacy:** retain exactly\n"
+        legacy = PENDING.replace("Candidate 1", "Candidate 2") + "Unstructured legacy notes.\n"
+        valid = SOURCE_PENDING.replace("Candidate 1", "Candidate 3")
+        target = root / "pending_learnings.md"
+        target.write_bytes((unknown + legacy + valid).encode())
+        env, approved = _resolution_approval(L, root)
+        before = tree(root)
+        out = L.refused("closingtime", *_resolution_args(L, env, approved,
+                         [_resolution_discard(unknown), _resolution_discard(legacy)], target), code="ERESOLUTIONNOOP")
+        assert tree(root) == before, tree_diff(before, tree(root))
+        kept = out["error"]["kept_disposed"]
+        assert [k["block_sha256"] for k in kept] == [sha_bytes(unknown.encode()), sha_bytes(legacy.encode())], kept
+        assert all(k["reason"] for k in kept) and "Legacy" in kept[0]["reason"], kept
+        assert kept[0]["reason"] != kept[1]["reason"], kept
+        # Same durable approval and frozen preimage: refusal consumed no transition.
+        resolved = L.ok("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(valid)], target))
+        assert resolved["readback_ok"] and target.read_bytes() == (unknown + legacy).encode(), resolved
+        intents = [json.loads(p.read_text()) for p in (root / POLICY).parent.glob("*.done")]
+        assert sum(r.get("operation") == "resolve" for r in intents) == 1, intents
+
+
+@case(RESOLUTION_GROUP, "mixed removes Source, reports kept disposed blocks, preserves unresolved bytes (CLI)")
+def resolution_mixed_cli():
+    with lab() as L:
+        root = L.project()
+        unknown = (PENDING.replace("Candidate 1", "Candidate 2") + "**Legacy:** opaque\n").replace("\n", "\r\n")
+        legacy = PENDING.replace("Candidate 1", "Candidate 3") + "### Notes\nHand-edited notes.\n"
+        unresolved = SOURCE_PENDING.replace("Candidate 1", "Candidate 4")
+        prefix = "Legacy preamble\r\n\r\n"
+        target = root / "pending_learnings.md"
+        target.write_bytes((prefix + SOURCE_PENDING + unknown + legacy + unresolved).encode())
+        env, approved = _resolution_approval(L, root)
+        dispositions = [_resolution_discard(b) for b in (SOURCE_PENDING, unknown, legacy)]
+        out = L.ok("closingtime", *_resolution_args(L, env, approved, dispositions, target))
+        assert out.get("outcome") == "partial", out
+        assert [k["block_sha256"] for k in out["kept_disposed"]] == [sha_bytes(b.encode()) for b in (unknown, legacy)], out
+        assert all(k["reason"] for k in out["kept_disposed"]), out
+        assert target.read_bytes() == (prefix + unknown + legacy + unresolved).encode()
+        assert out["readback_ok"] and out["readback_sha256"] == sha(target)
+        L.refused("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(unknown)], target), code="EDRAFTMISMATCH")
+
+
+@case(RESOLUTION_GROUP, "legacy unknown fields, prose and extra headings stay byte-for-byte")
+def resolution_legacy_bytes():
+    for suffix in ("**Legacy:** opaque\r\n", "Hand-edited notes.\r\n", "### Notes\r\nOpaque.\r\n"):
+        block = PENDING.replace("\n", "\r\n") + suffix
+        raw = ("Legacy preamble\r\n" + block).encode()
+        assert H.resolved_pending_payload(raw, [_resolution_discard(block)]) == raw
+
+
+@case(RESOLUTION_GROUP, "new stage rejects unknown field or multiline prose before creating a stage intent (CLI)")
+def resolution_stage_rejects_unremovable_cli():
+    for suffix in ("**Legacy:** opaque\n", "Unstructured continuation.\n"):
+        with lab() as L:
+            root = L.project()
+            env = L.envelope(root, scope=["project_session.md", "pending_learnings.md"])
+            approved = L.approve(env, L.freeze(env, entry()))
+            L.append(env, approved)
+            before = tree(root)
+            L.refused("closingtime", *L.write_args(env, approved, "pending_learnings.md", PENDING + suffix,
+                       operation="stage", expect="absent"), code="ESTAGE")
+            assert tree(root) == before, tree_diff(before, tree(root))
+
+
+@case(RESOLUTION_GROUP, "all documented optional fields, Connection alias and CRLF stage then resolve (CLI)")
+def resolution_stage_field_parity_cli():
+    for connection in ("Connection", "Connects to"):
+        with lab() as L:
+            root = L.project()
+            payload = SOURCE_PENDING.replace("**Connection:**", "**" + connection + ":**").replace("\n", "\r\n")
+            env, approved = _resolution_stage(L, root, payload)
+            target = root / "pending_learnings.md"
+            block = L.ok("closingtime", "pending-blocks", target)[0]
+            assert block["text"] == payload
+            out = L.ok("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(payload)], target))
+            assert out["readback_sha256"] == "absent" and not target.exists(), out
+
+
+@case(RESOLUTION_GROUP, "non-current and non-exact dispositions still refuse without consuming approval (CLI)")
+def resolution_exact_binding_cli():
+    with lab() as L:
+        root = L.project()
+        target = root / "pending_learnings.md"
+        target.write_bytes(PENDING.encode())
+        env, approved = _resolution_approval(L, root)
+        before = tree(root)
+        for block in (PENDING + "\n", PENDING.replace("Candidate 1", "Candidate 2")):
+            L.refused("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(block)], target), code="ERESOLUTION")
+            assert tree(root) == before
+        out = L.ok("closingtime", *_resolution_args(L, env, approved, [_resolution_discard(PENDING)], target))
+        assert out["readback_sha256"] == "absent" and not target.exists()

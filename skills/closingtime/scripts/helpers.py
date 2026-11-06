@@ -48,6 +48,8 @@ SESSION_NAMES = (
     "sessions.md",
 )
 PENDING_NAMES = ("pending_learnings.md", "Pending_Learnings.md")
+PENDING_FIELDS = ("Type", "Insight", "Connection", "Connects to", "Status", "Source")
+PENDING_FIELD_LINE_RE = re.compile(r"\*\*(?:" + "|".join(map(re.escape, PENDING_FIELDS)) + r"):\*\*.*")
 INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md")
 GIT_CHANGED_PATHS_CAP = 20
 SYNC_PATTERNS = ("*conflicted copy*", "*.sync-conflict-*", "*(case conflict*")
@@ -1340,6 +1342,18 @@ def _stage_parent(root: Path, receipt_sha256: str, records: list[tuple[Path, dic
     return parents[0][0]
 
 
+def _pending_body_keep_reason(body: str) -> str | None:
+    """One field/line grammar for new staging and conservative block removal."""
+    unknown = set(re.findall(r"(?m)^\*\*([^*]+):\*\*", body)) - set(PENDING_FIELDS)
+    if unknown:
+        return "unknown fields: " + ", ".join(sorted(unknown))
+    if re.search(r"(?m)^#{1,6} ", body):
+        return "extra heading"
+    if any(line.strip() and not PENDING_FIELD_LINE_RE.fullmatch(line) for line in body.splitlines()):
+        return "unrecognized line outside supported fields"
+    return None
+
+
 def _stage_payload(current: bytes, payload: bytes) -> None:
     """Check only new block structure; existing v1 bytes are opaque and immutable."""
     if not payload.startswith(current):
@@ -1354,6 +1368,9 @@ def _stage_payload(current: bytes, payload: bytes) -> None:
     if len(blocks) < 2 or blocks[0].strip():
         raise HelperError("ESTAGE", "append one or more ## Candidate <number> blocks only")
     for block in blocks[1:]:
+        reason = _pending_body_keep_reason(block)
+        if reason:
+            raise HelperError("ESTAGE", "new candidate block: " + reason)
         if re.search(r"(?m)^#{1,6} ", block) or not all(re.search(pattern, block) for pattern in (
                 r"(?m)^\*\*Type:\*\*[^\S\n]*\S", r"(?m)^\*\*Insight:\*\*[^\S\n]*\S",
                 r"(?m)^\*\*(?:Connection|Connects to):\*\*[^\S\n]*\S")):
@@ -1411,6 +1428,7 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                     raise HelperError("EDRAFTMISMATCH", "adopt-history proposal changed; run adopt-history and freeze again")
             records = _load_intents(root)
             stage_parent = None
+            resolution = None
             if operation == "stage":
                 if relative_path != "pending_learnings.md" or envelope.get("skill") != "closingtime":
                     raise HelperError("ESTAGE", "only closingtime stages pending_learnings.md")
@@ -1431,7 +1449,10 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                     _stage_parent(root, receipt["receipt_sha256"], records)
                 if _file_state(target)["sha256"] != expect:
                     raise HelperError("ESOURCECHANGED", "resolution preimage changed")
-                resolved = resolved_pending_payload(target.read_bytes() if target.exists() else b"", dispositions or [])
+                resolved, resolution = _pending_resolution(target.read_bytes() if target.exists() else b"", dispositions or [])
+                if not resolution["removed_blocks"]:
+                    raise HelperError("ERESOLUTIONNOOP", "no disposed block can be removed",
+                                      kept_disposed=resolution["kept_disposed"])
                 content = resolved.decode("utf-8") if resolved is not None else None
                 owner_reply = receipt["owner_reply"]
             if field == "pending_learnings":
@@ -1491,6 +1512,8 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                       "transition_id": uuid.uuid4().hex, "written_at": _utc_now(),
                       "payload_bytes": base64.b64encode(payload).decode() if payload is not None else None,
                       "approved_envelope": envelope, "approved_draft": receipt}
+            if resolution is not None:
+                record["resolution"] = resolution
             if stage_parent is not None:
                 record["parent_intent"] = stage_parent.relative_to(root).as_posix()
             pending = _persist_intent(root, record)
@@ -1515,7 +1538,10 @@ def write_approved_file(envelope: dict, receipt: dict, relative_path: str, conte
                 if child["kind"] == "remaining_intent" and child_path.suffix == ".pending" and child["relative_path"] == relative_path:
                     if child["draft_receipt_sha256"] == receipt["receipt_sha256"] or child["parent_intent"] == receipt.get("continue_parent"):
                         _move_record(child_path, ".done")
-            return {"path": relative_path, "operation": operation, "readback_sha256": postimage["sha256"], "bytes": postimage["length"], "readback_ok": True, "journal_record_path": str(final), "warnings": ["ELOCK_STALE_RECOVERED"] if recovered else []}
+            result = {"path": relative_path, "operation": operation, "readback_sha256": postimage["sha256"], "bytes": postimage["length"], "readback_ok": True, "journal_record_path": str(final), "warnings": ["ELOCK_STALE_RECOVERED"] if recovered else []}
+            if resolution is not None:
+                result.update(resolution)
+            return result
 
     except OSError as exc:
         raise HelperError("EPARTIAL_WRITE", f"inspect intent via resume: {exc}") from exc
@@ -2323,6 +2349,11 @@ def refresh_approval(parent: dict, envelope: dict, entry_text: str | None = None
 
 def resolved_pending_payload(current: bytes, dispositions: list[dict]) -> bytes | None:
     """Remove only exact disposed blocks. Unknown content remains byte-for-byte."""
+    return _pending_resolution(current, dispositions)[0]
+
+
+def _pending_resolution(current: bytes, dispositions: list[dict]) -> tuple[bytes | None, dict]:
+    """Plan the payload and report kept dispositions before any write intent."""
     try:
         text = current.decode('utf-8')
     except UnicodeError as exc:
@@ -2356,14 +2387,19 @@ def resolved_pending_payload(current: bytes, dispositions: list[dict]) -> bytes 
     if set(by_hash) - set(hashes):
         raise HelperError('ERESOLUTION', 'disposition is not for a current exact block')
     kept = text[:starts[0]] if starts else text
+    kept_disposed, removed = [], []
     for block in blocks:
-        fields = set(re.findall(r'(?m)^\*\*([^*]+):\*\*', block))
-        unknown = fields - {'Type','Insight','Connection','Connects to','Status'}
-        headings = re.findall(r'(?m)^#{1,6} .*', block)
-        unknown_lines = any(line.strip() and not re.fullmatch(r'## Candidate [0-9]+[ \t]*|\*\*(?:Type|Insight|Connection|Connects to|Status):\*\*.*', line) for line in block.splitlines())
-        if _sha256_text(block) not in by_hash or unknown or unknown_lines or len(headings) != 1:
+        key = _sha256_text(block)
+        reason = _pending_body_keep_reason(block.partition('\n')[2])
+        if key not in by_hash or reason:
             kept += block
-    return kept.encode('utf-8') if kept.strip() else None
+            if key in by_hash:
+                kept_disposed.append({'block_sha256': key, 'reason': reason})
+        else:
+            removed.append(key)
+    report = {'outcome': 'partial' if kept_disposed else 'complete',
+              'kept_disposed': kept_disposed, 'removed_blocks': removed}
+    return (kept.encode('utf-8') if kept.strip() else None), report
 
 
 def resolve_pending(envelope: dict, receipt: dict, dispositions: list[dict], expect: str) -> dict:
