@@ -28,7 +28,9 @@ Your global instructions give its local path.
 5. **This repository is public.** Never commit private data: personal,
    financial, health, legal, job-search or client material, credentials, or
    absolute personal paths. Change records stay in `private-artifacts/`, which
-   git never sees.
+   git never sees. Before any commit, check every new or changed tracked file
+   for this material, including scripts and other source files, not only the
+   files they generate.
 6. **Do not change the rules or the tooling to make your change pass.** A change
    to this file or to `skills/_contrib/` fails the gate. Propose it to the
    owner instead.
