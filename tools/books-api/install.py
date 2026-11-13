@@ -12,12 +12,14 @@ import tomllib
 from books_api import config, secure_dir
 
 SOURCE=Path(__file__).resolve().parent
-PROJECT=Path('/Volumes/Green/Dropbox/038_AI/projects/31_MetaClaude')
-CANONICAL=PROJECT/'tools/books-api'
+# Set METACLAUDE_PROJECT to the 31_MetaClaude repository root before running.
+PROJECT=Path(os.environ['METACLAUDE_PROJECT']) if os.environ.get('METACLAUDE_PROJECT') else None
+CANONICAL=PROJECT/'tools/books-api' if PROJECT else None
 RUNTIME=Path.home()/'Library/Application Support/MetaClaude/books-api'
 NAME='books-api'
 
 def main():
+    if PROJECT is None:raise SystemExit('Set METACLAUDE_PROJECT to the 31_MetaClaude repository root')
     if sys.version_info<(3,12):raise SystemExit('Python 3.12+ required')
     codex=shutil.which('codex');claude=shutil.which('claude')
     if not codex or not claude:raise SystemExit('Both harness CLIs required')

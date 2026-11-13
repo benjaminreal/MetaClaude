@@ -21,8 +21,8 @@ Exact registration commands, using the resolved current Python path and
 installed absolute runtime path:
 
 ```sh
-codex mcp add books-api -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 '/Users/benjaminre/Library/Application Support/MetaClaude/books-api/books_api.py' serve
-claude mcp add --scope user --transport stdio books-api -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 '/Users/benjaminre/Library/Application Support/MetaClaude/books-api/books_api.py' serve
+codex mcp add books-api -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 "$HOME/Library/Application Support/MetaClaude/books-api/books_api.py" serve
+claude mcp add --scope user --transport stdio books-api -- /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 "$HOME/Library/Application Support/MetaClaude/books-api/books_api.py" serve
 ```
 
 No existing CaptureBooks credential is reused by installation. A separate
